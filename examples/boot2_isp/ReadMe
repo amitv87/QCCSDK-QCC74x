@@ -1,0 +1,11 @@
+compile cmd:
+
+make CHIP=qcc74x_undef BOARD=qcc74x_undefdk 
+
+make CHIP=qcc74x_undef BOARD=qcc74x_undefdk 
+
+make CHIP=qcc74x_undef CPU_ID=m0 BOARD=qcc74x_undefdk 
+
+make CHIP=qcc74x_undefp CPU_ID=m0 BOARD=qcc74x_undefpdk 
+
+make CHIP=qcc743 CPU_ID=m0 BOARD=qcc743dk 

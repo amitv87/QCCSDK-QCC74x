@@ -1,0 +1,3 @@
+sdk_add_include_directories(btble_inc)
+sdk_add_include_directories(btblecontroller_port)
+sdk_add_static_library(lib/libbtblecontroller_qcc743_${CONFIG_BTBLECONTROLLER_LIB}.a)

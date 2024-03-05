@@ -1,0 +1,41 @@
+if(MINGW OR CYGWIN OR WIN32)
+set(TOOL_SUFFIX ".exe")
+elseif(UNIX)
+set(TOOL_SUFFIX "-ubuntu")
+elseif(APPLE)
+set(TOOL_SUFFIX "-macos")
+endif()
+
+set(QCC74x_FW_POST_PROC ${QCC74x_SDK_BASE}/tools/qcc74x_tools/QConn_Secure/QConn_Secure${TOOL_SUFFIX})
+
+set(QCC74x_FW_POST_PROC_CONFIG --chipname=${CHIP} --imgfile=${BIN_FILE})
+
+if(BOARD_DIR)
+list(APPEND QCC74x_FW_POST_PROC_CONFIG --brdcfgdir=${BOARD_DIR}/${BOARD}/config)
+else()
+list(APPEND QCC74x_FW_POST_PROC_CONFIG --brdcfgdir=${QCC74x_SDK_BASE}/bsp/board/${BOARD}/config)
+endif()
+
+if(CONFIG_AES_KEY)
+list(APPEND QCC74x_FW_POST_PROC_CONFIG --key=${CONFIG_AES_KEY})
+endif()
+
+if(CONFIG_AES_IV)
+list(APPEND QCC74x_FW_POST_PROC_CONFIG --iv=${CONFIG_AES_IV})
+endif()
+
+if(CONFIG_PUBLIC_KEY)
+list(APPEND QCC74x_FW_POST_PROC_CONFIG --publickey=${CONFIG_PUBLIC_KEY})
+endif()
+
+if(CONFIG_PRIVATE_KEY)
+list(APPEND QCC74x_FW_POST_PROC_CONFIG --privatekey=${CONFIG_PRIVATE_KEY})
+endif()
+
+if(CONFIG_FW_POST_PROC_CUSTOM)
+list(APPEND QCC74x_FW_POST_PROC_CONFIG ${CONFIG_FW_POST_PROC_CUSTOM})
+endif()
+
+add_custom_target(combine
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMAND ${QCC74x_FW_POST_PROC} ${QCC74x_FW_POST_PROC_CONFIG})

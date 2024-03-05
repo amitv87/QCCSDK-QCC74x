@@ -1,0 +1,7 @@
+#ifndef __VERSION_MACSW_H__
+#define __VERSION_MACSW_H__
+#define VERSION_MACSW_NUMBER "1.6.11"
+#define VERSION_MACSW_MAJOR 1
+#define VERSION_MACSW_MINOR 6
+#define VERSION_MACSW_PATCH 11
+#endif

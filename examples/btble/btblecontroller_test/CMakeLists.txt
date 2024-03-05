@@ -1,0 +1,13 @@
+cmake_minimum_required(VERSION 3.15)
+
+include(proj.conf)
+
+find_package(qcc74x_sdk REQUIRED HINTS $ENV{QCC74x_SDK_BASE})
+
+sdk_add_include_directories(.)
+
+sdk_set_main_file(main.c)
+
+sdk_set_linker_script(qcc743_btblecontroller_flash.ld)
+
+project(btblecontroller_test)

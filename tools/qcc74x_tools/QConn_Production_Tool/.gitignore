@@ -1,0 +1,5 @@
+*.spec
+*.pyc
+*.pyo
+/build
+/config.toml
