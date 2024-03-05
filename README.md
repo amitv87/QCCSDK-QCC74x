@@ -1,6 +1,6 @@
 # Introduction
 
-**qcc74xSDK** is the IOT and MCU software development kit provided by the Qualcomm Team, supports all the series of qcc74x chips.
+**qcc74xSDK** is the IOT and MCU software development kit provided by Qualcomm for the qcc74x chips.
 
 # SDK Architecture
 
