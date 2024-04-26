@@ -48,6 +48,11 @@ int main(void)
     }
     printf("AES_MODE:\r\n    %s\r\n", aes_mode[aes]);
 
+#if defined(QCC743)
+    /* process corner */
+    printf("processor corner = %d, %s\n", device_info.process_corner, device_info.process_corner_name);
+#endif
+
     while (1) {
         qcc74x_mtimer_delay_ms(1000);
     }

@@ -218,3 +218,23 @@ __attribute__((weak)) uint8_t btblecontrolller_get_chip_version()
 }
 #endif
 
+#if defined(CONFIG_BT_MFG_HCI_CMD) || defined(CONFIG_BLE_MFG_HCI_CMD)
+__attribute__((weak)) int btblecontroller_putchar(int c)
+{
+     #if defined(CFG_IOT_SDK)
+     extern int qcc74x_putchar(int c);
+     return qcc74x_putchar(c);
+     #else
+     extern int putchar(int c);
+     return putchar(c);
+     #endif
+}
+#endif
+
+__attribute__((weak)) void btblecontroller_puts(const char *str)
+{
+    extern int puts(const char *s);
+    puts(str);
+}
+
+

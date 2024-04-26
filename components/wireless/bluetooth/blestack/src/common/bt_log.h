@@ -53,6 +53,11 @@ extern "C" {
 #define BT_ERR(fmt, ...)   printf(fmt", %s\r\n", ##__VA_ARGS__, __func__)
 #define BT_WARN(fmt, ...)  printf(fmt", %s\r\n", ##__VA_ARGS__, __func__)
 #define BT_INFO(fmt, ...)   //printf(fmt", %s\r\n", ##__VA_ARGS__, __func__)
+
+#define LOG_DBG(fmt, ...) BT_DBG(fmt, ##__VA_ARGS__)
+#define LOG_ERR(fmt, ...) BT_ERR(fmt, ##__VA_ARGS__)
+#define LOG_WRN(fmt, ...) BT_WARN(fmt, ##__VA_ARGS__)
+#define LOG_INF(fmt, ...) BT_INFO(fmt, ##__VA_ARGS__)
 #endif
 
 #if defined(CONFIG_BT_STACK_PTS) || defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)

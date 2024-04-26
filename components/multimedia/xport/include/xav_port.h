@@ -14,5 +14,7 @@ int config_av_mixer_enable(void);
 int config_av_aef_enable(void);
 int config_av_resampler_enable(void);
 int config_msp_debug_enable(void);
+custom_decode_cb_t get_custom_decode_cb(void);
+void register_custom_decode_cb(custom_decode_cb_t custom_decode_cb);
 
 #endif

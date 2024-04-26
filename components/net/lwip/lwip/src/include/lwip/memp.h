@@ -46,17 +46,11 @@ extern "C" {
 
 /* run once with empty definition to handle all custom includes in lwippools.h */
 #define LWIP_MEMPOOL(name,num,size,desc)
-#ifdef CONFIG_FHOST_RX_COPY_ENABLE
-#define LWIP_MEMPOOL_ATTR(name,num,size,desc)
-#endif
 #include "lwip/priv/memp_std.h"
 
 /** Create the list of all memory pools managed by memp. MEMP_MAX represents a NULL pool at the end */
 typedef enum {
 #define LWIP_MEMPOOL(name,num,size,desc)  MEMP_##name,
-#ifdef CONFIG_FHOST_RX_COPY_ENABLE
-#define LWIP_MEMPOOL_ATTR(name,num,size,desc)  MEMP_##name,
-#endif
 #include "lwip/priv/memp_std.h"
   MEMP_MAX
 } memp_t;
@@ -114,24 +108,6 @@ extern const struct memp_desc* const memp_pools[MEMP_MAX];
     &memp_tab_ ## name \
   };
 
-#ifdef CONFIG_FHOST_RX_COPY_ENABLE
-#define LWIP_MEMPOOL_ATTR_DECLARE(name,num,size,desc) \
-  LWIP_DECLARE_MEMORY_ALIGNED_ATTR(memp_memory_ ## name ## _base, ((num) * (MEMP_SIZE + MEMP_ALIGN_SIZE(size)))); \
-    \
-  LWIP_MEMPOOL_DECLARE_STATS_INSTANCE(memp_stats_ ## name) \
-    \
-  static struct memp *memp_tab_ ## name; \
-    \
-  const struct memp_desc memp_ ## name = { \
-    DECLARE_LWIP_MEMPOOL_DESC(desc) \
-    LWIP_MEMPOOL_DECLARE_STATS_REFERENCE(memp_stats_ ## name) \
-    LWIP_MEM_ALIGN_SIZE(size), \
-    (num), \
-    memp_memory_ ## name ## _base, \
-    &memp_tab_ ## name \
-  };
-#endif
-
 #endif /* MEMP_MEM_MALLOC */
 
 /**
@@ -166,7 +142,7 @@ void  memp_init(void);
 
 #if MEMP_OVERFLOW_CHECK
 void *memp_malloc_fn(memp_t type, const char* file, const int line);
-#define memp_malloc(t) memp_malloc_fn((t), "file1", __LINE__)
+#define memp_malloc(t) memp_malloc_fn((t), __FILE__, __LINE__)
 #else
 void *memp_malloc(memp_t type);
 #endif

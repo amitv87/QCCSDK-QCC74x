@@ -38,7 +38,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 #ifdef BT_DBG
 #undef BT_DBG
 #define BT_DBG(fmt, ...) printf("[model]"fmt"\r\n", ##__VA_ARGS__)

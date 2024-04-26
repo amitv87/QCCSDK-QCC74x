@@ -1,3 +1,11 @@
+/* Bluetooth: Mesh Generic OnOff, Generic Level, Lighting & Vendor Models
+ *
+ * Copyright (c) 2018 Vikrant More
+ * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include "btc_ble_mesh_generic_model.h"
 #include "btc_ble_mesh_lighting_model.h"
 #include "btc_ble_mesh_time_scene_model.h"
@@ -883,7 +891,7 @@ void light_lc_work_handler(struct k_work *work)
         return;
     }
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     BT_WARN("light_lc_work_handler [%x]", srv->transition.counter);
 #endif /* CONFIG_AUTO_PTS */
     bt_mesh_light_server_lock();

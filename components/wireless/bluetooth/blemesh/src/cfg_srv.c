@@ -237,7 +237,7 @@ static u8_t _mod_pub_set(struct bt_mesh_model *model, u16_t pub_addr,
 	}
 
 	if (!bt_mesh_app_key_find(app_idx)
-	#if defined(CONFIG_AUTO_PTS)
+	#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 		|| !bt_mesh_model_has_key(model, app_idx)
 	#endif
 		) {
@@ -3233,7 +3233,7 @@ static void heartbeat_sub_set(struct bt_mesh_model *model,
 	if (!period_ms) {
 		cfg->hb_sub.min_hops = 0U;
 	}
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	/* MESH/NODE/CFG/HBS/BV-02-C expects us to return previous
 	 * count value and then reset it to 0.
 	 */
@@ -3651,3 +3651,10 @@ void bt_mesh_subnet_del(struct bt_mesh_subnet *sub, bool store)
 	(void)memset(sub, 0, sizeof(*sub));
 	sub->net_idx = BT_MESH_KEY_UNUSED;
 }
+
+#if defined(QCC74x_BLE)
+int bt_mesh_comp_get_page_0(struct net_buf_simple *buf)
+{
+	return comp_get_page_0(buf);    
+}
+#endif

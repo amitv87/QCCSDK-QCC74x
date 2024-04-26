@@ -73,7 +73,9 @@ sdk_add_include_directories(getopt)
 
 if(CONFIG_COREDUMP)
 sdk_add_compile_definitions(-DCONFIG_COREDUMP)
-sdk_library_add_sources(coredump/qcc74x_coredump.c)
+sdk_library_add_sources(coredump/coredump.c)
+sdk_library_add_sources(coredump/encoder_v1.c)
+sdk_library_add_sources(coredump/bin_fmt_v1.c)
 sdk_add_include_directories(coredump)
 endif()
 
@@ -104,4 +106,6 @@ sdk_add_include_directories(qcc74x_ota)
 endif()
 
 # list
-sdk_add_include_directories(list)
+sdk_library_add_sources(list/src/utils_list.c)
+sdk_add_include_directories(list/include)
+

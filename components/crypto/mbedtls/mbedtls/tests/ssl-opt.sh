@@ -3,19 +3,7 @@
 # ssl-opt.sh
 #
 # Copyright The Mbed TLS Contributors
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License"); you may
-# not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
 #
 # Purpose
 #
@@ -46,10 +34,21 @@ fi
 : ${P_CLI:=../programs/ssl/ssl_client2}
 : ${P_PXY:=../programs/test/udp_proxy}
 : ${P_QUERY:=../programs/test/query_compile_time_config}
-: ${OPENSSL_CMD:=openssl} # OPENSSL would conflict with the build system
+: ${OPENSSL:=openssl}
 : ${GNUTLS_CLI:=gnutls-cli}
 : ${GNUTLS_SERV:=gnutls-serv}
 : ${PERL:=perl}
+
+# The OPENSSL variable used to be OPENSSL_CMD for historical reasons.
+# To help the migration, error out if the old variable is set,
+# but only if it has a different value than the new one.
+if [ "${OPENSSL_CMD+set}" = set ]; then
+    # the variable is set, we can now check its value
+    if [ "$OPENSSL_CMD" != "$OPENSSL" ]; then
+        echo "Please use OPENSSL instead of OPENSSL_CMD." >&2
+        exit 125
+    fi
+fi
 
 guess_config_name() {
     if git diff --quiet ../include/mbedtls/config.h 2>/dev/null; then
@@ -62,8 +61,8 @@ guess_config_name() {
 : ${MBEDTLS_TEST_CONFIGURATION:="$(guess_config_name)"}
 : ${MBEDTLS_TEST_PLATFORM:="$(uname -s | tr -c \\n0-9A-Za-z _)-$(uname -m | tr -c \\n0-9A-Za-z _)"}
 
-O_SRV="$OPENSSL_CMD s_server -www -cert data_files/server5.crt -key data_files/server5.key"
-O_CLI="echo 'GET / HTTP/1.0' | $OPENSSL_CMD s_client"
+O_SRV="$OPENSSL s_server -www -cert data_files/server5.crt -key data_files/server5.key"
+O_CLI="echo 'GET / HTTP/1.0' | $OPENSSL s_client"
 G_SRV="$GNUTLS_SERV --x509certfile data_files/server5.crt --x509keyfile data_files/server5.key"
 G_CLI="echo 'GET / HTTP/1.0' | $GNUTLS_CLI --x509cafile data_files/test-ca_cat12.crt"
 TCP_CLIENT="$PERL scripts/tcp_client.pl"
@@ -156,6 +155,9 @@ get_options() {
             -p|--preserve-logs)
                 PRESERVE_LOGS=1
                 ;;
+            --outcome-file)
+                shift; MBEDTLS_TEST_OUTCOME_FILE=$1
+                ;;
             --port)
                 shift; SRV_PORT=$1
                 ;;
@@ -178,14 +180,6 @@ get_options() {
         shift
     done
 }
-
-# Make the outcome file path relative to the original directory, not
-# to .../tests
-case "$MBEDTLS_TEST_OUTCOME_FILE" in
-    [!/]*)
-        MBEDTLS_TEST_OUTCOME_FILE="$ORIGINAL_PWD/$MBEDTLS_TEST_OUTCOME_FILE"
-        ;;
-esac
 
 # Read boolean configuration options from config.h for easy and quick
 # testing. Skip non-boolean options (with something other than spaces
@@ -404,7 +398,7 @@ esac
 # skip next test if OpenSSL doesn't support FALLBACK_SCSV
 requires_openssl_with_fallback_scsv() {
     if [ -z "${OPENSSL_HAS_FBSCSV:-}" ]; then
-        if $OPENSSL_CMD s_client -help 2>&1 | grep fallback_scsv >/dev/null
+        if $OPENSSL s_client -help 2>&1 | grep fallback_scsv >/dev/null
         then
             OPENSSL_HAS_FBSCSV="YES"
         else
@@ -1381,6 +1375,14 @@ cleanup() {
 
 get_options "$@"
 
+# Make the outcome file path relative to the original directory, not
+# to .../tests
+case "$MBEDTLS_TEST_OUTCOME_FILE" in
+    [!/]*)
+        MBEDTLS_TEST_OUTCOME_FILE="$ORIGINAL_PWD/$MBEDTLS_TEST_OUTCOME_FILE"
+        ;;
+esac
+
 # Optimize filters: if $FILTER and $EXCLUDE can be expressed as shell
 # patterns rather than regular expressions, use a case statement instead
 # of calling grep. To keep the optimizer simple, it is incomplete and only
@@ -1443,8 +1445,8 @@ if [ "$MEMCHECK" -gt 0 ]; then
         exit 1
     fi
 fi
-if which $OPENSSL_CMD >/dev/null 2>&1; then :; else
-    echo "Command '$OPENSSL_CMD' not found"
+if which $OPENSSL >/dev/null 2>&1; then :; else
+    echo "Command '$OPENSSL' not found"
     exit 1
 fi
 
@@ -1499,7 +1501,7 @@ fi
 # OpenSSL 1.1.1f from Ubuntu 20.04. The syntax was only introduced in
 # OpenSSL 1.1.0 (21e0c1d23afff48601eb93135defddae51f7e2e3) and I can't find
 # a way to discover it from -help, so check the openssl version.
-case $($OPENSSL_CMD version) in
+case $($OPENSSL version) in
     "OpenSSL 0"*|"OpenSSL 1.0"*) :;;
     *)
         O_CLI="$O_CLI -cipher ALL@SECLEVEL=0"
@@ -7720,6 +7722,8 @@ run_test    "Large server packet TLS 1.2 AEAD shorter tag" \
 
 # Tests for restartable ECC
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: TLS, default" \
             "$P_SRV auth_mode=required" \
@@ -7732,6 +7736,8 @@ run_test    "EC restart: TLS, default" \
             -C "mbedtls_ecdh_make_public.*4b00" \
             -C "mbedtls_pk_sign.*4b00"
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: TLS, max_ops=0" \
             "$P_SRV auth_mode=required" \
@@ -7744,6 +7750,8 @@ run_test    "EC restart: TLS, max_ops=0" \
             -C "mbedtls_ecdh_make_public.*4b00" \
             -C "mbedtls_pk_sign.*4b00"
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: TLS, max_ops=65535" \
             "$P_SRV auth_mode=required" \
@@ -7756,6 +7764,8 @@ run_test    "EC restart: TLS, max_ops=65535" \
             -C "mbedtls_ecdh_make_public.*4b00" \
             -C "mbedtls_pk_sign.*4b00"
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: TLS, max_ops=1000" \
             "$P_SRV auth_mode=required" \
@@ -7768,6 +7778,8 @@ run_test    "EC restart: TLS, max_ops=1000" \
             -c "mbedtls_ecdh_make_public.*4b00" \
             -c "mbedtls_pk_sign.*4b00"
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: TLS, max_ops=1000, badsign" \
             "$P_SRV auth_mode=required \
@@ -7785,6 +7797,8 @@ run_test    "EC restart: TLS, max_ops=1000, badsign" \
             -c "! mbedtls_ssl_handshake returned" \
             -c "X509 - Certificate verification failed"
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: TLS, max_ops=1000, auth_mode=optional badsign" \
             "$P_SRV auth_mode=required \
@@ -7802,6 +7816,8 @@ run_test    "EC restart: TLS, max_ops=1000, auth_mode=optional badsign" \
             -C "! mbedtls_ssl_handshake returned" \
             -C "X509 - Certificate verification failed"
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: TLS, max_ops=1000, auth_mode=none badsign" \
             "$P_SRV auth_mode=required \
@@ -7819,6 +7835,8 @@ run_test    "EC restart: TLS, max_ops=1000, auth_mode=none badsign" \
             -C "! mbedtls_ssl_handshake returned" \
             -C "X509 - Certificate verification failed"
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: DTLS, max_ops=1000" \
             "$P_SRV auth_mode=required dtls=1" \
@@ -7831,6 +7849,8 @@ run_test    "EC restart: DTLS, max_ops=1000" \
             -c "mbedtls_ecdh_make_public.*4b00" \
             -c "mbedtls_pk_sign.*4b00"
 
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
 run_test    "EC restart: TLS, max_ops=1000 no client auth" \
             "$P_SRV" \
@@ -7842,11 +7862,19 @@ run_test    "EC restart: TLS, max_ops=1000 no client auth" \
             -c "mbedtls_ecdh_make_public.*4b00" \
             -C "mbedtls_pk_sign.*4b00"
 
+
+# Restartable is only for ECDHE-ECDSA, with another ciphersuite we expect no
+# restartable behaviour at all (not even client auth).
+# This is the same as "EC restart: TLS, max_ops=1000" except with ECDHE-RSA,
+# and all 4 assertions negated.
 requires_config_enabled MBEDTLS_ECP_RESTARTABLE
-run_test    "EC restart: TLS, max_ops=1000, ECDHE-PSK" \
-            "$P_SRV psk=abc123" \
-            "$P_CLI force_ciphersuite=TLS-ECDHE-PSK-WITH-AES-128-CBC-SHA256 \
-             psk=abc123 debug_level=1 ec_max_ops=1000" \
+requires_config_enabled MBEDTLS_ECP_DP_SECP256R1_ENABLED
+requires_config_enabled MBEDTLS_SSL_PROTO_TLS1_2
+run_test    "EC restart: TLS, max_ops=1000, ECDHE-RSA" \
+            "$P_SRV curves=secp256r1 auth_mode=required" \
+            "$P_CLI force_ciphersuite=TLS-ECDHE-RSA-WITH-AES-128-GCM-SHA256 \
+             key_file=data_files/server5.key crt_file=data_files/server5.crt  \
+             debug_level=1 ec_max_ops=1000" \
             0 \
             -C "x509_verify_cert.*4b00" \
             -C "mbedtls_pk_verify.*4b00" \
@@ -10539,4 +10567,9 @@ fi
 PASSES=$(( $TESTS - $FAILS ))
 echo " ($PASSES / $TESTS tests ($SKIPS skipped))"
 
+if [ $FAILS -gt 255 ]; then
+    # Clamp at 255 as caller gets exit code & 0xFF
+    # (so 256 would be 0, or success, etc)
+    FAILS=255
+fi
 exit $FAILS

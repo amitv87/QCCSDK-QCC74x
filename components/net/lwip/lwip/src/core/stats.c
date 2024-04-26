@@ -150,21 +150,6 @@ stats_display_sys(struct stats_sys *sys)
 }
 #endif /* SYS_STATS */
 
-#if IP_NAPT_STATS
-void stats_display_ip_napt(struct stats_ip_napt *napt)
-{
-  LWIP_PLATFORM_DIAG(("\nIP NAPT max %"STAT_COUNTER_F"\n\t", IP_NAPT_MAX));
-  LWIP_PLATFORM_DIAG(("nr_active_tcp:        %"STAT_COUNTER_F"\n\t", napt->nr_active_tcp));
-  LWIP_PLATFORM_DIAG(("nr_active_udp:        %"STAT_COUNTER_F"\n\t", napt->nr_active_udp));
-  LWIP_PLATFORM_DIAG(("nr_active_icmp:       %"STAT_COUNTER_F"\n\t", napt->nr_active_icmp));
-  LWIP_PLATFORM_DIAG(("nr_forced_evictions:  %"STAT_COUNTER_F"\n\t", napt->nr_forced_evictions));
-#if QCC74x_IP_FORWARD
-  LWIP_PLATFORM_DIAG(("mem_alloc_err:        %"STAT_COUNTER_F"\n\t", napt->mem_alloc_err));
-  LWIP_PLATFORM_DIAG(("output_err:           %"STAT_COUNTER_F"\n\t", napt->output_err));
-#endif
-}
-#endif /* IP_NAPT_STATS */
-
 void
 stats_display(void)
 {
@@ -188,7 +173,6 @@ stats_display(void)
     MEMP_STATS_DISPLAY(i);
   }
   SYS_STATS_DISPLAY();
-  IP_NAPT_STATS_DISPLAY();
 }
 
 #endif /* LWIP_STATS_DISPLAY */
@@ -366,4 +350,3 @@ stats_netstat(void *ctx)
 }
 
 #endif /* LWIP_STATS */
-

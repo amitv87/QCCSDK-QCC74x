@@ -50,6 +50,13 @@ SECTIONS
         *start_load*.o*(.text*)
     } > xip_memory
 
+    .build_id :
+    {
+        . = ALIGN(4);
+        PROVIDE( elf_build_id = ABSOLUTE(.) + 16);
+        *(.note.gnu.build-id)
+    } > xip_memory
+
     . = ALIGN(4);
     . = ORIGIN(xip_memory) + __RFTLV_SIZE_OFFSET;
     __psram_load_addr = .;

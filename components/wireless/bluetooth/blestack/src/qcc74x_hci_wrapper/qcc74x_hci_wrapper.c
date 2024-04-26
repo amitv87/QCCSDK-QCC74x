@@ -214,6 +214,7 @@ void qcc74x_trigger_queued_msg()
 {
     struct net_buf *buf= NULL;
     struct rx_msg_struct *msg = NULL;
+    uint8_t *param = NULL;
 
     do
     {
@@ -244,14 +245,16 @@ void qcc74x_trigger_queued_msg()
 
         qcc74x_packet_to_host(msg->pkt_type, msg->src_id, msg->param, msg->param_len, buf);
 
-        irq_unlock(lock);
+        param = msg->param;
 
-        if(msg->param)
-        {
-            k_free(msg->param);
-        }
         memset(msg, 0, sizeof(struct rx_msg_struct));
 
+        irq_unlock(lock);
+
+        if(param)
+        {
+            k_free(param);
+        }
     }
     while(buf);
 

@@ -634,7 +634,7 @@ struct bt_conn *bt_conn_create_br(const bt_addr_t *peer,
 	bt_conn_set_state(conn, BT_CONN_CONNECT);
 	conn->role = BT_CONN_ROLE_MASTER;
 
-	bt_conn_unref(conn);
+	//bt_conn_unref(conn);
 	return conn;
 }
 
@@ -1165,6 +1165,10 @@ int bt_conn_le_start_encryption(struct bt_conn *conn, u8_t rand[8],
 	struct bt_hci_cp_le_start_encryption *cp;
 	struct net_buf *buf;
 
+	if (len > sizeof(cp->ltk)) {
+		return -EINVAL;
+	}
+
 	buf = bt_hci_cmd_create(BT_HCI_OP_LE_START_ENCRYPTION, sizeof(*cp));
 	if (!buf) {
 		return -ENOBUFS;
@@ -1179,7 +1183,7 @@ int bt_conn_le_start_encryption(struct bt_conn *conn, u8_t rand[8],
 	if (len < sizeof(cp->ltk)) {
 		(void)memset(cp->ltk + len, 0, sizeof(cp->ltk) - len);
 	}
-
+	BT_WARN("BLE LTK: %s\r\n",bt_hex(ltk,len));
 	return bt_hci_cmd_send_sync(BT_HCI_OP_LE_START_ENCRYPTION, buf, NULL);
 }
 #endif /* CONFIG_BT_SMP */

@@ -66,3 +66,6 @@ else()
 sdk_add_compile_options(${CONFIG_GCC_OPTIMISE_LEVEL})
 endif()
 
+if(WIN32)
+sdk_add_compile_definitions(-D_WIN32_DELIMITER)
+endif()

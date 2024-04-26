@@ -6,6 +6,17 @@
 #define QCC743_A0              0
 #define QCC743_A1              1
 
+#if defined(QCC74x_undefL)
+#include "misc.h"
+#ifndef ATTR_PDS_SECTION
+#define ATTR_PDS_SECTION           __attribute__((section(".pds_code." ATTR_UNI_SYMBOL), noinline))
+#endif
+#else
+#ifndef ATTR_PDS_SECTION
+#define ATTR_PDS_SECTION
+#endif
+#endif
+
 void btblecontroller_ble_irq_init(void *handler);
 void btblecontroller_bt_irq_init(void *handler);
 void btblecontroller_dm_irq_init(void *handler);
@@ -19,4 +30,8 @@ void btblecontroller_software_btdm_reset();
 void btblecontroller_software_pds_reset();
 void btblecontroller_pds_trim_rc32m();
 uint8_t btblecontrolller_get_chip_version();
+#if defined(CONFIG_BT_MFG_HCI_CMD) || defined(CONFIG_BLE_MFG_HCI_CMD)
+int btblecontroller_putchar(int c);
+#endif
+void btblecontroller_puts(const char *str);
 #endif

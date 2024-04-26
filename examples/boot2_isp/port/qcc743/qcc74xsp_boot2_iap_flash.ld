@@ -64,8 +64,17 @@ SECTIONS
         __text_code_end__ = .;
     } > xip_memory1
 
+    .build_id :
+    {
+        . = ALIGN(4);
+        PROVIDE( elf_build_id = ABSOLUTE(.) + 16);
+        *(.note.gnu.build-id)
 
-    __itcm_load_addr = __text_code_end__;
+        . = ALIGN(4);
+        __build_id_end__ = .;
+    } > xip_memory1
+
+    __itcm_load_addr = __build_id_end__;
 
     .itcm_region : AT (__itcm_load_addr)
     {

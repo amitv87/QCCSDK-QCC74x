@@ -127,7 +127,7 @@ PACK_STRUCT_END
 #endif
 /* There must be sufficient timeouts, taking into account requirements of the subsystems. */
 #if LWIP_TIMERS && (MEMP_NUM_SYS_TIMEOUT < LWIP_NUM_SYS_TIMEOUT_INTERNAL)
-#error "MEMP_NUM_SYS_TIMEOUT is too low to accomodate all required timeouts"
+#error "MEMP_NUM_SYS_TIMEOUT is too low to accommodate all required timeouts"
 #endif
 #if (IP_REASSEMBLY && (MEMP_NUM_REASSDATA > IP_REASS_MAX_PBUFS))
 #error "MEMP_NUM_REASSDATA > IP_REASS_MAX_PBUFS doesn't make sense since each struct ip_reassdata must hold 2 pbufs at least!"
@@ -157,14 +157,8 @@ PACK_STRUCT_END
 #if (LWIP_TCP && (TCP_SND_QUEUELEN < 2))
 #error "TCP_SND_QUEUELEN must be at least 2 for no-copy TCP writes to work"
 #endif
-#ifdef QCC74x_TCP_OPTIMIZE
-#if (LWIP_TCP && ((TCP_MAXRTX > 48) || (TCP_SYNMAXRTX > 48)))
-#error "If you want to use TCP, TCP_MAXRTX and TCP_SYNMAXRTX must less or equal to 48 (due to tcp_backoff table), so, you have to reduce them in your lwipopts.h"
-#endif
-#else
 #if (LWIP_TCP && ((TCP_MAXRTX > 12) || (TCP_SYNMAXRTX > 12)))
 #error "If you want to use TCP, TCP_MAXRTX and TCP_SYNMAXRTX must less or equal to 12 (due to tcp_backoff table), so, you have to reduce them in your lwipopts.h"
-#endif
 #endif
 #if (LWIP_TCP && TCP_LISTEN_BACKLOG && ((TCP_DEFAULT_LISTEN_BACKLOG < 0) || (TCP_DEFAULT_LISTEN_BACKLOG > 0xff)))
 #error "If you want to use TCP backlog, TCP_DEFAULT_LISTEN_BACKLOG must fit into an u8_t"
@@ -190,8 +184,8 @@ PACK_STRUCT_END
 #if (((!LWIP_DHCP) || (!LWIP_AUTOIP)) && LWIP_DHCP_AUTOIP_COOP)
 #error "If you want to use DHCP/AUTOIP cooperation mode, you have to define LWIP_DHCP=1 and LWIP_AUTOIP=1 in your lwipopts.h"
 #endif
-#if (((!LWIP_DHCP) || (!LWIP_ARP)) && DHCP_DOES_ARP_CHECK)
-#error "If you want to use DHCP ARP checking, you have to define LWIP_DHCP=1 and LWIP_ARP=1 in your lwipopts.h"
+#if (((!LWIP_DHCP) || (!LWIP_ARP) || (!LWIP_ACD)) && LWIP_DHCP_DOES_ACD_CHECK)
+#error "If you want to use DHCP ACD checking, you have to define LWIP_DHCP=1, LWIP_ARP=1 and LWIP_ACD=1 in your lwipopts.h"
 #endif
 #if (!LWIP_ARP && LWIP_AUTOIP)
 #error "If you want to use AUTOIP, you have to define LWIP_ARP=1 in your lwipopts.h"
@@ -226,6 +220,9 @@ PACK_STRUCT_END
 #if PPP_SUPPORT && PPP_IPV6_SUPPORT && !LWIP_IPV6
 #error "PPP_IPV6_SUPPORT needs LWIP_IPV6 turned on"
 #endif
+#if PPP_SUPPORT && CCP_SUPPORT && !MPPE_SUPPORT
+#error "CCP_SUPPORT needs MPPE_SUPPORT turned on"
+#endif
 #if !LWIP_ETHERNET && (LWIP_ARP || PPPOE_SUPPORT)
 #error "LWIP_ETHERNET needs to be turned on for LWIP_ARP or PPPOE_SUPPORT"
 #endif
@@ -243,8 +240,9 @@ PACK_STRUCT_END
 #error "NETCONN_MORE != TCP_WRITE_FLAG_MORE"
 #endif
 #endif /* LWIP_NETCONN && LWIP_TCP */
-#if LWIP_SOCKET
-#endif /* LWIP_SOCKET */
+#if LWIP_NETCONN_FULLDUPLEX && !LWIP_NETCONN_SEM_PER_THREAD
+#error "For LWIP_NETCONN_FULLDUPLEX to work, LWIP_NETCONN_SEM_PER_THREAD is required"
+#endif
 
 
 /* Compile-time checks for deprecated options.
@@ -311,6 +309,9 @@ PACK_STRUCT_END
 #if TCP_SNDLOWAT >= TCP_SND_BUF
 #error "lwip_sanity_check: WARNING: TCP_SNDLOWAT must be less than TCP_SND_BUF. If you know what you are doing, define LWIP_DISABLE_TCP_SANITY_CHECKS to 1 to disable this error."
 #endif
+#if TCP_MSS >= ((16 * 1024) - 1)
+#error "lwip_sanity_check: WARNING: TCP_MSS must be <= 16382 to prevent u16_t underflow in TCP_SNDLOWAT calculation!"
+#endif
 #if TCP_SNDLOWAT >= (0xFFFF - (4 * TCP_MSS))
 #error "lwip_sanity_check: WARNING: TCP_SNDLOWAT must at least be 4*MSS below u16_t overflow!"
 #endif
@@ -376,9 +377,6 @@ lwip_init(void)
 #if LWIP_DNS
   dns_init();
 #endif /* LWIP_DNS */
-#if LWIP_DNS_SERVER
-  dns_server_init();
-#endif /* LWIP_DNS_SERVER */
 #if PPP_SUPPORT
   ppp_init();
 #endif

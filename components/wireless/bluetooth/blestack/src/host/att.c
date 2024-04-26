@@ -2385,7 +2385,8 @@ static struct bt_l2cap_le_chan test_chan = {
 
 static int bt_test_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
 {
-	//return bt_att_accept(conn, chan);
+	if(test_chan.chan.conn)
+	    return -ENOMEM;
 	*chan = &test_chan.chan;
     return 0;
 }

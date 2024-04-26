@@ -712,7 +712,7 @@ if(("${CHIP}" STREQUAL "qcc743") OR ("${CHIP}" STREQUAL "qcc74x_undef"))
 # CONFIG_LE_PWR_CTRL := 0
 # endif
 # endif
-    	if("${PRIV_CONFIG_GEN_BLE}" STREQUAL "ble1m0s1sbredr1")
+        if("${PRIV_CONFIG_GEN_BLE}" STREQUAL "ble1m0s1sbredr1")
 		set(CONFIG_BT_BREDR 1)
 		set(CONFIG_EM_SIZE 32)
 		set(CONFIG_BT_ALLROLES 0)
@@ -729,7 +729,7 @@ if(("${CHIP}" STREQUAL "qcc743") OR ("${CHIP}" STREQUAL "qcc74x_undef"))
 		set(CONFIG_BIS 0)
 		set(CONFIG_CTE 0)
 		set(CONFIG_LE_PWR_CTRL 0)
-    	endif()
+        endif()
 # 
 # ifeq ($(PRIV_CONFIG_GEN_BLE),ble1m2s1bredr1)
 # CONFIG_BT_BREDR := 1
@@ -752,7 +752,7 @@ if(("${CHIP}" STREQUAL "qcc743") OR ("${CHIP}" STREQUAL "qcc74x_undef"))
 # CONFIG_CTE := 0
 # CONFIG_LE_PWR_CTRL := 0
 # endif
-		if("${PRIV_CONFIG_GEN_BLE}" STREQUAL "ble1m2s1bredr1")
+	if("${PRIV_CONFIG_GEN_BLE}" STREQUAL "ble1m2s1bredr1")
 		set(CONFIG_BT_BREDR 1)
 		set(CONFIG_BLE_PDS 1)
 		set(CONFIG_EM_SIZE 32)
@@ -772,7 +772,22 @@ if(("${CHIP}" STREQUAL "qcc743") OR ("${CHIP}" STREQUAL "qcc74x_undef"))
 		set(CONFIG_BIS 0)
 		set(CONFIG_CTE 0)
 		set(CONFIG_LE_PWR_CTRL 0)
-		endif()
+	endif()
+#		
+#ifeq ($(PRIV_CONFIG_GEN_BLE),mfg)
+#CONFIG_EM_SIZE := 32
+#CONFIG_BLE_MFG := 1
+#CONFIG_BT_MFG := 1
+#CONFIG_BLE_MFG_HCI_CMD := 1
+#CONFIG_BT_MFG_HCI_CMD := 1
+#endif
+	if("${PRIV_CONFIG_GEN_BLE}" STREQUAL "mfg")
+		set(CONFIG_EM_SIZE 32)
+		set(CONFIG_BLE_MFG 1)
+		set(CONFIG_BT_MFG 1)
+		set(CONFIG_BLE_MFG_HCI_CMD 1)
+		set(CONFIG_BT_MFG_HCI_CMD 1)
+	endif()
 endif()
 # 
 # ifndef CONFIG_FREERTOS_DISABLE
@@ -883,6 +898,9 @@ sdk_add_compile_definitions(-DCFG_BLE)
 # ifeq ($(CONFIG_BT_HFP),1)
 # CFLAGS += -DCONFIG_BT_HFP
 # endif
+#ifeq($(CONFIG_BT_BREDR_PTS),1)
+#CFLAGS += -DBR_EDR_PTS_TEST
+#endif
 # CFLAGS += -DCONFIG_BT_BREDR
 # CFLAGS += -DCONFIG_MAX_SCO=2
 # CFLAGS += -DSBC_DEC_INCLUDED
@@ -904,6 +922,7 @@ else()
 	endif()
 	sdk_add_compile_definitions_ifdef(CONFIG_BT_AVRCP -DCONFIG_BT_AVRCP)
 	sdk_add_compile_definitions_ifdef(CONFIG_BT_HFP -DCONFIG_BT_HFP)
+	sdk_add_compile_definitions_ifdef(CONFIG_BT_BREDR_PTS -DBR_EDR_PTS_TEST)
 	sdk_add_compile_definitions(
 		-DCONFIG_BT_BREDR
 		-DCONFIG_MAX_SCO=2
@@ -1076,6 +1095,7 @@ sdk_ifndef(CONFIG_BT_MESH_MODEL 0)
 # ifeq ($(CONFIG_BT_MESH),1)
 # CONFIG_BT_MESH_CLI ?= 1
 # CONFIG_BT_MESH_PB_ADV?=1
+# CONFIG_BT_MESH_RELAY?=1
 # CONFIG_BT_MESH_PB_GATT?=1
 # CONFIG_BT_MESH_FRIEND?=1
 # CONFIG_BT_MESH_LOW_POWER?=1
@@ -1102,8 +1122,9 @@ sdk_ifndef(CONFIG_BT_MESH_MODEL 0)
 # CONFIG_BT_MESH_NODE_SEND_CFGCLI_MSG?=0 # Config mesh normal node can send configure client message or not.
 # endif
 if(CONFIG_BT_MESH)
-	sdk_ifndef(CONFIG_BT_MESH_CLI 1)
+    sdk_ifndef(CONFIG_BT_MESH_CLI 1)
     sdk_ifndef(CONFIG_BT_MESH_PB_ADV 1)
+    sdk_ifndef(CONFIG_BT_MESH_RELAY 1)
     sdk_ifndef(CONFIG_BT_MESH_PB_GATT 1)
     sdk_ifndef(CONFIG_BT_MESH_FRIEND 1)
     sdk_ifndef(CONFIG_BT_MESH_LOW_POWER 1)
@@ -1239,7 +1260,7 @@ sdk_add_compile_definitions_ifdef(CONFIG_BT_GEN_RANDOM_BY_SW -DCONFIG_BT_GEN_RAN
 # CFLAGS += -DCFG_BLE_PDS
 # CFLAGS += -DCONFIG_HW_SEC_ENG_DISABLE
 # endif
-sdk_add_compile_definitions_ifdef(CONFIG_BLE_PDS -DCONFIG_BLE_PDS -DCONFIG_HW_SEC_ENG_DISABLE)
+sdk_add_compile_definitions_ifdef(CONFIG_BLE_PDS -DCFG_BLE_PDS -DCONFIG_HW_SEC_ENG_DISABLE)
 # 
 # ifeq ($(CONFIG_EM_HEAP_DISABLE),1)
 # CFLAGS += -DCFG_EM_HEAP_DISABLE
@@ -1556,7 +1577,9 @@ sdk_add_compile_definitions_ifdef(CONFIG_AUTO_PTS -DCONFIG_AUTO_PTS)
 # endif
 # endif
 if(CONFIG_BT_MESH)
-	sdk_add_compile_definitions_ifdef(CONFIG_AUTO_PTS -DCONFIG_BT_MESH_IV_UPDATE_TEST)
+	if(CONFIG_BT_MESH_PTS OR CONFIG_AUTO_PTS)
+		sdk_add_compile_definitions(-DCONFIG_BT_MESH_IV_UPDATE_TEST)
+	endif()
 	if(CONFIG_AUTO_PTS)
 		set(CONFIG_BT_MESH_CLI 0)
 	endif()
@@ -1614,8 +1637,11 @@ sdk_add_compile_definitions_ifdef(CONFIG_USE_XTAL32K -DCFG_USE_XTAL32K)
 # #CFLAGS   += -Wno-unused-but-set-variable \
 # #CFLAGS   += -Wno-format
 # 
-# BTBLE_SDK_VER := $(shell cd $(COMPONENT_PATH) && git --git-dir=.git describe --abbrev=8 --tags --dirty --always)
+# BTBLE_PATH := $(abspath $(dir $(COMPONENT_PATH)))
+# ifeq ($(notdir $(BTBLE_PATH)),ble)
+# BTBLE_SDK_VER := $(shell cd $(BTBLE_PATH) && git --git-dir=.git describe --abbrev=8 --tags --dirty --always)
 # CFLAGS += -DBTBLE_SDK_VER=\"$(BTBLE_SDK_VER)\"
+# endif
 execute_process(COMMAND git --git-dir=.git describe --abbrev=8 --tags --dirty --always
                 RESULT_VARIABLE USING_GIT
                 OUTPUT_VARIABLE version

@@ -95,7 +95,7 @@ int bt_mesh_get_light_lc_trans_time(struct bt_mesh_model *model, u8_t *trans_tim
      * transition time. Currently directly use Light LC Time Run On property value.
      * Unit: Millisecond, range: [0, 16777214(0xFFFFFE)]
      */
-    #if defined(CONFIG_AUTO_PTS)
+    #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     switch(srv->lc->state_machine.state){
         case LC_OFF:
             value = 0;
@@ -281,8 +281,8 @@ struct net_buf_simple *bt_mesh_server_get_pub_msg(struct bt_mesh_model *model, u
 
     buf = model->pub->msg;
     if (buf->size < msg_len) {
-        BT_ERR("%s, Too small publication msg size %d, model 0x%04x",
-               __func__, buf->size, model->id);
+        BT_ERR("%s, Too small publication msg size %d,msg_len %d model 0x%04x",
+               __func__, buf->size, msg_len, model->id);
         return NULL;
     }
 

@@ -1,0 +1,8 @@
+# Changes
+## 2024-03-28
+1. Add LPN CLI Command: Friend Req, Poll, Friend Clear
+
+## 2024-03-27
+1. BLEMESH Use QCC74x_COMP_ID replace BT_COMP_ID_LF (PTS Case: MESH/SR/HM/CFS/BV-01-C MESH/SR/HM/CFS/BV-03-C)
+
+

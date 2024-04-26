@@ -2,19 +2,7 @@
  *  Query Mbed TLS compile time configurations from config.h
  *
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may
- *  not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 
 #if !defined(MBEDTLS_CONFIG_FILE)
@@ -110,11 +98,12 @@
  */
 #define MACRO_EXPANSION_TO_STR(macro)   MACRO_NAME_TO_STR(macro)
 #define MACRO_NAME_TO_STR(macro)                                        \
-    mbedtls_printf( "%s", strlen( #macro "" ) > 0 ? #macro "\n" : "" )
+    mbedtls_printf("%s", strlen( #macro "") > 0 ? #macro "\n" : "")
 
 #define STRINGIFY(macro)  #macro
 #define OUTPUT_MACRO_NAME_VALUE(macro) mbedtls_printf( #macro "%s\n",   \
-    ( STRINGIFY(macro) "" )[0] != 0 ? "=" STRINGIFY(macro) : "" )
+                                                       (STRINGIFY(macro) "")[0] != 0 ? "=" STRINGIFY( \
+                                                           macro) : "")
 
 #if defined(_MSC_VER)
 /*
@@ -129,9 +118,9 @@
 #pragma warning(disable:4003)
 #endif /* _MSC_VER */
 
-int query_config( const char *config )
+int query_config(const char *config)
 {
-#if defined(MBEDTLS_HAVE_ASM)
+    #if defined(MBEDTLS_HAVE_ASM)
     if( strcmp( "MBEDTLS_HAVE_ASM", config ) == 0 )
     {
         MACRO_EXPANSION_TO_STR( MBEDTLS_HAVE_ASM );
@@ -258,6 +247,22 @@ int query_config( const char *config )
         return( 0 );
     }
 #endif /* MBEDTLS_PLATFORM_SETUP_TEARDOWN_ALT */
+
+#if defined(MBEDTLS_PLATFORM_GMTIME_R_ALT)
+    if( strcmp( "MBEDTLS_PLATFORM_GMTIME_R_ALT", config ) == 0 )
+    {
+        MACRO_EXPANSION_TO_STR( MBEDTLS_PLATFORM_GMTIME_R_ALT );
+        return( 0 );
+    }
+#endif /* MBEDTLS_PLATFORM_GMTIME_R_ALT */
+
+#if defined(MBEDTLS_PLATFORM_ZEROIZE_ALT)
+    if( strcmp( "MBEDTLS_PLATFORM_ZEROIZE_ALT", config ) == 0 )
+    {
+        MACRO_EXPANSION_TO_STR( MBEDTLS_PLATFORM_ZEROIZE_ALT );
+        return( 0 );
+    }
+#endif /* MBEDTLS_PLATFORM_ZEROIZE_ALT */
 
 #if defined(MBEDTLS_DEPRECATED_WARNING)
     if( strcmp( "MBEDTLS_DEPRECATED_WARNING", config ) == 0 )
@@ -890,6 +895,14 @@ int query_config( const char *config )
         return( 0 );
     }
 #endif /* MBEDTLS_REMOVE_3DES_CIPHERSUITES */
+
+#if defined(MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)
+    if( strcmp( "MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED", config ) == 0 )
+    {
+        MACRO_EXPANSION_TO_STR( MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED );
+        return( 0 );
+    }
+#endif /* MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED */
 
 #if defined(MBEDTLS_ECP_DP_SECP192R1_ENABLED)
     if( strcmp( "MBEDTLS_ECP_DP_SECP192R1_ENABLED", config ) == 0 )
@@ -1594,6 +1607,14 @@ int query_config( const char *config )
         return( 0 );
     }
 #endif /* MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH */
+
+#if defined(MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE)
+    if( strcmp( "MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE", config ) == 0 )
+    {
+        MACRO_EXPANSION_TO_STR( MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE );
+        return( 0 );
+    }
+#endif /* MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE */
 
 #if defined(MBEDTLS_TEST_CONSTANT_FLOW_MEMSAN)
     if( strcmp( "MBEDTLS_TEST_CONSTANT_FLOW_MEMSAN", config ) == 0 )
@@ -2843,43 +2864,11 @@ int query_config( const char *config )
     }
 #endif /* MBEDTLS_X509_MAX_FILE_PATH_LEN */
 
-#if defined(MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE)
-    if( strcmp( "MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE );
-        return( 0 );
-    }
-#endif /* MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE */
-
-#if defined(MBEDTLS_PLATFORM_ZEROIZE_ALT)
-    if( strcmp( "MBEDTLS_PLATFORM_ZEROIZE_ALT", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_PLATFORM_ZEROIZE_ALT );
-        return( 0 );
-    }
-#endif /* MBEDTLS_PLATFORM_ZEROIZE_ALT */
-
-#if defined(MBEDTLS_PLATFORM_GMTIME_R_ALT)
-    if( strcmp( "MBEDTLS_PLATFORM_GMTIME_R_ALT", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_PLATFORM_GMTIME_R_ALT );
-        return( 0 );
-    }
-#endif /* MBEDTLS_PLATFORM_GMTIME_R_ALT */
-
-#if defined(MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)
-    if( strcmp( "MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED );
-        return( 0 );
-    }
-#endif /* MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED */
-
-    /* If the symbol is not found, return an error */
-    return( 1 );
+ /* If the symbol is not found, return an error */
+    return 1;
 }
 
-void list_config( void )
+void list_config(void)
 {
     #if defined(MBEDTLS_HAVE_ASM)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_HAVE_ASM);
@@ -2944,6 +2933,14 @@ void list_config( void )
 #if defined(MBEDTLS_PLATFORM_SETUP_TEARDOWN_ALT)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PLATFORM_SETUP_TEARDOWN_ALT);
 #endif /* MBEDTLS_PLATFORM_SETUP_TEARDOWN_ALT */
+
+#if defined(MBEDTLS_PLATFORM_GMTIME_R_ALT)
+    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PLATFORM_GMTIME_R_ALT);
+#endif /* MBEDTLS_PLATFORM_GMTIME_R_ALT */
+
+#if defined(MBEDTLS_PLATFORM_ZEROIZE_ALT)
+    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PLATFORM_ZEROIZE_ALT);
+#endif /* MBEDTLS_PLATFORM_ZEROIZE_ALT */
 
 #if defined(MBEDTLS_DEPRECATED_WARNING)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_DEPRECATED_WARNING);
@@ -3260,6 +3257,10 @@ void list_config( void )
 #if defined(MBEDTLS_REMOVE_3DES_CIPHERSUITES)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_REMOVE_3DES_CIPHERSUITES);
 #endif /* MBEDTLS_REMOVE_3DES_CIPHERSUITES */
+
+#if defined(MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)
+    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED);
+#endif /* MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED */
 
 #if defined(MBEDTLS_ECP_DP_SECP192R1_ENABLED)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_ECP_DP_SECP192R1_ENABLED);
@@ -3612,6 +3613,10 @@ void list_config( void )
 #if defined(MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH);
 #endif /* MBEDTLS_SSL_VARIABLE_BUFFER_LENGTH */
+
+#if defined(MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE)
+    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE);
+#endif /* MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE */
 
 #if defined(MBEDTLS_TEST_CONSTANT_FLOW_MEMSAN)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_TEST_CONSTANT_FLOW_MEMSAN);
@@ -4236,22 +4241,6 @@ void list_config( void )
 #if defined(MBEDTLS_X509_MAX_FILE_PATH_LEN)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_X509_MAX_FILE_PATH_LEN);
 #endif /* MBEDTLS_X509_MAX_FILE_PATH_LEN */
-
-#if defined(MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE);
-#endif /* MBEDTLS_TLS_DEFAULT_ALLOW_SHA1_IN_KEY_EXCHANGE */
-
-#if defined(MBEDTLS_PLATFORM_ZEROIZE_ALT)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PLATFORM_ZEROIZE_ALT);
-#endif /* MBEDTLS_PLATFORM_ZEROIZE_ALT */
-
-#if defined(MBEDTLS_PLATFORM_GMTIME_R_ALT)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PLATFORM_GMTIME_R_ALT);
-#endif /* MBEDTLS_PLATFORM_GMTIME_R_ALT */
-
-#if defined(MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED);
-#endif /* MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED */
 
 
 }

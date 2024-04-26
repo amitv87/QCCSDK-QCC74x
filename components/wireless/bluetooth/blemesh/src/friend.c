@@ -993,7 +993,7 @@ init_friend:
 	frnd->lpn_counter = sys_be16_to_cpu(msg->lpn_counter);
 	frnd->clear.frnd = sys_be16_to_cpu(msg->prev_addr);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	BT_PTS("LPN 0x%04x rssi %d recv_delay %u poll_to %ums",
 	       frnd->lpn, rx->ctx.recv_rssi, frnd->recv_delay, frnd->poll_to);
 #else

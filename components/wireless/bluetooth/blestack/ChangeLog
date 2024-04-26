@@ -1,5 +1,29 @@
 # Changes
 
+## 2024-04-10
+Change the max adv length from 30 to 31 bytes in set_ad_and_rsp_d function
+
+## 2024-04-8
+1.Fix an error when enable disable ble repeatedly(qcc74x sdk).
+
+## 2024-03-27
+1.Fix CVE Cases :cve-2021-3436, cve-2022-1041, cve-2022-1042, cve-2022-2993, cve-2023-4264, cve-2023-5753
+
+## 2024-03-18
+1.Optimize bl hci wrapper layer to fix the assert issue caused by lack of cache space during att rx test in a corner case.
+
+## 2024-03-15
+1.Fix rx acl len mismatch issue when pds is enabled in a corner case.
+
+## 2024-03-14
+1.Bring up A2DP source function
+
+## 2024-03-04
+1.Fix the issue that directed adv fails to be started because the conditions for checking whether adv can be initiated are inappropriate.
+
+## 2024-02-23
+1.Fix the assert issue in disconnection when master does auto connection from whitelist.
+
 ## 2024-02-02
 1.Not force it to write ccc for existed subscriptions in blestack when connected to avoid the att timeout issue that happens when there are multiple subscriptions.
   Make upper layer write ccc if needed when connected.

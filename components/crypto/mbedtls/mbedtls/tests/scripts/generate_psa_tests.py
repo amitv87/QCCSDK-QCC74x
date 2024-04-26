@@ -6,19 +6,7 @@ generate only the specified files.
 """
 
 # Copyright The Mbed TLS Contributors
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License"); you may
-# not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
 
 import enum
 import re
@@ -151,8 +139,8 @@ def test_case_for_key_type_not_supported(
     tc.set_arguments([key_type] + list(args))
     return tc
 
-class NotSupported:
-    """Generate test cases for when something is not supported."""
+class KeyTypeNotSupported:
+    """Generate test cases for when a key type is not supported."""
 
     def __init__(self, info: Information) -> None:
         self.constructors = info.constructors
@@ -354,7 +342,7 @@ class OpFail:
                 dependencies[i] = '!' + dep
         tc.set_dependencies(dependencies)
         tc.set_function(category.name.lower() + '_fail')
-        arguments = []
+        arguments = [] # type: List[str]
         if kt:
             key_material = kt.key_material(kt.sizes_to_test()[0])
             arguments += [key_type, test_case.hex_string(key_material)]
@@ -521,7 +509,7 @@ class StorageFormat:
             key_type: psa_storage.Expr, bits: int,
             alg: psa_storage.Expr
     ) -> bool:
-        """Whether to the given key with the given algorithm.
+        """Whether to exercise the given key with the given algorithm.
 
         Normally only the type and algorithm matter for compatibility, and
         this is handled in crypto_knowledge.KeyType.can_do(). This function
@@ -902,7 +890,7 @@ class PSATestGenerator(test_data_generation.TestGenerator):
         'test_suite_psa_crypto_generate_key.generated':
         lambda info: KeyGenerate(info).test_cases_for_key_generation(),
         'test_suite_psa_crypto_not_supported.generated':
-        lambda info: NotSupported(info).test_cases_for_not_supported(),
+        lambda info: KeyTypeNotSupported(info).test_cases_for_not_supported(),
         'test_suite_psa_crypto_op_fail.generated':
         lambda info: OpFail(info).all_test_cases(),
         'test_suite_psa_crypto_storage_format.current':

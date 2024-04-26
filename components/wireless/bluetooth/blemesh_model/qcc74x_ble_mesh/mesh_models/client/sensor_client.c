@@ -594,7 +594,7 @@ int bt_mesh_sensor_cli_init(struct bt_mesh_model *model)
     }
     model->op = sensor_cli_op;
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if (model->pub) {
         model->pub->update = btc_ble_mesh_model_publish_update;
     }

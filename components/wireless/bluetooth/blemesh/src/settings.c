@@ -46,21 +46,6 @@
 /* Added by qcc74x for mesh sequence compensate, when power up */
 #define BT_MESH_SEQ_PWRON_COMPENSATE (100) 
 
-/**
- * Function used to read the data from the settings storage in
- * h_set handler implementations.
- *
- * @param[in] cb_arg  arguments for the read function. Appropriate cb_arg is
- *                    transferred to h_set handler implementation by
- *                    the backend.
- * @param[out] data  the destination buffer
- * @param[in] len    length of read
- *
- * @return positive: Number of bytes read, 0: key-value pair is deleted.
- *                   On error returns -ERRNO code.
- */ /* Added by qcc74x */
-typedef ssize_t (*settings_read_cb)(void *cb_arg, void *data, size_t len);
-
 /* Added by qcc74x */
 static int settings_name_next(const char *name, const char **next);
 /* Added by qcc74x */
@@ -197,7 +182,7 @@ static struct {
 	struct cfg_val cfg;
 } stored_cfg;
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 int bt_mesh_settings_set(settings_read_cb read_cb, void *cb_arg,
 			 void *out, size_t read_len)
 {

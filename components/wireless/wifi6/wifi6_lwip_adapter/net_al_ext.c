@@ -45,22 +45,26 @@ int net_dhcpd_start(net_al_if_t net_if, int start, int limit)
 
 static void net_if_disable_arp_for_us(net_al_if_t net_if)
 {
+#if LWIP_QUICK_CONNECT
     struct addr_ext ext;
     inet_if_t *nif = (inet_if_t *)net_if;
 
     netif_get_addr_ext(nif, &ext);
     ext.arp_for_us_disable = 1;
     netif_set_addr_ext(nif, &ext);
+#endif
 }
 
 static void net_if_enable_arp_for_us(net_al_if_t net_if)
 {
+#if LWIP_QUICK_CONNECT
     struct addr_ext ext;
     inet_if_t *nif = (inet_if_t *)net_if;
 
     netif_get_addr_ext(nif, &ext);
     ext.arp_for_us_disable = 0;
     netif_set_addr_ext(nif, &ext);
+#endif
 }
 
 static void net_if_set_default(net_al_if_t net_if)
@@ -494,6 +498,7 @@ static void qc_callback(struct netif *net_if)
     platform_post_event(EV_WIFI, CODE_WIFI_ON_GOT_IP);
 }
 
+#if LWIP_QUICK_CONNECT
 static void net_quick_dhcp_restore(net_al_if_t net_if)
 {
     inet_if_t *nif = (inet_if_t *)net_if;
@@ -534,13 +539,14 @@ static void net_quick_dhcp_stop(net_al_if_t net_if)
         dhcp->request_timeout = 0;
     }
 }
+#endif
 
 #ifdef CFG_IPV6
 static void net_al_create_ip6_linklocal_address(void)
 {
     LOCK_TCPIP_CORE();
     netif_create_ip6_linklocal_address(fhost_to_net_if(MGMR_VIF_STA), 1);
-    fhost_env.vif[MGMR_VIF_STA].net_if->ip6_autoconfig_enabled = 1;
+    netif_set_ip6_autoconfig_enabled(((struct netif *)fhost_env.vif[MGMR_VIF_STA].net_if), true);
     UNLOCK_TCPIP_CORE();
 }
 #endif
@@ -554,9 +560,13 @@ void net_al_ext_dhcp_connect(void)
 #endif
     net_if_disable_arp_for_us(net_if);
     if (wifiMgmr.sta_connect_param.use_dhcp) {
+#if LWIP_QUICK_CONNECT
         if (wifiMgmr.sta_connect_param.quick_connect) {
             net_quick_dhcp_restore(net_if);
-        } else {
+        }
+        else
+#endif
+        {
             printf("start dhcping ... \r\n");
             rtos_task_create(fhost_wpa_connected_task, "fhost_wpa_connected_task",
                              WPA_CONNECTED_TASK, 512, NULL, fhost_wpa_priority, NULL);
@@ -571,10 +581,14 @@ void net_al_ext_dhcp_connect(void)
 void net_al_ext_dhcp_disconnect(void)
 {
     if (wifiMgmr.sta_connect_param.use_dhcp) {
+#if LWIP_QUICK_CONNECT
         if (wifiMgmr.sta_connect_param.quick_connect) {
             net_al_if_t netif = fhost_to_net_if(MGMR_VIF_STA);
             net_quick_dhcp_stop(netif);
-        } else {
+        }
+        else
+#endif
+        {
             wifi_sta_dhcpc_stop(MGMR_VIF_STA);
         }
     }

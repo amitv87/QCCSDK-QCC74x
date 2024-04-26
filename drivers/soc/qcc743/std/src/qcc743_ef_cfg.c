@@ -1,6 +1,7 @@
 #include "qcc74x_efuse.h"
 #include "qcc743_ef_cfg.h"
 #include "hardware/ef_data_reg.h"
+#include "hardware/glb_reg.h"
 
 static const qcc74x_ef_ctrl_com_trim_cfg_t trim_list[] = {
     {
@@ -316,8 +317,43 @@ void qcc74x_efuse_get_device_info(qcc74x_efuse_device_info_type *device_info)
         case 1:
             device_info->psram_info_name = "WB_4MB";
             break;
+        case 2:
+            device_info->psram_info_name = "WB_8MB";
+            break;
+        case 3:
+            device_info->psram_info_name = "WB_16MB";
+            break;
         default:
             device_info->psram_info_name = "ERROR";
+    }
+
+    QCC74x_WR_REG(GLB_BASE, GLB_PROC_MON, 0x00000401);
+    arch_delay_us(110);
+    QCC74x_WR_REG(GLB_BASE, GLB_PROC_MON, 0x00000403);
+    arch_delay_us(110);
+    QCC74x_WR_REG(GLB_BASE, GLB_PROC_MON, 0x00000413);
+    arch_delay_us(110);
+    QCC74x_WR_REG(GLB_BASE, GLB_PROC_MON, 0x00000433);
+    arch_delay_us(1100);
+    tmpval = QCC74x_RD_REG(GLB_BASE, GLB_PROC_MON);
+    tmpval = QCC74x_GET_REG_BITS_VAL(tmpval, GLB_RING_FREQ);
+    device_info->process_corner = tmpval;
+    if (device_info->process_corner <= 480) {
+        snprintf(device_info->process_corner_name, sizeof(device_info->process_corner_name), "%s", "SS");
+    } else if (device_info->process_corner < 540) {
+        uint16_t ss, tt;
+        ss = ((device_info->process_corner - 480) * 100 + 30) / 60;
+        tt = 100 - ss;
+        snprintf(device_info->process_corner_name, sizeof(device_info->process_corner_name), "%d%%TT+%d%%SS", ss, tt);
+    } else if (device_info->process_corner == 540) {
+        snprintf(device_info->process_corner_name, sizeof(device_info->process_corner_name), "%s", "TT");
+    } else if (device_info->process_corner < 610) {
+        uint16_t tt, ff;
+        tt = ((device_info->process_corner - 540) * 100 + 35) / 70;
+        ff = 100 - tt;
+        snprintf(device_info->process_corner_name, sizeof(device_info->process_corner_name), "%d%%TT+%d%%FF", ff, tt);
+    } else { /* >= 610 */
+        snprintf(device_info->process_corner_name, sizeof(device_info->process_corner_name), "%s", "FF");
     }
 }
 

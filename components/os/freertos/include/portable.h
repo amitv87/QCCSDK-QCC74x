@@ -1,5 +1,5 @@
 /*
- * FreeRTOS Kernel V10.4.6
+ * FreeRTOS Kernel V10.6.2
  * Copyright (C) 2021 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -53,9 +53,7 @@
     #include "portmacro.h"
 #endif
 
-#if portBYTE_ALIGNMENT == 128
-    #define portBYTE_ALIGNMENT_MASK    ( 0x007f )
-#elif portBYTE_ALIGNMENT == 32
+#if portBYTE_ALIGNMENT == 32
     #define portBYTE_ALIGNMENT_MASK    ( 0x001f )
 #elif portBYTE_ALIGNMENT == 16
     #define portBYTE_ALIGNMENT_MASK    ( 0x000f )
@@ -92,10 +90,6 @@
     #define configSTACK_ALLOCATION_FROM_SEPARATE_HEAP    0
 #endif
 
-#ifndef portHAS_STAT_TRAP_TIME
-    #define portHAS_STAT_TRAP_TIME 0
-#endif
-
 /* *INDENT-OFF* */
 #ifdef __cplusplus
     extern "C" {
@@ -116,13 +110,15 @@
                                              StackType_t * pxEndOfStack,
                                              TaskFunction_t pxCode,
                                              void * pvParameters,
-                                             BaseType_t xRunPrivileged ) PRIVILEGED_FUNCTION;
+                                             BaseType_t xRunPrivileged,
+                                             xMPU_SETTINGS * xMPUSettings ) PRIVILEGED_FUNCTION;
     #else
         StackType_t * pxPortInitialiseStack( StackType_t * pxTopOfStack,
                                              TaskFunction_t pxCode,
                                              void * pvParameters,
-                                             BaseType_t xRunPrivileged ) PRIVILEGED_FUNCTION;
-    #endif
+                                             BaseType_t xRunPrivileged,
+                                             xMPU_SETTINGS * xMPUSettings ) PRIVILEGED_FUNCTION;
+    #endif /* if ( portHAS_STACK_OVERFLOW_CHECKING == 1 ) */
 #else /* if ( portUSING_MPU_WRAPPERS == 1 ) */
     #if ( portHAS_STACK_OVERFLOW_CHECKING == 1 )
         StackType_t * pxPortInitialiseStack( StackType_t * pxTopOfStack,
@@ -179,6 +175,8 @@ void vPortGetHeapStats( HeapStats_t * pxHeapStats );
  * Map to the memory management routines required for the port.
  */
 void * pvPortMalloc( size_t xSize ) PRIVILEGED_FUNCTION;
+void * pvPortCalloc( size_t xNum,
+                     size_t xSize ) PRIVILEGED_FUNCTION;
 void vPortFree( void * pv ) PRIVILEGED_FUNCTION;
 void vPortInitialiseBlocks( void ) PRIVILEGED_FUNCTION;
 size_t xPortGetFreeHeapSize( void ) PRIVILEGED_FUNCTION;
@@ -190,6 +188,19 @@ size_t xPortGetMinimumEverFreeHeapSize( void ) PRIVILEGED_FUNCTION;
 #else
     #define pvPortMallocStack    pvPortMalloc
     #define vPortFreeStack       vPortFree
+#endif
+
+#if ( configUSE_MALLOC_FAILED_HOOK == 1 )
+
+/**
+ * task.h
+ * @code{c}
+ * void vApplicationMallocFailedHook( void )
+ * @endcode
+ *
+ * This hook function is called when allocation failed.
+ */
+    void vApplicationMallocFailedHook( void ); /*lint !e526 Symbol not defined as it is an application callback. */
 #endif
 
 /*
@@ -220,14 +231,36 @@ void vPortEndScheduler( void ) PRIVILEGED_FUNCTION;
                                     uint32_t ulStackDepth ) PRIVILEGED_FUNCTION;
 #endif
 
-    void vPortRegisterReportIrqCost(void (*pvFun)(int irqnum, uint64_t cost));
-    void vPortRegisterReportExpCost(void (*pvFun)(int irqnum, uint64_t cost));
-    void vPortUpdateSwitchOutExtra( uint64_t ullNow );
-    uint64_t ullPortGetRunningTrapCostAndSwitchExtra( void );
-    void vPortResetRunningTrapCost( void );
-    uint64_t ullPortGetRunningTrapCostFromTask( void );
-    uint32_t ulPortGetSwitchInExtra( void );
-    uint64_t ullPortGetTrapAllCurrentTime( void );
+/**
+ * @brief Checks if the calling task is authorized to access the given buffer.
+ *
+ * @param pvBuffer The buffer which the calling task wants to access.
+ * @param ulBufferLength The length of the pvBuffer.
+ * @param ulAccessRequested The permissions that the calling task wants.
+ *
+ * @return pdTRUE if the calling task is authorized to access the buffer,
+ *         pdFALSE otherwise.
+ */
+#if ( portUSING_MPU_WRAPPERS == 1 )
+    BaseType_t xPortIsAuthorizedToAccessBuffer( const void * pvBuffer,
+                                                uint32_t ulBufferLength,
+                                                uint32_t ulAccessRequested ) PRIVILEGED_FUNCTION;
+#endif
+
+/**
+ * @brief Checks if the calling task is authorized to access the given kernel object.
+ *
+ * @param lInternalIndexOfKernelObject The index of the kernel object in the kernel
+ *                                     object handle pool.
+ *
+ * @return pdTRUE if the calling task is authorized to access the kernel object,
+ *         pdFALSE otherwise.
+ */
+#if ( ( portUSING_MPU_WRAPPERS == 1 ) && ( configUSE_MPU_WRAPPERS_V1 == 0 ) )
+
+    BaseType_t xPortIsAuthorizedToAccessKernelObject( int32_t lInternalIndexOfKernelObject ) PRIVILEGED_FUNCTION;
+
+#endif
 
 /* *INDENT-OFF* */
 #ifdef __cplusplus

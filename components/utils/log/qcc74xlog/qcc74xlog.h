@@ -581,6 +581,12 @@ extern void qcc74xlog_unix2time(uint32_t timestamp, qcc74xlog_tm_t *time);
 #define QCC74xLOG_LEVEL_ENABLE QCC74xLOG_LEVEL_INFO
 #endif
 
+#ifdef _WIN32_DELIMITER
+#define __PATH_DELIMITER '\\'
+#else
+#define __PATH_DELIMITER '/'
+#endif
+
 #ifndef __QCC74xLOG_FILENAME__
 #ifndef QCC74xLOG_FILENAME_ENABLE
 #define __QCC74xLOG_FILENAME__ ""
@@ -588,7 +594,7 @@ extern void qcc74xlog_unix2time(uint32_t timestamp, qcc74xlog_tm_t *time);
 #ifndef QCC74xLOG_SHORT_FILENAME
 #define __QCC74xLOG_FILENAME__ __FILE__
 #else
-#define __QCC74xLOG_FILENAME__ (strrchr(__FILE__, '/') + 1)
+#define __QCC74xLOG_FILENAME__ (strrchr(__FILE__, __PATH_DELIMITER) + 1)
 #endif
 #endif
 #endif

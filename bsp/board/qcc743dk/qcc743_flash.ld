@@ -102,10 +102,10 @@ SECTIONS
         /* _dump_sections for qcc74x_coredump.c*/
         . = ALIGN(4);
         PROVIDE( _dump_sections = ABSOLUTE(.));
-        LONG(ORIGIN(ram_memory));
-        LONG(LENGTH(ram_memory));
+        LONG(ORIGIN(ram_memory) + (__nocache_noinit_ram_data_end__ - ORIGIN(ram_nocache)));
+        LONG(LENGTH(ram_memory) - (__nocache_noinit_ram_data_end__ - ORIGIN(ram_nocache)));
         LONG(ORIGIN(ram_nocache));
-        LONG(LENGTH(ram_nocache));
+        LONG(__nocache_noinit_ram_data_end__ - ORIGIN(ram_nocache));
         LONG(ORIGIN(ram_wifi));
         LONG(LENGTH(ram_wifi));
         /*
@@ -120,6 +120,13 @@ SECTIONS
 
         . = ALIGN(4);
         __text_code_end__ = .;
+    } > xip_memory
+
+    .build_id :
+    {
+        . = ALIGN(4);
+        PROVIDE( elf_build_id = ABSOLUTE(.) + 16);
+        *(.note.gnu.build-id)
     } > xip_memory
 
     . = ALIGN(4);

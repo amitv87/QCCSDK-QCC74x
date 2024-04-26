@@ -246,8 +246,8 @@ const struct cli_command PtsCmdSet[] STATIC_CLI_CMD_ATTRIBUTE = {
     [peer irk]\r\n", pts_ble_add_peer_irk},
     #if defined(PTS_TEST_CASE_INSUFFICIENT_KEY)
     {"pts_set_enc_key_size", "\r\npts_set_enc_key_size:[Set key size]\r\n\
-    [size,  e.g.0,1]\r\n\
-    [index, e.g.0,1]\r\n", pts_set_enc_key_size},
+    [size:  e.g.0 1]\r\n\
+    [index: e.g.0 1]\r\n", pts_set_enc_key_size},
     #endif
 
 #if defined(CONFIG_BT_OBSERVER)

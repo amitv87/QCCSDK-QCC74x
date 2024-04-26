@@ -215,7 +215,7 @@ static void prov_fail(u8_t reason)
 	}
 }
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 /* add by qcc74x */
 void prov_set_method(uint8_t method, uint8_t action, uint8_t size)
 {
@@ -690,7 +690,7 @@ static void send_confirm(void)
 
 	prov_buf_init(&cfm, PROV_CONFIRM);
 
-	#if defined(CONFIG_AUTO_PTS)
+	#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	if (atomic_test_bit(link.flags, PROVISIONER)) {
 		if (bt_mesh_prov_conf(link.conf_key, link.rand, link.auth,
 				link.conf)) {
@@ -774,7 +774,7 @@ int bt_mesh_input_string(const char *str)
 	return 0;
 }
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 /* Add by qcc74xab */
 int bt_mesh_prov_remote_pub_key_set(const uint8_t public_key[64])
 {
@@ -1165,7 +1165,7 @@ static void prov_confirm(const u8_t *data)
 {
 	BT_DBG("Remote Confirm: %s", bt_hex(data, 16));
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	/* MESH/PVNR/PROV/BI-18-C */
 	if (atomic_test_bit(link.flags, PROVISIONER)) {
 		if (!memcmp(data, link.conf, 16)) {
@@ -1315,7 +1315,7 @@ static void prov_recv(const struct prov_bearer *bearer, void *cb_data,
 
 	if (type >= ARRAY_SIZE(prov_handlers)) {
 		BT_ERR("Unknown provisioning PDU type 0x%02x", type);
-		#if defined(CONFIG_AUTO_PTS)
+		#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 		/* MESH/NODE/PROV/BI-15-C */
 		prov_fail(PROV_ERR_NVAL_PDU);
 		#else

@@ -1371,7 +1371,7 @@ static int light_client_init(struct bt_mesh_model *model)
         return -EINVAL;
     }
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if (model->pub) {
         model->pub->update = btc_ble_mesh_model_publish_update;
     }

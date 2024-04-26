@@ -1,0 +1,2 @@
+sdk_add_subdirectory_ifdef(CONFIG_SPISYNC spisync)
+sdk_add_subdirectory_ifdef(CONFIG_ATMOUDLE atmodule)

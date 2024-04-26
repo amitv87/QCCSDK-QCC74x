@@ -91,6 +91,21 @@ enum fhost_msg_type {
     FHOST_MSG_CFGRWNX,
 };
 
+enum fhost_sta_state {
+    FHOST_STA_DISCONNECTED = 0,
+    FHOST_STA_SCANNING,
+    FHOST_STA_CONNECTING,
+    FHOST_STA_4WAY_HANDSHAKE,
+    FHOST_STA_GROUP_HANDSHAKE,
+    FHOST_STA_CONNECTED,
+};
+
+enum fhost_AP_state {
+    FHOST_AP_DISABLED = 0,
+    FHOST_AP_SCANNING,
+    FHOST_AP_ENABLED,
+};
+
 /*
  * TYPE DEFINITIONS
  ****************************************************************************************
@@ -147,6 +162,10 @@ struct fhost_vif_tag
     /// Whether a frame is being resent on this interface
     bool is_resending;
     #endif
+    /// Raw state from wpa
+    int raw_state;
+    /// State
+    int state;
 };
 
 /// Structure used for the inter-task communication

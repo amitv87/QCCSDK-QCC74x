@@ -1,1 +1,1 @@
-#define version_opus "opus_v1.2.0" 
+#define version_opus "opus_v1.2.1" 

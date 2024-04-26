@@ -737,6 +737,14 @@ int wifi_mgmr_sta_keepalive_time_set(uint8_t time_seconds);
 int wifi_mgmr_sta_state_get(void);
 
 /**
+ ****************************************************************************************
+ * @brief get sta specific state
+ * return: state
+ ****************************************************************************************
+ */
+int wifi_mgmr_sta_state_get_ext(void);
+
+/**
  * wifi_mgmr_sta_info_status_code_get
  * Get status code
  * return:
@@ -752,6 +760,14 @@ uint16_t wifi_mgmr_sta_info_status_code_get();
  ****************************************************************************************
  */
 int wifi_mgmr_ap_state_get(void);
+
+/**
+ ****************************************************************************************
+ * @brief get ap specific state
+ * return: state
+ ****************************************************************************************
+ */
+int wifi_mgmr_ap_state_get_ext(void);
 
 /**
  * wifi_mgmr_conf_max_sta

@@ -173,7 +173,11 @@ static const struct bt_mesh_send_cb clear_sent_cb = {
 	.end = friend_clear_sent,
 };
 
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
+int send_friend_clear(void)
+#else
 static int send_friend_clear(void)
+#endif
 {
 	struct bt_mesh_msg_ctx ctx = {
 		.net_idx     = bt_mesh.sub[0].net_idx,
@@ -298,7 +302,11 @@ static const struct bt_mesh_send_cb friend_req_sent_cb = {
 	.start = friend_req_sent,
 };
 
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
+int send_friend_req(struct bt_mesh_lpn *lpn)
+#else
 static int send_friend_req(struct bt_mesh_lpn *lpn)
+#endif
 {
 	const struct bt_mesh_comp *comp = bt_mesh_comp_get();
 	struct bt_mesh_msg_ctx ctx = {
@@ -336,7 +344,7 @@ static void req_sent(u16_t duration, int err, void *user_data)
 	BT_DBG("req 0x%02x duration %u err %d state %s",
 	       lpn->sent_req, duration, err, state2str(lpn->state));
 #endif
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	BT_PTS("req 0x%02x duration %u err %d state %d",
 			lpn->sent_req, duration, err, lpn->state);
 #endif /* CONFIG_AUTO_PTS */
@@ -359,7 +367,7 @@ static void req_sent(u16_t duration, int err, void *user_data)
 		k_delayed_work_submit(&lpn->timer,
 				      K_MSEC(LPN_RECV_DELAY - SCAN_LATENCY));
 	} else {
-		#if defined(CONFIG_AUTO_PTS)
+		#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 		/* Add by qcc74x when test MESH/NODE/FRND/LPN/BI-01-C */
 		lpn_set_state(BT_MESH_LPN_RECV_DELAY);
 		#endif

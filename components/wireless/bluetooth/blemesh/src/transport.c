@@ -528,7 +528,7 @@ static int send_seg(struct bt_mesh_net_tx *net_tx, struct net_buf_simple *sdu,
 		tx->ttl = net_tx->ctx->send_ttl;
 	}
 
-	#if defined(CONFIG_AUTO_PTS)
+	#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	BT_PTS("SeqZero 0x%04x (segs: %u)",
 		(u16_t)(tx->seq_auth & TRANS_SEQ_ZERO_MASK), tx->nack_count);
 	#else
@@ -562,7 +562,7 @@ static int send_seg(struct bt_mesh_net_tx *net_tx, struct net_buf_simple *sdu,
 		len = MIN(sdu->len, seg_len(!!ctl_op));
 		memcpy(buf, net_buf_simple_pull_mem(sdu, len), len);
 
-		#if defined(CONFIG_AUTO_PTS)
+		#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 		BT_PTS("seg %u: %s", seg_o, bt_hex(buf, len));
 		#else
 		BT_DBG("seg %u: %s", seg_o, bt_hex(buf, len));
@@ -629,7 +629,7 @@ static int send_seg(struct bt_mesh_net_tx *net_tx, struct net_buf_simple *sdu,
 	return 0;
 }
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 static struct bt_mesh_app_key *app_key_alloc(uint16_t app_idx)
 {
 	struct bt_mesh_app_key *app_key = NULL;
@@ -1279,7 +1279,7 @@ static int ctl_recv(struct bt_mesh_net_rx *rx, u8_t hdr,
 		return trans_heartbeat(rx, buf);
 	}
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     BT_PTS("rx->local_match[%x]", rx->local_match);
 #endif /* CONFIG_AUTO_PTS */
 	/* Only acks and heartbeats may need processing without local_match */
@@ -1288,7 +1288,7 @@ static int ctl_recv(struct bt_mesh_net_rx *rx, u8_t hdr,
 	}
 
 	if (IS_ENABLED(CONFIG_BT_MESH_FRIEND) && !bt_mesh_lpn_established()) {
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	BT_PTS("ctl_op[%x]", ctl_op);
 #endif /* CONFIG_AUTO_PTS */
 		switch (ctl_op) {

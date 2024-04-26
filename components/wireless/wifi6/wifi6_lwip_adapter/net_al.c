@@ -34,6 +34,7 @@
 #include <lwip/ethip6.h>
 #endif
 
+#include "os.h"
 #include "eloop_rtos.h"
 #include "eloop.h"
 
@@ -322,7 +323,7 @@ end:
 }
 
 #ifdef CFG_IPV6
-static int tcpip_src_addr_cmp(struct mac_eth_hdr *hdr, uint8_t addr[])
+static int tcpip_src_addr_cmp(struct mac_eth_hdr *hdr, const uint8_t addr[])
 {
     int i;
 
@@ -346,11 +347,13 @@ void net_al_input(net_al_rx_t net_buf, void *payload,
         if (skip_after_eth_hdr != 0) {
             memcpy((char*)payload + skip_after_eth_hdr, payload, sizeof(struct mac_eth_hdr));
         }
-        #if CFG_IPV6
-        // Prevent IPv6 DAD check failed
+        #ifdef CFG_IPV6
+        // Workaround:
+        // Drop my broadcast message forwarded by AP to prevent IPv6 DAD check failed
         struct mac_eth_hdr *hdr = (struct mac_eth_hdr *)((char*)payload + offset);
         if (!tcpip_src_addr_cmp(hdr, net_if_get_mac_addr(net_if))) {
-            fhost_rx_buf_push(&buf->net_buf);
+            fhost_rx_buf_push(net_buf);
+            return;
         }
         #endif
         net_if_input(net_buf, net_if, (char*)payload + offset + skip_after_eth_hdr,

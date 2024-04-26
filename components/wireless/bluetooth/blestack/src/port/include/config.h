@@ -603,14 +603,9 @@
 
 /*******************************qcc74x Modification******************************/
 
-#if defined(CFG_IOT_SDK) || defined(QCC74x_MCU_SDK)
 //#define QCC74x_BLE_DISABLE_STATIC_ATTR
 //#define QCC74x_BLE_DISABLE_STATIC_CHANNEL
-#else/* CFG_IOT_SDK QCC74x_MCU_SDK */
-#define QCC74x_BLE_DISABLE_STATIC_ATTR
-#define QCC74x_BLE_DISABLE_STATIC_CHANNEL
-#define QCC74x_BR_DISABLE_STATIC_CHANNEL
-#endif /* CFG_IOT_SDK QCC74x_MCU_SDK */
+
 #define QCC74x_DISABLE_BT
 #define QCC74x_FIXED_IRK 0
 #define QCC74x_DYNAMIC_ALLOC_MEM
@@ -723,7 +718,6 @@ BT_SMP_DIST_ENC_KEY bit is not cleared while remote ENC_KEY is received.*/
  */
 #define QCC74x_BLE_PATCH_ATT_SEND_REQ_WHEN_TX_SEM_BUSY_BUF_ERR
 
-#define BR_EDR_PTS_TEST 0
 #define QCC74x_BLE_ENABLE_TEST_PSM 0
 #define QCC74x_BREDR_SCO_TYPE_FIX
 #define QCC74x_BLE_PATCH_FORCE_UPDATE_GAP_DEVICE_NAME

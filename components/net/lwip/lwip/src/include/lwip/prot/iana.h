@@ -62,8 +62,6 @@ enum lwip_iana_hwtype {
 enum lwip_iana_port_number {
   /** SMTP */
   LWIP_IANA_PORT_SMTP        = 25,
-  /** Domain Name */
-  LWIP_IANA_PORT_DNS_SERVER  = 53,
   /** DHCP server */
   LWIP_IANA_PORT_DHCP_SERVER = 67,
   /** DHCP client */

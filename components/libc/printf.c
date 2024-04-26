@@ -7,6 +7,21 @@
 
 struct qcc74x_device_s *console = NULL;
 
+int putchar(int c)
+{
+    if (console == NULL) {
+        return EOF;
+    }
+
+#ifdef CONFIG_CONSOLE_WO
+    qcc74x_wo_uart_putchar(console, (uint8_t)c);
+#else
+    qcc74x_uart_putchar(console, (uint8_t)c);
+#endif
+
+    return c;
+}
+
 int puts(const char *c)
 {
     int len;

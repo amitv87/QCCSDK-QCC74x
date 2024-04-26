@@ -683,6 +683,28 @@ int fhost_get_vif_status(int fvif_idx, struct fhost_vif_status *status);
 
 /**
  ****************************************************************************************
+ * @brief Retrieve one interface raw state.
+ *
+ * @param[in]  fvif_idx  Index of the interface
+ *
+ * @return raw state of the interface
+ ****************************************************************************************
+ */
+int fhost_get_vif_raw_state(int fvif_idx);
+
+/**
+ ****************************************************************************************
+ * @brief Retrieve one interface state.
+ *
+ * @param[in]  fvif_idx  Index of the interface
+ *
+ * @return state of the interface
+ ****************************************************************************************
+ */
+int fhost_get_vif_state(int fvif_idx);
+
+/**
+ ****************************************************************************************
  * @brief Open a CFGRWNX link with the fhost firmware.
  *
  * A CFGRWNX link is used for communication with the 'CONTROL' task of the fhost firmware

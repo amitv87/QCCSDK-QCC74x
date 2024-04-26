@@ -800,8 +800,11 @@ static void hci_acl(struct net_buf *buf)
 	u8_t flags;
 
 	BT_DBG("buf %p", buf);
-
-	BT_ASSERT(buf->len >= sizeof(*hdr));
+	if (buf->len < sizeof(*hdr)) {
+		BT_ERR("Invalid HCI ACL packet size (%u)", buf->len);
+		net_buf_unref(buf);
+		return;
+	}
 
 	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	len = sys_le16_to_cpu(hdr->len);
@@ -1591,6 +1594,8 @@ static void enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 		    atomic_test_bit(bt_dev.flags, BT_DEV_AUTO_CONN)) {
 			conn->id = BT_ID_DEFAULT;
 			atomic_clear_bit(bt_dev.flags, BT_DEV_AUTO_CONN);
+			/*qcc74x fix: it does bt_conn_unref at the end of enh_conn_complete.*/
+			bt_conn_ref(conn);
 		}
 
 		bt_addr_le_copy(&conn->le.resp_addr, &peer_addr);
@@ -2498,13 +2503,8 @@ static void link_key_notify(struct net_buf *buf)
 	struct bt_hci_evt_link_key_notify *evt = (void *)buf->data;
 	struct bt_conn *conn;
 
-        printf("bredr link key: ");
-        for(int i = 0; i < 16; i++)
-        {
-            printf("0x%02x ", evt->link_key[i]);
-        }
-        printf("\n");
-
+        BT_WARN("BREDR Link Key: %s\r\n",bt_hex(evt->link_key,BT_SMP_MAX_ENC_KEY_SIZE));
+	
 	conn = bt_conn_lookup_addr_br(&evt->bdaddr);
 	if (!conn) {
 		BT_ERR("Can't find conn for %s", bt_addr_str(&evt->bdaddr));
@@ -3780,6 +3780,7 @@ static void le_ltk_request(struct net_buf *buf)
 
 	if (bt_smp_request_ltk(conn, evt->rand, evt->ediv, ltk)) {
 		le_ltk_reply(handle, ltk);
+		BT_WARN("BLE LTK: %s\r\n",bt_hex(ltk,BT_SMP_MAX_ENC_KEY_SIZE));
 	} else {
 		le_ltk_neg_reply(handle);
 	}
@@ -4384,7 +4385,11 @@ static void hci_event(struct net_buf *buf)
 {
 	struct bt_hci_evt_hdr *hdr;
 
-	BT_ASSERT(buf->len >= sizeof(*hdr));
+	if (buf->len < sizeof(*hdr)) {
+		BT_ERR("Invalid HCI ACL packet size (%u)", buf->len);
+		net_buf_unref(buf);
+		return;
+	}
 
 	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	BT_DBG("event 0x%02x", hdr->evt);
@@ -5586,7 +5591,11 @@ int bt_recv_prio(struct net_buf *buf)
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	BT_ASSERT(bt_buf_get_type(buf) == BT_BUF_EVT);
-	BT_ASSERT(buf->len >= sizeof(*hdr));
+	if (buf->len < sizeof(*hdr)) {
+		BT_ERR("Invalid HCI ACL packet size (%u)", buf->len);
+		net_buf_unref(buf);
+		return 0;
+	}
 
 	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	BT_ASSERT(bt_hci_evt_is_prio(hdr->evt));
@@ -5997,7 +6006,7 @@ int bt_disable_action(void)
     //delete sem
     k_sem_delete(&bt_dev.ncmd_sem);
     k_sem_delete(&g_poll_sem);
-    #if defined(CONFIG_BT_SMP)
+    #if defined(CONFIG_BT_ECC) && defined(CONFIG_BT_SMP)
     k_sem_delete(&sc_local_pkey_ready);
     #endif
     #if defined(CONFIG_BT_CONN)
@@ -6626,13 +6635,6 @@ int bt_le_adv_start_internal(const struct bt_le_adv_param *param,
 		return -EAGAIN;
 	}
 
-	#if defined(QCC74x_BLE_REJECT_CONNECTABLE_ADV_IF_MAX_LINKS_REACH)
-	if(param->options & BT_LE_ADV_OPT_CONNECTABLE && bt_conn_get_remote_dev_info(NULL) == CONFIG_BT_MAX_CONN)
-	{
-		return -EACCES;
-	}
-	#endif
-
 	if (!valid_adv_param(param, dir_adv)) {
 		return -EINVAL;
 	}
@@ -6673,21 +6675,26 @@ int bt_le_adv_start_internal(const struct bt_le_adv_param *param,
 	if (param->options & BT_LE_ADV_OPT_CONNECTABLE) {
 		if (IS_ENABLED(CONFIG_BT_PRIVACY) &&
 		    !(param->options & BT_LE_ADV_OPT_USE_IDENTITY)) {
-		    #if 0 //defined(CONFIG_BT_STACK_PTS) || defined(CONFIG_AUTO_PTS)
-            if(param->addr_type == BT_ADDR_LE_RANDOM_ID)
-                err = le_set_private_addr(param->id);
-            else if(param->addr_type == BT_ADDR_LE_RANDOM)
-                err = le_set_non_resolv_private_addr(param->id);
+            #if defined(CONFIG_BT_STACK_PTS) || defined(CONFIG_AUTO_PTS)
+            if(param->addr_type == BT_ADDR_TYPE_RPA)
+              err = le_set_private_addr(param->id);
+            else if(param->addr_type == BT_ADDR_TYPE_NON_RPA)
+              err = le_set_non_resolv_private_addr(param->id);
             #else 
-                err = le_set_private_addr(param->id);
+              err = le_set_private_addr(param->id);
             #endif
 			if (err) {
 				return err;
 			}
 
 			if (BT_FEAT_LE_PRIVACY(bt_dev.le.features)) {
-                #if 0 //defined(CONFIG_BT_STACK_PTS) || defined(CONFIG_AUTO_PTS)
-                set_param.own_addr_type = param->addr_type;
+                #if defined(CONFIG_BT_STACK_PTS) || defined(CONFIG_AUTO_PTS)
+                if(param->addr_type == BT_ADDR_TYPE_RPA)
+                    set_param.own_addr_type = BT_ADDR_LE_RANDOM_ID;
+                else if(param->addr_type == BT_ADDR_TYPE_NON_RPA)
+                    set_param.own_addr_type = BT_ADDR_LE_RANDOM;
+                else if(param->addr_type == BT_ADDR_LE_PUBLIC)
+                    set_param.own_addr_type = BT_ADDR_LE_PUBLIC;
                 #else
 				set_param.own_addr_type =
 					BT_HCI_OWN_ADDR_RPA_OR_RANDOM;
@@ -7054,7 +7061,7 @@ int set_ad_and_rsp_d(u16_t hci_op, u8_t *data, u32_t ad_len)
 		memset(set_data, 0, size);
 		set_data->len = ad_len;	
 
-		if (set_data->len > 30) {
+		if (set_data->len > 31) {
 			net_buf_unref(buf);
 			return -ENOBUFS;
 		}
@@ -7068,7 +7075,7 @@ int set_ad_and_rsp_d(u16_t hci_op, u8_t *data, u32_t ad_len)
 
 		set_data->len = ad_len;	
 
-		if (set_data->len > 30) {
+		if (set_data->len > 31) {
 			net_buf_unref(buf);
 			return -ENOBUFS;
 		}
@@ -7143,6 +7150,13 @@ int bt_le_adv_start(const struct bt_le_adv_param *param,
 	if (param->options & BT_LE_ADV_OPT_DIR_MODE_LOW_DUTY) {
 		return -EINVAL;
 	}
+
+	#if defined(QCC74x_BLE_REJECT_CONNECTABLE_ADV_IF_MAX_LINKS_REACH)
+	if(param->options & BT_LE_ADV_OPT_CONNECTABLE && bt_conn_get_remote_dev_info(NULL) == CONFIG_BT_MAX_CONN)
+	{
+		return -EACCES;
+	}
+	#endif
 
 	return bt_le_adv_start_internal(param, ad, ad_len, sd, sd_len, NULL);
 }

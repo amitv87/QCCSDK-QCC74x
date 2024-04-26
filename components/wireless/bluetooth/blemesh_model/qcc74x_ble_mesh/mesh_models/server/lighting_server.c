@@ -1,3 +1,11 @@
+/* Bluetooth: Mesh Lighting Server Models
+ *
+ * Copyright (c) 2018 Vikrant More
+ * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include <bt_errno.h>
 
 #include "btc_ble_mesh_lighting_model.h"
@@ -315,7 +323,7 @@ static void light_lightness_set(struct bt_mesh_model *model,
 
     bt_mesh_server_start_transition(&srv->actual_transition);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->actual_transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -418,7 +426,7 @@ static void light_lightness_linear_set(struct bt_mesh_model *model,
 
     bt_mesh_server_start_transition(&srv->linear_transition);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->linear_transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -511,7 +519,7 @@ static void light_lightness_range_set(struct bt_mesh_model *model,
      * MMDL/SR/LLNS/BI-01-C requires 'SUCCESS' when it sends a set message with
      * Light Range Min set to 0x0000.
      */
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     srv->state->status_code = BLE_MESH_RANGE_UPDATE_SUCCESS;
 #else
     if (range_min == 0x0000) {
@@ -866,7 +874,7 @@ static void light_ctl_set(struct bt_mesh_model *model,
 
     bt_mesh_server_start_transition(&srv->transition);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -1116,7 +1124,7 @@ static void light_ctl_temp_set(struct bt_mesh_model *model,
 
     bt_mesh_server_start_transition(&srv->transition);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -1488,7 +1496,7 @@ static void light_hsl_set(struct bt_mesh_model *model,
 
     bt_mesh_server_start_transition(&srv->transition);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -1721,7 +1729,7 @@ static void light_hsl_hue_set(struct bt_mesh_model *model,
 
     bt_mesh_server_start_transition(&srv->transition);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -1829,7 +1837,7 @@ static void light_hsl_sat_set(struct bt_mesh_model *model,
 
     bt_mesh_server_start_transition(&srv->transition);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -2126,7 +2134,7 @@ static void light_xyl_set(struct bt_mesh_model *model,
 
     bt_mesh_server_start_transition(&srv->transition);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -2382,7 +2390,7 @@ void light_lc_publish(struct bt_mesh_model *model, u16_t opcode)
     return;
 }
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 struct k_delayed_work state_machine_work;
 
 void state_machine_trigger(struct bt_mesh_light_lc_srv * srv)
@@ -2586,7 +2594,7 @@ static void light_lc_mode_set(struct bt_mesh_model *model,
         BT_ERR("%s, Invalid LC Mode 0x%02x", __func__, mode);
         return;
     }
-    #if defined(CONFIG_AUTO_PTS)
+    #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     state_machine_mode(srv, mode);
     #endif /* CONFIG_AUTO_PTS */
     /* Callback the received message to the application layer */
@@ -2632,7 +2640,7 @@ static void light_lc_om_set(struct bt_mesh_model *model,
         BT_ERR("%s, Invalid LC Occupancy Mode 0x%02x", __func__, om);
         return;
     }
-    #if defined(CONFIG_AUTO_PTS)
+    #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     state_machine_om(srv, om);
     #endif /* CONFIG_AUTO_PTS */
     /* Callback the received message to the application layer */
@@ -2678,7 +2686,7 @@ static void light_lc_light_onoff_set(struct bt_mesh_model *model,
 
     onoff = net_buf_simple_pull_u8(buf);
     tid = net_buf_simple_pull_u8(buf);
-    #if defined(CONFIG_AUTO_PTS)
+    #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     state_machine_light(srv, onoff);
     #endif /* CONFIG_AUTO_PTS */
     if (bt_mesh_server_get_optional(model, ctx, buf, &trans_time, &delay, &optional)) {
@@ -2742,7 +2750,7 @@ static void light_lc_light_onoff_set(struct bt_mesh_model *model,
     if (srv->transition.counter == 0U) {
         srv->lc->state.light_onoff = srv->lc->state.target_light_onoff;
     }
-    #if defined(CONFIG_AUTO_PTS)
+    #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     else{
         if (!srv->transition.delay && srv->lc->state.target_light_onoff == BLE_MESH_STATE_ON) {
             srv->lc->state.light_onoff = BLE_MESH_STATE_ON;
@@ -2762,7 +2770,7 @@ static void light_lc_light_onoff_set(struct bt_mesh_model *model,
     //BT_WARN("counter[%x],quo_tt[%x],delay[%x],total_duration[%x]",srv->transition.counter,
     //    srv->transition.quo_tt, srv->transition.delay, srv->transition.total_duration);
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if(srv->transition.counter){
         bt_mesh_lighting_server_cb_evt_to_btc(
             BTC_BLE_MESH_EVT_LIGHTING_SERVER_RECV_SET_MSG, model, ctx, NULL, 0);
@@ -3262,7 +3270,7 @@ static int light_server_init(struct bt_mesh_model *model)
         return -EINVAL;
     }
 
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
     if (model->pub) {
         model->pub->update = btc_ble_mesh_model_publish_update;
     }
@@ -3407,7 +3415,7 @@ static int light_server_init(struct bt_mesh_model *model)
         if (srv->rsp_ctrl.set_auto_rsp == BLE_MESH_SERVER_AUTO_RSP) {
             bt_mesh_server_alloc_ctx(&srv->transition.timer.work);
             k_delayed_work_init(&srv->transition.timer, light_lc_work_handler);
-            #if defined(CONFIG_AUTO_PTS)
+            #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
             bt_mesh_server_alloc_ctx(&state_machine_work.work);
             k_delayed_work_init(&state_machine_work, state_machine_work_handler_t);
             #endif /* CONFIG_AUTO_PTS */
@@ -3717,7 +3725,7 @@ static int light_server_deinit(struct bt_mesh_model *model)
         if (srv->rsp_ctrl.set_auto_rsp == BLE_MESH_SERVER_AUTO_RSP) {
             bt_mesh_server_free_ctx(&srv->transition.timer.work);
             k_delayed_work_free(&srv->transition.timer);
-            #if defined(CONFIG_AUTO_PTS)
+            #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
             state_machine_work.work._reserved = model->user_data;
             k_delayed_work_free(&state_machine_work);
             #endif /* CONFIG_AUTO_PTS */

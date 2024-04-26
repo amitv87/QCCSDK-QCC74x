@@ -105,6 +105,12 @@ int mfg_efuse_write_xtal_capcode_pre(uint8_t capcode, uint8_t program)
     }
 }
 
+void mfg_efuse_write_xtal_capcode(void)
+{
+    qcc74x_ef_ctrl_write_direct(NULL, 0, NULL, 0, 1);
+}
+
+
 int mfg_efuse_read_xtal_capcode(uint8_t *capcode, uint8_t reload)
 {
     int slot;
@@ -186,9 +192,7 @@ int mfg_efuse_write_hp_poweroffset_pre(int8_t pwr_offset[14], uint8_t program)
 
 void mfg_efuse_write_hp_poweroffset(void)
 {
-    // EF_Ctrl_Program_Direct(0, NULL, 0);
-    // while (SET == EF_Ctrl_Busy())
-    //     ;
+    qcc74x_ef_ctrl_write_direct(NULL, 0, NULL, 0, 1);
 }
 
 int mfg_efuse_read_hp_poweroffset(int8_t pwr_offset[14], uint8_t reload)

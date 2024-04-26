@@ -12,6 +12,8 @@ set(QCC74x_FW_POST_PROC_CONFIG --chipname=${CHIP} --imgfile=${BIN_FILE})
 
 if(BOARD_DIR)
 list(APPEND QCC74x_FW_POST_PROC_CONFIG --brdcfgdir=${BOARD_DIR}/${BOARD}/config)
+elseif(CONFIG_BOARD_CONFIG_8M)
+list(APPEND QCC74x_FW_POST_PROC_CONFIG --brdcfgdir=${QCC74x_SDK_BASE}/bsp/board/${BOARD}/${CONFIG_BOARD_CONFIG_8M})
 else()
 list(APPEND QCC74x_FW_POST_PROC_CONFIG --brdcfgdir=${QCC74x_SDK_BASE}/bsp/board/${BOARD}/config)
 endif()

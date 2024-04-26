@@ -493,12 +493,12 @@ int bt_mesh_net_create(u16_t idx, u8_t flags, const u8_t key[16],
 	 * doesn't apply straight after provisioning (since we can't know how
 	 * long has actually passed since the network changed its state).
 	 */
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	/* MESH/NODE/IVU/BI-01-C */
 	if(BT_MESH_IV_UPDATE(flags)){
 #endif
 		bt_mesh.ivu_duration = BT_MESH_IVU_MIN_HOURS;
-#if defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	}
 #endif
 
@@ -1314,7 +1314,7 @@ static void bt_mesh_net_relay(struct net_buf_simple *sbuf,
 	}
 	/* Fix by qcc74x for MESH/NODE/FRND/FN/BV-23-C*/
 	if (relay_to_adv(rx->net_if) 
-	#if defined(CONFIG_AUTO_PTS)
+	#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 		|| rx->friend_cred
 	#endif 
 		) {

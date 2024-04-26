@@ -84,7 +84,7 @@ static void wpa_supplicant_ctrl_iface_msg_cb(void *ctx, int level,
 	if (level >= wpa_debug_level)
 		dbg(D_CRT "[WPA] %s\n", txt);
 
-    if (drv->vif_init_type != VIF_STA) {
+    if (!drv || drv->fhost_vif_idx >= NX_VIRT_DEV_MAX) {
         return;
     }
     memset(&cmd, 0, sizeof(cmd));
@@ -95,8 +95,9 @@ static void wpa_supplicant_ctrl_iface_msg_cb(void *ctx, int level,
     cmd.sock = drv->gdrv->link->sock_send;
     cmd.msg = txt;
 
-    if (!strncmp(txt, "CTRL-EVENT-NETWORK-NOT-FOUND", strlen("CTRL-EVENT-NETWORK-NOT-FOUND")) ||
-            !strncmp(txt, "CTRL-EVENT-CONNECTED", strlen("CTRL-EVENT-CONNECTED"))) {
+    if (!strncmp(txt, "State###", sizeof("State###")-1) ||
+        !strncmp(txt, "CTRL-EVENT-NETWORK-NOT-FOUND", sizeof("CTRL-EVENT-NETWORK-NOT-FOUND")-1) ||
+        !strncmp(txt, "CTRL-EVENT-CONNECTED", sizeof("CTRL-EVENT-CONNECTED")-1)) {
         if (fhost_cntrl_cfgrwnx_cmd_send(&cmd.hdr, NULL)) {
             printf("%s: cmd send failed, txt is %s\r\n", __func__, txt);
         } else {

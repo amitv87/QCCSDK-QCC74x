@@ -88,6 +88,10 @@ void wpas_notify_state_changed(struct wpa_supplicant *wpa_s,
 	if (wpa_s->p2p_mgmt)
 		return;
 
+	wpa_msg_ctrl(wpa_s, MSG_DEBUG, "State### %s -> %s",
+		wpa_supplicant_state_txt(old_state),
+		wpa_supplicant_state_txt(wpa_s->wpa_state));
+
 	/* notify the new DBus API */
 	wpas_dbus_signal_prop_changed(wpa_s, WPAS_DBUS_PROP_STATE);
 

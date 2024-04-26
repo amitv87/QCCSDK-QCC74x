@@ -1,3 +1,11 @@
+/* Bluetooth: Mesh Generic OnOff, Generic Level, Lighting & Vendor Models
+ *
+ * Copyright (c) 2018 Vikrant More
+ * Additional Copyright (c) 2018 Espressif Systems (Shanghai) PTE LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include <bt_errno.h>
 
 #include "mesh_common.h"

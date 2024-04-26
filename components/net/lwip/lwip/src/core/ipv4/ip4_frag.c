@@ -44,7 +44,6 @@
 
 #include "lwip/ip4_frag.h"
 #include "lwip/def.h"
-#include "lwip/timeouts.h"
 #include "lwip/inet_chksum.h"
 #include "lwip/netif.h"
 #include "lwip/stats.h"
@@ -107,8 +106,8 @@ PACK_STRUCT_END
 #endif
 
 #define IP_ADDRESSES_AND_ID_MATCH(iphdrA, iphdrB)  \
-  (ip4_addr_cmp(&(iphdrA)->src, &(iphdrB)->src) && \
-   ip4_addr_cmp(&(iphdrA)->dest, &(iphdrB)->dest) && \
+  (ip4_addr_eq(&(iphdrA)->src, &(iphdrB)->src) && \
+   ip4_addr_eq(&(iphdrA)->dest, &(iphdrB)->dest) && \
    IPH_ID(iphdrA) == IPH_ID(iphdrB)) ? 1 : 0
 
 /* global variables */
@@ -131,18 +130,6 @@ ip_reass_tmr(void)
   struct ip_reassdata *r, *prev = NULL;
 
   r = reassdatagrams;
-#if IP4_FRAG_TIMER_PRECISE_NEEDED
-  /**
-   * qcc74x lp change
-   * ip_reass_tmr enable/disable dynamically
-   */
-  LWIP_DEBUGF(IP_REASS_DEBUG, ("ip_reass_tmr: enable=%d", r != NULL));
-  if (r != NULL) {
-    sys_timeouts_set_timer_enable(true, ip_reass_tmr);
-  } else {
-    sys_timeouts_set_timer_enable(false, ip_reass_tmr);
-  }
-#endif
   while (r != NULL) {
     /* Decrement the timer. Once it reaches 0,
      * clean up the incomplete fragment assembly */
@@ -319,16 +306,6 @@ ip_reass_enqueue_new_datagram(struct ip_hdr *fraghdr, int clen)
   /* copy the ip header for later tests and input */
   /* @todo: no ip options supported? */
   SMEMCPY(&(ipr->iphdr), fraghdr, IP_HLEN);
-
-#if IP4_FRAG_TIMER_PRECISE_NEEDED
-  /**
-   * qcc74x lp change
-   * ip_reass_tmr enable/disable dynamically
-   */
-  LWIP_DEBUGF(IP_REASS_DEBUG, ("ip_reass_tmr TRUE"));
-  sys_timeouts_set_timer_enable(true, ip_reass_tmr);
-#endif
-
   return ipr;
 }
 

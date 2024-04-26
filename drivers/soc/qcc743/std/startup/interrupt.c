@@ -149,8 +149,8 @@ void exception_entry(uintptr_t *regs)
 
             /* XXX change sp to irq stack base */
             __asm__ volatile("add sp, x0, %0" ::"r"(&__freertos_irq_stack_top));
-            void qcc74x_coredump_run(void);
-            qcc74x_coredump_run();
+            void coredump_run(void);
+            coredump_run();
 #endif
         }
     }

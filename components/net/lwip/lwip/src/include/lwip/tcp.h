@@ -1,6 +1,6 @@
 /**
  * @file
- * TCP API (to be used from TCPIP thread)\n
+ * TCP API (to be used from TCPIP thread)<br>
  * See also @ref tcp_raw
  */
 
@@ -50,16 +50,6 @@
 #include "lwip/err.h"
 #include "lwip/ip6.h"
 #include "lwip/ip6_addr.h"
-
-#if TCP_TIMER_PRECISE_NEEDED
-/**
-* qcc74x lp change
-* TCP_TMR Optimization, only enable tcp_tmr MAX_TCP_ONCE_RUNNING_TIME
-*/
-#include "lwip/timeouts.h"
-#include "FreeRTOS.h"
-#include "timers.h"
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -285,12 +275,9 @@ struct tcp_pcb {
      as we have to do some math with them */
 
   /* Timers */
-  u32_t polltmr;
-  u8_t pollinterval;
+  u8_t polltmr, pollinterval;
   u8_t last_timer;
   u32_t tmr;
-
-  u32_t fin_wait1_tmr;
 
   /* receiver variables */
   u32_t rcv_nxt;   /* next seqno expected */
@@ -305,11 +292,7 @@ struct tcp_pcb {
 #endif /* LWIP_TCP_SACK_OUT */
 
   /* Retransmission timer. */
-#if !TCP_TIMER_PRECISE_NEEDED
   s16_t rtime;
-#else
-  u32_t rtime;
-#endif
 
   u16_t mss;   /* maximum segment size */
 
@@ -389,8 +372,8 @@ struct tcp_pcb {
   u32_t keep_cnt;
 #endif /* LWIP_TCP_KEEPALIVE */
 
-  /* Last persist probe timestamp */
-  u32_t persist_cnt;
+  /* Persist timer counter */
+  u8_t persist_cnt;
   /* Persist timer back-off */
   u8_t persist_backoff;
   /* Number of persist probes */
@@ -399,13 +382,6 @@ struct tcp_pcb {
   /* KEEPALIVE counter */
   u8_t keep_cnt_sent;
 
-#if TCP_TIMER_PRECISE_NEEDED
-  /**
-   * qcc74x lp change
-   * TCP_TMR Optimization, only enable tcp_tmr MAX_TCP_ONCE_RUNNING_TIME
-   */
-  TimerHandle_t keepalive_os_timer;
-#endif
 #if LWIP_WND_SCALE
   u8_t snd_scale;
   u8_t rcv_scale;
@@ -510,9 +486,9 @@ err_t            tcp_tcp_get_tcp_addrinfo(struct tcp_pcb *pcb, int local, ip_add
 
 #if LWIP_TCP_PCB_NUM_EXT_ARGS
 u8_t tcp_ext_arg_alloc_id(void);
-void tcp_ext_arg_set_callbacks(struct tcp_pcb *pcb, uint8_t id, const struct tcp_ext_arg_callbacks * const callbacks);
-void tcp_ext_arg_set(struct tcp_pcb *pcb, uint8_t id, void *arg);
-void *tcp_ext_arg_get(const struct tcp_pcb *pcb, uint8_t id);
+void tcp_ext_arg_set_callbacks(struct tcp_pcb *pcb, u8_t id, const struct tcp_ext_arg_callbacks * const callbacks);
+void tcp_ext_arg_set(struct tcp_pcb *pcb, u8_t id, void *arg);
+void *tcp_ext_arg_get(const struct tcp_pcb *pcb, u8_t id);
 #endif
 
 #if LWIP_STATS

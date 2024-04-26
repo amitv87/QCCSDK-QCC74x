@@ -80,8 +80,6 @@ enum icmp6_type {
   ICMP6_TYPE_NA = 136,
   /** Redirect */
   ICMP6_TYPE_RD = 137,
-  /** Multicast listener report v2 */
-  ICMP6_TYPE_MLRv2 = 143,
   /** Multicast router advertisement */
   ICMP6_TYPE_MRA = 151,
   /** Multicast router solicitation */
@@ -147,6 +145,8 @@ PACK_STRUCT_END
 #ifdef PACK_STRUCT_USE_INCLUDES
 #  include "arch/epstruct.h"
 #endif
+
+#define ICMP6_HLEN 8
 
 /** This is the ICMP6 header adapted for echo req/resp. */
 #ifdef PACK_STRUCT_USE_INCLUDES

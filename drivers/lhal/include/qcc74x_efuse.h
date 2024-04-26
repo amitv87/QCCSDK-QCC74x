@@ -21,11 +21,17 @@ typedef struct
 #else
     uint8_t version;
 #endif
+#if defined(QCC743)
+    uint16_t process_corner;
+#endif
     const char *package_name;
     const char *flash_info_name;
 #if defined(QCC74x_undef)
 #else
     const char *psram_info_name;
+#endif
+#if defined(QCC743)
+    char process_corner_name[16];
 #endif
 } qcc74x_efuse_device_info_type;
 

@@ -98,7 +98,8 @@ int utils_getopt(getopt_env_t *env, int argc, char *const argv[], const char *op
     if (optstring[i] == ':') {
         env->optarg = 0;
         if (optstring[i + 1] != ':' || env->__optpos) {
-            env->optarg = argv[env->optind++] + env->__optpos;
+            env->optarg = argv[env->optind++];
+            if(env->__optpos) env->optarg += env->__optpos;
             env->__optpos = 0;
         }
         if (env->optind > argc) {

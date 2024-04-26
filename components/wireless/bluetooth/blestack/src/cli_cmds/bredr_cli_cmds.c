@@ -44,6 +44,7 @@
 #define BT_A2DP_CLI(func) static void a2dp_##func(int argc, char **argv)
 #define BT_AVRCP_CLI(func) static void avrcp_##func(int argc, char **argv)
 #define BT_HFP_CLI(func) static void hfp_##func(int argc, char **argv)
+#define BT_AVDTP_CLI(func) static void avdtp_##func(int argc, char **argv)
 #else
 #define BT_CLI(func) static void bredr_##func(char *pcWriteBuffer, int xWriteBufferLen, int argc, char **argv)
 #define BT_A2DP_CLI(func) static void a2dp_##func(char *pcWriteBuffer, int xWriteBufferLen, int argc, char **argv)
@@ -51,6 +52,7 @@
 #define BT_HFP_CLI(func) static void hfp_##func(char *pcWriteBuffer, int xWriteBufferLen, int argc, char **argv)
 #endif
 
+#define 		PASSKEY_MAX  		0xF423F
 struct bt_br_discovery_result result[10] = { 0 };
 
 static void bredr_connected(struct bt_conn *conn, u8_t err);
@@ -104,10 +106,16 @@ BT_CLI(l2cap_send_test_data);
 BT_CLI(l2cap_disconnect);
 BT_CLI(l2cap_echo_req);
 BT_CLI(security);
+BT_CLI(auth);
+BT_CLI(auth_cancel);
+BT_CLI(auth_passkey_confirm);
+BT_CLI(auth_pairing_confirm);
+BT_CLI(auth_passkey);
 BT_CLI(start_inquiry);
 
 #if BR_EDR_PTS_TEST
 BT_CLI(sdp_client_connect);
+BT_AVDTP_CLI(set_conf_reject);
 #endif
 
 #if CONFIG_BT_A2DP
@@ -176,11 +184,22 @@ BT_HFP_CLI(hf_update_indicator);
     SHELL_CMD_EXPORT_ALIAS(bredr_l2cap_send_test_data,bredr_l2cap_send_test_data,"");
     SHELL_CMD_EXPORT_ALIAS(bredr_l2cap_disconnect,bredr_l2cap_disconnect_req,"");
     SHELL_CMD_EXPORT_ALIAS(bredr_security,bredr_security,"");
+    SHELL_CMD_EXPORT_ALIAS(bredr_start_inquiry,bredr_start_inquiry,"");
+    SHELL_CMD_EXPORT_ALIAS(bredr_auth, bredr_auth, Register auth callback Parameter:[Null]);
+    SHELL_CMD_EXPORT_ALIAS(bredr_auth_cancel, bredr_auth_cancel, Cancel register auth callback Parameter:[Null]]);
+    SHELL_CMD_EXPORT_ALIAS(bredr_auth_passkey_confirm, bredr_auth_passkey_confirm, Confirm passkey Parameter:[Null]]);
+    SHELL_CMD_EXPORT_ALIAS(bredr_auth_pairing_confirm, bredr_auth_pairing_confirm, Confirm pairing in secure connection Parameter:[Null]);
+    SHELL_CMD_EXPORT_ALIAS(bredr_auth_passkey, bredr_auth_passkey, Input passkey Parameter:[Passkey: 00000000-000F423F]);
     #if BR_EDR_PTS_TEST
     SHELL_CMD_EXPORT_ALIAS(bredr_sdp_client_connect,bredr_sdp_client_connect,"");
     #endif
     #if CONFIG_BT_A2DP
     SHELL_CMD_EXPORT_ALIAS(a2dp_connect,a2dp_connect,"");
+    #if CONFIG_BT_A2DP_SOURCE
+    SHELL_CMD_EXPORT_ALIAS(a2dp_discovery,a2dp_start_disc, "");
+    SHELL_CMD_EXPORT_ALIAS(a2dp_suspend,a2dp_source_suspend, "");
+    SHELL_CMD_EXPORT_ALIAS(a2dp_resume, a2dp_source_resume, "");
+    #endif
     #if BR_EDR_PTS_TEST
     SHELL_CMD_EXPORT_ALIAS(a2dp_disconnect,a2dp_disconnect,"");
     SHELL_CMD_EXPORT_ALIAS(a2dp_start_discovery,a2dp_start_discovery,"");
@@ -242,6 +261,12 @@ const struct cli_command bredr_cmd_set[] STATIC_CLI_CMD_ATTRIBUTE = {
     {"bredr_l2cap_disconnect_req", "", bredr_l2cap_disconnect},
     {"bredr_l2cap_echo_req", "", bredr_l2cap_echo_req},
     {"bredr_security", "", bredr_security},
+    {"bredr_start_inquiry", "", bredr_start_inquiry},
+    {"bredr_auth", "", bredr_auth},
+    {"bredr_auth_cancel", "", bredr_auth_cancel},
+    {"bredr_auth_passkey_confirm", "", bredr_auth_passkey_confirm},
+    {"bredr_auth_pairing_confirm", "", bredr_auth_pairing_confirm},
+    {"bredr_auth_passkey", "", bredr_auth_passkey},
     {"bredr_start_inquiry", "", bredr_start_inquiry},
     #if BR_EDR_PTS_TEST
     {"bredr_sdp_client_connect", "", bredr_sdp_client_connect},
@@ -911,7 +936,7 @@ BT_A2DP_CLI(delay_report)
 
 extern uint8_t reject_set_conf_pts;
 extern uint8_t reject_error_code;
-static void avdtp_set_conf_reject(char *p_write_buffer, int write_buffer_len, int argc, char **argv)
+BT_AVDTP_CLI(set_conf_reject)
 {
     get_uint8_from_string(&argv[1], &reject_set_conf_pts);
     get_uint8_from_string(&argv[2], &reject_error_code);
@@ -1456,6 +1481,149 @@ BT_HFP_CLI(hf_disconnect)
 
 #endif
 
+static void auth_passkey_display(struct bt_conn *conn, unsigned int passkey)
+{
+    char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+    printf("passkey_str is: %06u\r\n", passkey);
+}
+
+static void auth_passkey_confirm(struct bt_conn *conn, unsigned int passkey)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	printf("Confirm passkey for %s: %06u\r\n", addr, passkey);
+}
+
+static void auth_passkey_entry(struct bt_conn *conn)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	printf("Enter passkey for %s\r\n", addr);
+}
+
+static void auth_cancel(struct bt_conn *conn)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+    bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	printf("Pairing cancelled: %s\r\n", addr);
+}
+
+static void auth_pairing_confirm(struct bt_conn *conn)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	printf("Confirm pairing for %s\r\n", addr);
+}
+
+static void auth_pairing_complete(struct bt_conn *conn, bool bonded)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	printf("%s with %s\r\n", bonded ? "Bonded" : "Paired", addr);
+}
+
+static void auth_pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	printf("Pairing failed with %s\r\n", addr);
+}
+
+static struct bt_conn_auth_cb auth_cb_display = {
+	.passkey_display = auth_passkey_display,
+	.passkey_entry = auth_passkey_entry,
+	.passkey_confirm = auth_passkey_confirm,
+	.cancel = auth_cancel,
+	.pairing_confirm = auth_pairing_confirm,
+	.pairing_failed = auth_pairing_failed,
+	.pairing_complete = auth_pairing_complete,
+};
+
+BT_CLI(auth)
+{
+    int err;
+
+    err = bt_conn_auth_cb_register(&auth_cb_display);
+
+    if(err){
+        printf("Auth callback has already been registered\r\n");
+    }else{
+        printf("Register auth callback successfully\r\n");
+    }
+}
+
+BT_CLI(auth_cancel)
+{
+	struct bt_conn *conn;
+	if (default_conn) {
+		conn = default_conn;
+	}else {
+		conn = NULL;
+	}
+
+	if (!conn) {
+        printf("Not connected\r\n");
+		return;
+	}
+
+	bt_conn_auth_cancel(conn);
+}
+
+BT_CLI(auth_passkey_confirm)
+{
+	if (!default_conn) {
+        printf("Not connected\r\n");
+		return;
+	}
+
+	bt_conn_auth_passkey_confirm(default_conn);
+}
+
+BT_CLI(auth_pairing_confirm)
+{
+	if (!default_conn) {
+        printf("Not connected\r\n");
+		return;
+	}
+
+	bt_conn_auth_pairing_confirm(default_conn);
+}
+
+BT_CLI(auth_passkey)
+{
+    uint32_t passkey;
+
+    if(argc != 2){
+        printf("Number of Parameters is not correct\r\n");
+        return;
+    }
+
+    if (!default_conn) {
+        printf("Not connected\r\n");
+        return;
+    }
+
+    passkey = atoi(argv[1]);
+    if (passkey > PASSKEY_MAX) {
+        printf("Passkey should be between 0-999999\r\n");
+        return;
+    }
+
+    bt_conn_auth_passkey_entry(default_conn, passkey);
+}
 int bredr_cli_register(void)
 {
     // static command(s) do NOT need to call aos_cli_register_command(s) to register.

@@ -15,7 +15,10 @@
 #include "arpa/inet.h"
 #include "net_iperf_al_priv.h"
 #include "fhost.h"
-
+#ifdef CFG_IPV6
+#include "lwip/tcpip.h"
+#include "lwip/ip_addr.h"
+#endif
 #ifdef CFG_REC
 #include "export/dbg/dbg_assert.h"
 #endif
@@ -415,7 +418,7 @@ void wifi_sta_info_cmd(int argc, char **argv)
     fhost_print(RTOS_TASK_NULL, "MASK:    %s \r\n", ip4addr_ntoa(&mask));
     fhost_print(RTOS_TASK_NULL, "GW  :    %s \r\n", ip4addr_ntoa(&gw));
     fhost_print(RTOS_TASK_NULL, "DNS :    %s \r\n", ip4addr_ntoa(&dns));
-    #if CFG_IPV6
+    #ifdef CFG_IPV6
     struct netif *nif;
 
     NETIF_FOREACH(nif) {
