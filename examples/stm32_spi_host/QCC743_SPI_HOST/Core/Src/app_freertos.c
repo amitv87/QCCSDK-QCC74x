@@ -56,7 +56,7 @@ const osThreadAttr_t spi_tsk_attr = {
 osThreadId_t console_taskhandle;
 const osThreadAttr_t console_tsk_attr = {
   .name = "console",
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityRealtime7,
   .stack_size = 128 * 8
 };
 
@@ -112,7 +112,7 @@ static void at_task(void *arg)
 			/* initialization sequence */
 			for (i = 0; i < sizeof(atcmds)/sizeof(atcmds[0]); i++) {
 				printf("Sending '%s'\r\n", atcmds[i].cmd);
-				err = spisync_write_hpri(&spisync_ctx, atcmds[i].cmd, strlen(atcmds[i].cmd), 10000);
+				err = spisync_write(&spisync_ctx, atcmds[i].cmd, strlen(atcmds[i].cmd), 10000);
 				osDelay(atcmds[i].post_delay_ms);
 			}
 			init = 1;
@@ -122,10 +122,10 @@ static void at_task(void *arg)
 			const char *data = "AT+CIPSEND=0,10\r\n";
 			const char *d = "0123456789";
 
-			err = spisync_write_hpri(&spisync_ctx, data, strlen(data), 10000);
-			printf("data xfer: spisync_write_hpri return %d\r\n", err);
-			err = spisync_write_hpri(&spisync_ctx, d, strlen(d), 10000);
-			printf("data xfer: spisync_write_hpri return %d\r\n", err);
+			err = spisync_write(&spisync_ctx, data, strlen(data), 10000);
+			printf("data xfer: spisync_write return %d\r\n", err);
+			err = spisync_write(&spisync_ctx, d, strlen(d), 10000);
+			printf("data xfer: spisync_write return %d\r\n", err);
 			osDelay(10);
 		}
 	}
@@ -139,6 +139,39 @@ struct spisync_stat {
 };
 
 static struct spisync_stat spisync_stat;
+static volatile uint32_t g_send_flag = 0;
+static volatile uint32_t g_send_tick = 0;
+
+void spisync_perf_tx_task2(void *arg)
+{
+	int err;
+	uint8_t byte = 1;
+	unsigned char txdata[SPISYNC_PAYLOADBUF_LEN];
+
+	while (!spisync_ready) {
+		printf("waiting spisync to become ready\r\n");
+		osDelay(1000);
+	}
+	printf("spisync perf tx start\r\n");
+
+	while (1) {
+		if (g_send_flag) {
+			if (((int)(xTaskGetTickCount()) - (int)g_send_tick) >= g_send_flag) {
+				spisync_iperf(&spisync_ctx, 0);// for iperf log
+				g_send_flag = 0;
+			}
+			err = spisync_write(&spisync_ctx, txdata, sizeof txdata, portMAX_DELAY);
+			if (err < 0) {
+				//printf("spisync write failed, %d\r\n", err);
+			} else {
+			 	spisync_stat.xmit++;
+				memset(txdata, byte++, SPISYNC_PAYLOADBUF_LEN);
+			}
+		} else {
+			osDelay(500);
+		}
+	}
+}
 
 void spisync_perf_tx_task(void *arg)
 {
@@ -153,7 +186,7 @@ void spisync_perf_tx_task(void *arg)
 	printf("spisync perf tx start\r\n");
 
 	while (1) {
-		err = spisync_write_hpri(&spisync_ctx, txdata, sizeof txdata, 1000);
+		err = spisync_write(&spisync_ctx, txdata, sizeof txdata, 1000);
 		if (err < 0)
 			;
 			//printf("spisync write failed, %d\r\n", err);
@@ -179,7 +212,7 @@ void spisync_start_perf_tx(void)
 		printf("waiting spisync to become ready\r\n");
 		osDelay(1000);
 	}
-	spisync_tx_task = osThreadNew(spisync_perf_tx_task, NULL, &spisync_tx_task_attr);
+	spisync_tx_task = osThreadNew(spisync_perf_tx_task2, NULL, &spisync_tx_task_attr);
 	if (!spisync_tx_task) {
 		printf("failed to create spisync perf tx task\r\n");
 		return;
@@ -203,7 +236,7 @@ void spisync_perf_rx_task(void *arg)
 	while (1) {
 		err = spisync_read(&spisync_ctx, rxbuf, sizeof rxbuf, 10000);
 		if (err <= 0)
-			printf("failed to read from spisync, %d\r\n", err);
+			;//printf("failed to read from spisync, %d\r\n", err);
 		else {
 			spisync_stat.recv++;
 		}
@@ -281,6 +314,12 @@ static int cli_handle_one(const char *argv)
 		spisync_start_perf_tx();
 	} else if (strstr(argv, "ss_start_rx")) {
 		spisync_start_perf_rx();
+	} else if (strstr(argv, "at_iperftx")) {;
+		spisync_iperf(&spisync_ctx, 1);// for log
+		g_send_tick = xTaskGetTickCount();
+		g_send_flag = 20*1000;// default 20 s
+	} else if (strstr(argv, "at_iperf")) {
+		spisync_iperf(&spisync_ctx, 1);
 	}
 	return 0;
 }
@@ -307,7 +346,7 @@ static void uart_console_task(void *param)
 
 	while (1) {
 		ret = xStreamBufferReceive(uart_strm_buffer, &buf[in],
-								BUF_SPACE(), pdMS_TO_TICKS(2000));
+								BUF_SPACE(), portMAX_DELAY);
 		if (ret) {
 			/* echo */
 			for (int i = 0; i < ret; i++) {
@@ -448,7 +487,7 @@ void StartDefaultTask(void *argument)
 	  HAL_GPIO_TogglePin(LED_BLUE_GPIO_Port, LED_BLUE_Pin);
 	  HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
 	  osDelay(500);
-#if 1
+#if 0
 	  if (div++ & 1) {
 		  tx = spisync_stat.xmit - last_stat.xmit;
 		  rx = spisync_stat.recv - last_stat.recv;

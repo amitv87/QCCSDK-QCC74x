@@ -36,7 +36,7 @@ typedef enum {
 #define AT_CORE_PRINTF printf
 
 struct at_struct *at = NULL;
-static at_error_code at_error = AT_SUB_OK;
+static uint32_t at_error = AT_SUB_OK;
 
 void hex_dump(unsigned char *data, int len)
 {
@@ -177,7 +177,7 @@ static int at_unregister_command(const at_cmd_struct *cmd)
     return -1;
 }
 
-int at_cmd_set_error(at_error_code error)
+int at_cmd_set_error(uint32_t error)
 {
     at_error = error;
     return 0;

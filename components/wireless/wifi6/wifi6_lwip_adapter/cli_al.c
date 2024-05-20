@@ -22,6 +22,7 @@
 #ifdef CFG_REC
 #include "export/dbg/dbg_assert.h"
 #endif
+#include "export/csidma_cmd.h"
 
 void utils_al_parse_number_adv(const char *str, char sep, uint8_t *buf, int buflen, int base, int *count)
 {
@@ -754,6 +755,16 @@ SHELL_CMD_EXPORT_ALIAS(cmd_fw_dbg, fw_dbg, fw debug param);
 #endif
 #if defined(CFG_REC) && WIFI_STATISTIC_ENABLE
 SHELL_CMD_EXPORT_ALIAS(cmd_fw_dbg_rec, fw_dbg_rec, fw debug param);
+#endif
+#if defined(CFG_CSIDMA_CLI) && CFG_CSIDMA_CLI
+SHELL_CMD_EXPORT_ALIAS(cmd_csidma_start, csidma_start, start csidma);
+SHELL_CMD_EXPORT_ALIAS(cmd_csidma_stop, csidma_stop, stop csidma);
+SHELL_CMD_EXPORT_ALIAS(cmd_csidma_ready, csidma_ready, ready csidma);
+SHELL_CMD_EXPORT_ALIAS(cmd_csidma_debug, csidma_debug, debug csidma);
+#ifdef CSIDMA_FTM_ENABLE
+SHELL_CMD_EXPORT_ALIAS(cmd_csidma_force_ftm_mac_set, csidma_force_ftm_mac_set, csidma force ftm mac set);
+SHELL_CMD_EXPORT_ALIAS(cmd_csidma_force_ftm, csidma_force_ftm, csidma force ftm);
+#endif
 #endif
 
 int qcc74x_wifi6_cli_init(void)

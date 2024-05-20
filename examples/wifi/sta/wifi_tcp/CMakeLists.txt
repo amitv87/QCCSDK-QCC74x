@@ -7,6 +7,7 @@ find_package(qcc74x_sdk REQUIRED HINTS $ENV{QCC74x_SDK_BASE})
 # User
 sdk_add_compile_definitions(-DCONFIG_CLI_CMD_ENABLE)
 sdk_add_compile_definitions(-DCONFIG_HIGH_PERFORMANCE=1)
+sdk_add_compile_definitions(-DCFG_PLATFORM_DMA_ENABLE=1)
 
 sdk_add_compile_definitions(-DHIGH_PERFORMANCE_PBUF=1)
 if(NOT CONFIG_LINK_IN_PSRAM)

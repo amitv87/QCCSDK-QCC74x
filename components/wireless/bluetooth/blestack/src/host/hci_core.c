@@ -903,9 +903,6 @@ static void hci_num_completed_packets(struct net_buf *buf)
 
 			k_work_submit(&conn->tx_complete_work);
 			k_sem_give(bt_conn_get_pkts(conn));
-#if defined(QCC74x_BLE)
-            k_sem_give(&g_poll_sem);
-#endif
 		}
 
 		bt_conn_unref(conn);

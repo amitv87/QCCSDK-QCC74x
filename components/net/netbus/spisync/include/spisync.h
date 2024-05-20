@@ -15,17 +15,25 @@
 #define SPISYNC_RXSLOT_COUNT        (6)
 #define SPISYNC_SLOT_MAGIC          (0x11223344)
 #define SPISYNC_PAYLOADBUF_LEN      (1024 + 512)             // 1536
-#define SPISYNC_PAYLOADLENSEQ_LEN   (8)                      // sizeof(len)+sizeof(seq)
+#define SPISYNC_PAYLOADLENSEQ_LEN   (8)                  // sizeof(len)+sizeof(seq)
 #define SPISYNC_PAYLOADCRC_LEN      (4)                      // sizeof(crc)
 #define SPISYNC_PAYLOADOTH_LEN      (12)                     // sizeof(len)+sizeof(seq)+sizeof(crc)
 #define SPISYNC_PAYLOADLEN_MAX      (SPISYNC_PAYLOADBUF_LEN + SPISYNC_PAYLOADLENSEQ_LEN)
 #define SPISYNC_TAGERR_TIMES        (SPISYNC_RXSLOT_COUNT*4)
 #define SPISYNC_PATTERN_TIMES       (SPISYNC_TXSLOT_COUNT*5)
 #define SPISYNC_PATTERN_DELAYMS     (100)// clock 10M ---> 1KBytes/ms
-#define SPISYNC_TX_HMSGBUFFER_SIZE  (2*sizeof(spisync_slot_t))
-#define SPISYNC_TX_LMSGBUFFER_SIZE  (10*sizeof(spisync_slot_t))
-#define SPISYNC_RX_MSGBUFFER_SIZE   (10*sizeof(spisync_slot_t))
-#define SPISYNC_RX_STREAMBUFFER_SIZE    (2*sizeof(spisync_slot_t))
+
+// tx buf
+#define SPISYNC_TX_MSGBUFFER_SIZE   (3*sizeof(spisync_slot_t))
+
+// rx buf
+#define SPISYNC_MSGBUFFER_TO_STREAM (0)
+#if SPISYNC_MSGBUFFER_TO_STREAM 
+#define SPISYNC_RX_MSGBUFFER_SIZE   (3*sizeof(spisync_slot_t))
+#endif
+#define SPISYNC_RX_STREAMBUFFER_SIZE    (6*sizeof(spisync_slot_t))
+#define SPISYNC_RX_READTIMES            (2)
+
 #define SPISYNC_RX_STREAMBUFFER_LEVEL   (SPISYNC_PAYLOADBUF_LEN)
 
 // task config
@@ -38,6 +46,7 @@
 #define EVT_SPISYNC_WRITE_BIT       (1<<3)
 #define EVT_SPISYNC_READ_BIT        (1<<4)
 #define EVT_SPISYNC_RSYNC_BIT       (1<<5)
+#define EVT_SPISYNC_DUMP_BIT        (1<<6)
 #define EVT_SPISYNC_ALL_BIT         (EVT_SPISYNC_RESET_BIT | \
                                      EVT_SPISYNC_CTRL_BIT  | \
                                      EVT_SPISYNC_WRITE_BIT | \
@@ -82,9 +91,10 @@ typedef struct __spisync {
     TaskHandle_t            taskhdr;
     EventGroupHandle_t      event;
     TimerHandle_t           timer;//only for delay reset
-    MessageBufferHandle_t   tx_hmsgbuffer;
-    MessageBufferHandle_t   tx_lmsgbuffer;
+    MessageBufferHandle_t   tx_msgbuffer;
+#if SPISYNC_MSGBUFFER_TO_STREAM
     MessageBufferHandle_t   rx_msgbuffer;
+#endif
     StreamBufferHandle_t    rx_streambuffer;
 
     /* local global arg */
@@ -115,10 +125,12 @@ typedef struct __spisync {
     uint32_t                tsk_ctrlcnt;
     uint32_t                tsk_writecnt;
     uint32_t                tsk_readcnt;
+#if SPISYNC_MSGBUFFER_TO_STREAM
     uint32_t                tsk_rsynccnt;
+#endif
     uint32_t                tsk_rsttick;
 
-    uint32_t                iperfrx;
+    uint32_t                iperf;
     uint32_t                dbg_tick_old;
     uint32_t                isr_rxcnt_old;
     uint32_t                isr_txcnt_old;
@@ -130,15 +142,15 @@ typedef struct __spisync {
 int spisync_init        (spisync_t *spisync, const spisync_config_t *config);
 int spisync_deinit      (spisync_t *spisync);
 int spisync_read        (spisync_t *spisync, void *buf, uint32_t len, uint32_t timeout_ms);
-int spisync_write_hpri  (spisync_t *spisync, void *buf, uint32_t len, uint32_t timeout_ms);
-int spisync_write_lpri  (spisync_t *spisync, void *buf, uint32_t len, uint32_t timeout_ms);
 int spisync_write       (spisync_t *spisync, void *buf, uint32_t len, uint32_t timeout_ms);
 
 int spisync_fakewrite_forread(spisync_t *spisync, void *buf, uint32_t len, uint32_t timeout_ms);
 
-int spisync_dump        (spisync_t *spisync);
-int spisync_iperftx     (spisync_t *spisync, uint32_t time_sec);
-int spisync_iperfrx     (spisync_t *spisync, int enable);
+int spisync_dump          (spisync_t *spisync);
+int spisync_dump_internal (spisync_t *spisync);
+
+int spisync_iperf         (spisync_t *spisync, int enable);
+int spisync_iperftx       (spisync_t *spisync, uint32_t time_sec);
 
 #endif
 

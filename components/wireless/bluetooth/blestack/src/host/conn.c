@@ -403,6 +403,9 @@ static void conn_update_timeout(struct k_work *work)
 	BT_DBG("conn %p", conn);
 
 	if (conn->state == BT_CONN_DISCONNECTED) {
+		#ifdef QCC74x_BLE_PATCH_FREE_ALLOCATED_BUFFER_IN_OS
+		k_delayed_work_free(&conn->update_work);
+		#endif
 		bt_l2cap_disconnected(conn);
 		#if !defined(QCC74x_BLE)
 		notify_disconnected(conn);
@@ -1720,9 +1723,6 @@ static void conn_cleanup(struct bt_conn *conn)
     #ifdef QCC74x_BLE_PATCH_FREE_ALLOCATED_BUFFER_IN_OS
     k_queue_free(&conn->tx_queue._queue);
     conn->tx_queue._queue.hdl = NULL;
-    if(conn->update_work.timer.timer.hdl){
-        k_delayed_work_del_timer(&conn->update_work);
-    }
     #endif
 }
 

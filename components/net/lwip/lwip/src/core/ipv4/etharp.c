@@ -55,6 +55,7 @@
 #include "lwip/acd.h"
 #include "lwip/prot/iana.h"
 #include "netif/ethernet.h"
+#include "lwip/timeouts.h"
 
 #include <string.h>
 
@@ -74,7 +75,11 @@
  *  @internal Keep this number at least 2, otherwise it might
  *  run out instantly if the timeout occurs directly after a request.
  */
+#if !ARP_TIMER_PRECISE_NEEDED
 #define ARP_MAXPENDING 5
+#else
+#define ARP_MAXPENDING (5 * 1000 / ARP_TMR_INTERVAL)
+#endif
 
 /** ARP states */
 enum etharp_state {
@@ -101,6 +106,9 @@ struct etharp_entry {
   struct eth_addr ethaddr;
   u16_t ctime;
   u8_t state;
+#if ARP_TIMER_PRECISE_NEEDED
+  u32_t sec_time;
+#endif
 };
 
 static struct etharp_entry arp_table[ARP_TABLE_SIZE];
@@ -188,6 +196,32 @@ etharp_free_entry(int i)
 #endif /* LWIP_DEBUG */
 }
 
+static void update_arp_timer_available()
+{
+#if ARP_TIMER_PRECISE_NEEDED
+  bool set_disabled = true;
+  for (int i = 0; i < ARP_TABLE_SIZE; ++i) {
+    u8_t state = arp_table[i].state;
+    if (state == ETHARP_STATE_PENDING) {
+      set_disabled = false;
+      break;
+    }
+  }
+  LWIP_DEBUGF(ETHARP_DEBUG, ("etharp update_timer set_disabled=%d\n", set_disabled));
+  if (set_disabled) {
+    sys_timeouts_set_timer_enable(false, etharp_tmr);
+  }
+#endif
+}
+
+static void enable_arp_timer_available()
+{
+#if ARP_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(ETHARP_DEBUG, ("enable_arp_timer_available"));
+  sys_timeouts_set_timer_enable(true, etharp_tmr);
+#endif
+}
+
 /**
  * Clears expired entries in the ARP table.
  *
@@ -200,6 +234,7 @@ etharp_tmr(void)
   int i;
 
   LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_timer\n"));
+  update_arp_timer_available();
   /* remove expired entries from the ARP table */
   for (i = 0; i < ARP_TABLE_SIZE; ++i) {
     u8_t state = arp_table[i].state;
@@ -209,14 +244,20 @@ etharp_tmr(void)
 #endif /* ETHARP_SUPPORT_STATIC_ENTRIES */
        ) {
       arp_table[i].ctime++;
+#if !ARP_TIMER_PRECISE_NEEDED
       if ((arp_table[i].ctime >= ARP_MAXAGE) ||
           ((arp_table[i].state == ETHARP_STATE_PENDING)  &&
            (arp_table[i].ctime >= ARP_MAXPENDING))) {
+#else
+      if ((arp_table[i].state == ETHARP_STATE_PENDING)  &&
+           (arp_table[i].ctime >= ARP_MAXPENDING)) {
+#endif
         /* pending or stable entry has become old! */
         LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_timer: expired %s entry %d.\n",
                                    arp_table[i].state >= ETHARP_STATE_STABLE ? "stable" : "pending", i));
         /* clean up entries that have just been expired */
         etharp_free_entry(i);
+        update_arp_timer_available();
       } else if (arp_table[i].state == ETHARP_STATE_STABLE_REREQUESTING_1) {
         /* Don't send more than one request every 2 seconds. */
         arp_table[i].state = ETHARP_STATE_STABLE_REREQUESTING_2;
@@ -454,6 +495,10 @@ etharp_update_arp_entry(struct netif *netif, const ip4_addr_t *ipaddr, struct et
   {
     /* mark it stable */
     arp_table[i].state = ETHARP_STATE_STABLE;
+#if ARP_TIMER_PRECISE_NEEDED
+    update_arp_timer_available();
+    arp_table[i].sec_time = sys_now() / 1000;
+#endif
   }
 
   /* record network interface */
@@ -754,6 +799,7 @@ etharp_output_to_arp_index(struct netif *netif, struct pbuf *q, netif_addr_idx_t
      but only if its state is ETHARP_STATE_STABLE to prevent flooding the
      network with ARP requests if this address is used frequently. */
   if (arp_table[arp_idx].state == ETHARP_STATE_STABLE) {
+#if !ARP_TIMER_PRECISE_NEEDED
     if (arp_table[arp_idx].ctime >= ARP_AGE_REREQUEST_USED_BROADCAST) {
       /* issue a standard request using broadcast */
       if (etharp_request(netif, &arp_table[arp_idx].ipaddr) == ERR_OK) {
@@ -765,6 +811,22 @@ etharp_output_to_arp_index(struct netif *netif, struct pbuf *q, netif_addr_idx_t
         arp_table[arp_idx].state = ETHARP_STATE_STABLE_REREQUESTING_1;
       }
     }
+#else
+    u32_t now = sys_now() / 1000;
+    if (now - arp_table[arp_idx].sec_time >= ARP_AGE_REREQUEST_USED_BROADCAST) {
+      LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_output_to_arp_index: expired USED_BROADCAST"));
+      /* issue a standard request using broadcast */
+      if (etharp_request(netif, &arp_table[arp_idx].ipaddr) == ERR_OK) {
+        arp_table[arp_idx].state = ETHARP_STATE_STABLE_REREQUESTING_1;
+      }
+    } else if (now - arp_table[arp_idx].sec_time >= ARP_AGE_REREQUEST_USED_UNICAST) {
+      LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_output_to_arp_index: expired USED_UNICAST"));
+      /* issue a unicast request (for 15 seconds) to prevent unnecessary broadcast */
+      if (etharp_request_dst(netif, &arp_table[arp_idx].ipaddr, &arp_table[arp_idx].ethaddr) == ERR_OK) {
+        arp_table[arp_idx].state = ETHARP_STATE_STABLE_REREQUESTING_1;
+      }
+    }
+#endif
   }
 
   return ethernet_output(netif, q, (struct eth_addr *)(netif->hwaddr), &arp_table[arp_idx].ethaddr, ETHTYPE_IP);
@@ -794,6 +856,7 @@ etharp_output(struct netif *netif, struct pbuf *q, const ip4_addr_t *ipaddr)
   const struct eth_addr *dest;
   struct eth_addr mcastaddr;
   const ip4_addr_t *dst_addr = ipaddr;
+  u32_t now;
 
   LWIP_ASSERT_CORE_LOCKED();
   LWIP_ASSERT("netif != NULL", netif != NULL);
@@ -859,6 +922,14 @@ etharp_output(struct netif *netif, struct pbuf *q, const ip4_addr_t *ipaddr)
       netif_addr_idx_t etharp_cached_entry = netif->hints->addr_hint;
       if (etharp_cached_entry < ARP_TABLE_SIZE) {
 #endif /* LWIP_NETIF_HWADDRHINT */
+#if ARP_TIMER_PRECISE_NEEDED
+        now = sys_now() / 1000;
+        if((arp_table[etharp_cached_entry].state >= ETHARP_STATE_STABLE) && \
+           (now - arp_table[etharp_cached_entry].sec_time >= ARP_MAXAGE)) {
+          LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_output: expired ARP_MAXAGE etharp_cached_entry %"U16_F"", etharp_cached_entry));
+          etharp_free_entry(etharp_cached_entry);
+        }
+#endif
         if ((arp_table[etharp_cached_entry].state >= ETHARP_STATE_STABLE) &&
 #if ETHARP_TABLE_MATCH_NETIF
             (arp_table[etharp_cached_entry].netif == netif) &&
@@ -875,7 +946,18 @@ etharp_output(struct netif *netif, struct pbuf *q, const ip4_addr_t *ipaddr)
 
     /* find stable entry: do this here since this is a critical path for
        throughput and etharp_find_entry() is kind of slow */
+#if !ARP_TIMER_PRECISE_NEEDED
     for (i = 0; i < ARP_TABLE_SIZE; i++) {
+#else
+    now = sys_now() / 1000;
+    for (i = 0; i < ARP_TABLE_SIZE; i++) {
+      if((arp_table[i].state >= ETHARP_STATE_STABLE) && (now - arp_table[i].sec_time >= ARP_MAXAGE)) {
+        /* pending or stable entry has become old! */
+        LWIP_DEBUGF(ETHARP_DEBUG, ("etharp_output: expired ARP_MAXAGE entry %"U16_F"", (u16_t)i));
+        /* clean up entries that have just been expired */
+        etharp_free_entry(i);
+      }
+#endif
       if ((arp_table[i].state >= ETHARP_STATE_STABLE) &&
 #if ETHARP_TABLE_MATCH_NETIF
           (arp_table[i].netif == netif) &&
@@ -977,6 +1059,7 @@ etharp_query(struct netif *netif, const ip4_addr_t *ipaddr, struct pbuf *q)
 
   /* do we have a new entry? or an implicit query request? */
   if (is_new_entry || (q == NULL)) {
+    enable_arp_timer_available();
     /* try to resolve it; send out ARP request */
     result = etharp_request(netif, ipaddr);
     if (result != ERR_OK) {

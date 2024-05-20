@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include <at_main.h>
+
 #if 0
 #include <vfs.h>
 #include <device/vfs_uart.h>
@@ -136,6 +138,9 @@ int at_port_write_data(uint8_t *data, int len)
     printf("\r\n");
 #endif
 #endif
+    if (at->fakeoutput) {
+        return len;
+    }
     msg_len = spisync_write(at_spisync, data, len, portMAX_DELAY);//portMAX_DELAY
     if (msg_len > 0) {
         return msg_len;

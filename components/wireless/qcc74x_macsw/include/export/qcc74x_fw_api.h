@@ -73,9 +73,6 @@ void qcc74x_sta_set_keepalive_period(uint8_t time_seconds);
  *
  ****************************************************************************************
  */
-int qcc74x_sta_send_nullframe(void *arg);
-uint8_t qcc74x_nonstandard_ap_detect(void);
-uint8_t qcc74x_tim_cnt_get(void);
 #endif
 
 #endif /*__QCC74x_FW_API_H__*/

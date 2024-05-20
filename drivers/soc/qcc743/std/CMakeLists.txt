@@ -26,6 +26,7 @@ sdk_library_add_sources(src/qcc743_sdh.c)
 sdk_library_add_sources(src/qcc743_tzc_sec.c)
 sdk_library_add_sources(src/qcc743_psram.c)
 sdk_library_add_sources(src/qcc743_pm.c)
+sdk_library_add_sources(src/qcc743_sec_dbg.c)
 
 if(CONFIG_RF)
 sdk_library_add_sources(src/qcc743_mfg_efuse.c)

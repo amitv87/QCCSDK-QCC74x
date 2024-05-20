@@ -45,7 +45,7 @@ struct dis_pnp {
 #elif defined(QCC74x_undef)
 #define CONFIG_BT_GATT_DIS_MODEL    "QCC74x_undef_BLE_MODEL"
 #else
-#define CONFIG_BT_GATT_DIS_MODEL
+#define CONFIG_BT_GATT_DIS_MODEL    "QCC74x_BLE_MODEL"
 #endif
 
 #define CONFIG_BT_GATT_DIS_MANUF    "qcc74x"
@@ -131,6 +131,7 @@ static struct bt_gatt_attr attrs[]= {
 	BT_GATT_CHARACTERISTIC(BT_UUID_DIS_MODEL_NUMBER,
 			       BT_GATT_CHRC_READ, BT_GATT_PERM_READ,
 			       read_str, NULL, BT_GATT_DIS_MODEL_REF),
+
 	BT_GATT_CHARACTERISTIC(BT_UUID_DIS_MANUFACTURER_NAME,
 			       BT_GATT_CHRC_READ, BT_GATT_PERM_READ,
 			       read_str, NULL, BT_GATT_DIS_MANUF_REF),

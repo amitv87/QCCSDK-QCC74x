@@ -145,6 +145,7 @@ sdk_library_add_sources(
 	src/host/hci_ecc.c
 	src/host/l2cap.c
 	src/host/uuid.c
+	src/host/version_bthost.c
 )
 # 
 # ifneq ($(CONFIG_BT_CONN), 0)

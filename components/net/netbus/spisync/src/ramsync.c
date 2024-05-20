@@ -38,6 +38,10 @@ static ATTR_TCM_SECTION void _spi_dma_tx_irq(void *p_arg)
     if (ctx->tx_cb) {
         ctx->tx_cb(ctx->tx_arg);
     }
+
+    if (ctx->rx_cb) {
+        ctx->rx_cb(ctx->rx_arg);
+    }
 }
 
 static void _spi_hw_init(const spisync_config_t *config)
@@ -95,26 +99,26 @@ static void _spi_dma_init(lramsync_ctx_t *ctx)
     qcc74x_dma_channel_init(ctx->dma_rx_chan, &rx_config);
 
     qcc74x_dma_channel_irq_attach(ctx->dma_tx_chan, _spi_dma_tx_irq, (void *)ctx);
-    qcc74x_dma_channel_irq_attach(ctx->dma_rx_chan, _spi_dma_rx_irq, (void *)ctx);
+    //qcc74x_dma_channel_irq_attach(ctx->dma_rx_chan, _spi_dma_rx_irq, (void *)ctx);
 
-    tx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_tx);
-    rx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_rx);
-    for (int i = 0; i < ctx->items_tx; i++) {
-        tx_transfers[i].src_addr = (uint32_t)ctx->node_tx[i].buf;
+    tx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_tx / 2);
+    rx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_rx / 2);
+    for (int i = 0; i < ctx->items_tx / 2; i++) {
+        tx_transfers[i].src_addr = (uint32_t)ctx->node_tx[2*i].buf;
         tx_transfers[i].dst_addr = (uint32_t)ctx->config->spi_dma_tdr;
-        tx_transfers[i].nbytes = ctx->node_tx[i].len;
+        tx_transfers[i].nbytes = ctx->node_tx[i].len + ctx->node_tx[i+1].len;
     }
-    for (int i = 0; i < ctx->items_rx; i++) {
+    for (int i = 0; i < ctx->items_rx / 2; i++) {
         rx_transfers[i].src_addr = (uint32_t)ctx->config->spi_dma_rdr;
-        rx_transfers[i].dst_addr = (uint32_t)ctx->node_rx[i].buf;
-        rx_transfers[i].nbytes = ctx->node_rx[i].len;
+        rx_transfers[i].dst_addr = (uint32_t)ctx->node_rx[2*i].buf;
+        rx_transfers[i].nbytes = ctx->node_rx[i].len + ctx->node_rx[i+1].len;
     }
 
     int used_count = qcc74x_dma_channel_lli_reload(ctx->dma_tx_chan,
                                                  ((struct _ramsync_low_priv *)ctx->priv)->tx_lli,
                                                  ctx->items_tx,
                                                  tx_transfers,
-                                                 ctx->items_tx);
+                                                 ctx->items_tx / 2);
     qcc74x_dma_channel_lli_link_head(ctx->dma_tx_chan,
                                    ((struct _ramsync_low_priv *)ctx->priv)->tx_lli,
                                    used_count);
@@ -123,7 +127,7 @@ static void _spi_dma_init(lramsync_ctx_t *ctx)
                                              ((struct _ramsync_low_priv *)ctx->priv)->rx_lli,
                                              ctx->items_rx,
                                              rx_transfers,
-                                             ctx->items_rx);
+                                             ctx->items_rx / 2);
     qcc74x_dma_channel_lli_link_head(ctx->dma_rx_chan,
                                    ((struct _ramsync_low_priv *)ctx->priv)->rx_lli,
                                    used_count);

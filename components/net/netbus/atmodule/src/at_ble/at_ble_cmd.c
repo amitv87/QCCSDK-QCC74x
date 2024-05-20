@@ -18,11 +18,14 @@
 #include <FreeRTOS.h>
 #include <timers.h>
 #include <semphr.h>
+#include "utils_hex.h"
 
 #include "at_main.h"
 #include "at_core.h"
 #include "at_ble_config.h"
 #include "at_ble_main.h"
+
+#define AT_BLE_CMD_PRINTF printf
 
 static int get_mac_from_string(char *string, uint8_t mac[6])
 {
@@ -51,7 +54,7 @@ static int get_mac_from_string(char *string, uint8_t mac[6])
     return -1;
 }
 
-static hex_to_string(uint8_t *hex, int hex_len, char *string, int string_len)
+static void hex_to_string(uint8_t *hex, int hex_len, char *string, int string_len)
 {
     int i;
 
@@ -185,20 +188,28 @@ static int at_setup_cmd_ble_scan_param(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
-static int at_ble_scan_callback(uint8_t addr_type, uint8_t *addr, int8_t rssi, uint8_t *adv_data, int adv_len)
+static int at_ble_scan_callback(uint8_t addr_type, uint8_t *addr, int8_t rssi, uint8_t evtype, uint8_t *data, int len)
 {
     char ble_scan_result[200] = {0};
-    char adv_data_string[65] = {0};
-    char *scan_rsp_data_string = "";
+    char scan_data[65] = {0};
+    char *adv_data = "";
+    char *scan_rsp_data = "";
 
-    hex_to_string(adv_data, adv_len, adv_data_string, sizeof(adv_data_string));
+    hex_to_string(data, len, scan_data, sizeof(scan_data));
+    if (evtype == 0x00 || evtype == 0x01 || evtype == 0x02 || evtype == 0x03) {
+        adv_data = scan_data; // adv
+    } else if (evtype == 0x04)  {
+        scan_rsp_data = scan_data; //scan rsp
+    }
+
     snprintf(ble_scan_result, sizeof(ble_scan_result), "+BLESCAN:\"%02x:%02x:%02x:%02x:%02x:%02x\",%d,%s,%s,%d\r\n",
             addr[0], addr[1], addr[2], addr[3], addr[4], addr[5],
             rssi,
-            adv_data_string,
-            scan_rsp_data_string,
+            adv_data,
+            scan_rsp_data,
             addr_type);
     AT_CMD_RESPONSE(ble_scan_result);
+    return 0;
 }
 
 static int at_setup_cmd_ble_scan(int argc, const char **argv)
@@ -219,6 +230,9 @@ static int at_setup_cmd_ble_scan(int argc, const char **argv)
     if (at_ble_config->work_role == BLE_DISABLE)
         return AT_RESULT_CODE_ERROR;
 
+    (void)duration_valid;
+    (void)filter_type_valid;
+    (void)filter_param_valid;
     if (enable == 0) {
         at_ble_scan_stop();
     }
@@ -235,7 +249,7 @@ static int at_setup_cmd_ble_scan_rsp_data(int argc, const char **argv)
 
     AT_CMD_PARSE_STRING(0, scan_rsp_data, sizeof(scan_rsp_data));
 
-    at_ble_config->scan_rsp_data.len = utils_hex2bin(scan_rsp_data, strlen(scan_rsp_data), at_ble_config->scan_rsp_data.data);
+    at_ble_config->scan_rsp_data.len = utils_hex2bin(scan_rsp_data, strlen(scan_rsp_data), at_ble_config->scan_rsp_data.data, sizeof(at_ble_config->scan_rsp_data.data));
     return AT_RESULT_CODE_OK;
 }
 
@@ -318,12 +332,15 @@ static int at_setup_cmd_ble_adv_data(int argc, const char **argv)
 
     AT_CMD_PARSE_STRING(0, adv_data, sizeof(adv_data));
 
-    at_ble_config->adv_data.len = utils_hex2bin(adv_data, strlen(adv_data), at_ble_config->adv_data.data);
+    at_ble_config->adv_data.len = utils_hex2bin(adv_data, strlen(adv_data), at_ble_config->adv_data.data, sizeof(at_ble_config->adv_data.data));
     return AT_RESULT_CODE_OK;
 }
 
 static int at_exe_cmd_ble_adv_start(int argc, const char **argv)
 {
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
     if (at_ble_adv_start() != 0) {
         return AT_RESULT_CODE_FAIL;
     }
@@ -333,6 +350,9 @@ static int at_exe_cmd_ble_adv_start(int argc, const char **argv)
 
 static int at_exe_cmd_ble_adv_stop(int argc, const char **argv)
 {
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
     if (at_ble_adv_stop() != 0) {
         return AT_RESULT_CODE_FAIL;
     }
@@ -342,11 +362,26 @@ static int at_exe_cmd_ble_adv_stop(int argc, const char **argv)
 
 static int at_query_cmd_ble_conn(int argc, const char **argv)
 {
-    if (at_ble_config->work_role != BLE_DISABLE) {
-        at_response_string("+BLECONN:\r\n");
+    if (at_ble_config->work_role == BLE_CLIENT) {
+        int i;
+        uint8_t addr[6];
+        int conn_num = 0;
+
+        for (i = 0; i < BLE_CONN_MAX_NUM; i++) {
+            if (at_ble_is_connected(i) && at_ble_conn_get_addr(i, addr)) {
+                at_response_string("+BLECONN:%d,\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n", i, addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+                conn_num++;
+            }
+        }
+
+        if (conn_num == 0) {
+            at_response_string("+BLECONN:\r\n");
+        }
+    } else if (at_ble_config->work_role == BLE_SERVER) {
+        return AT_RESULT_CODE_ERROR;
     }
 
-    return AT_RESULT_CODE_ERROR;
+    return AT_RESULT_CODE_OK;
 }
 
 static int at_setup_cmd_ble_conn(int argc, const char **argv)
@@ -379,8 +414,10 @@ static int at_setup_cmd_ble_conn(int argc, const char **argv)
     if (at_ble_config->work_role != BLE_CLIENT)
         return AT_RESULT_CODE_ERROR;
 
-    at_ble_conn(conn_index, remote_address, addr_type, timeout);
-    return AT_RESULT_CODE_ERROR;
+    if (!at_ble_conn(conn_index, remote_address, addr_type, timeout))
+        return AT_RESULT_CODE_ERROR;
+
+    return AT_RESULT_CODE_OK;
 }
 
 static int at_query_cmd_ble_conn_param(int argc, const char **argv)
@@ -393,11 +430,10 @@ static int at_query_cmd_ble_conn_param(int argc, const char **argv)
     int i = 0;
     int connected_num = 0;
 
-    for (i = 0; i < 2; i++) {
-        if (at_ble_is_connected(i)) {
-            at_ble_conn_get_param(i, &min_interval, &max_interval, &cur_interval, &latency, &timeout);
+    for (i = 0; i < BLE_CONN_MAX_NUM; i++) {
+        if (at_ble_is_connected(i) && at_ble_conn_get_param(i, &min_interval, &max_interval, &cur_interval, &latency, &timeout)) {
             at_response_string("+BLECONNPARAM:%d,%d,%d,%d,%d,%d\r\n",
-                i, min_interval, max_interval, cur_interval, latency, timeout);
+                    i, min_interval, max_interval, cur_interval, latency, timeout);
             connected_num++;
         }
     }
@@ -525,6 +561,239 @@ static int at_setup_cmd_ble_cfg_mtu(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int at_query_cmd_ble_gatts_service(int argc, const char **argv)
+{
+    int i;
+    uint8_t uuid[16];
+    uint8_t type;
+    char uuid_string[33];
+
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
+    for (i = 0; i < BLE_SRV_MAX_NUM; i++) {
+        if (at_ble_gatts_service_get(i, uuid, &type)) {
+            hex_to_string(uuid, sizeof(uuid), uuid_string, sizeof(uuid_string));
+            at_response_string("+BLEGATTSSRV:%d,\"%s\",%d\r\n", i, uuid_string, type);
+        }
+    }
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_cmd_ble_gatts_service_create(int argc, const char **argv)
+{
+    int srv_idx = 0;
+    char srv_uuid_string[33];
+    int srv_type = 0;
+    uint8_t srv_uuid[16];
+    int srv_uuid_len = 0;
+
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
+    AT_CMD_PARSE_NUMBER(0, &srv_idx);
+    AT_CMD_PARSE_STRING(1, srv_uuid_string, sizeof(srv_uuid_string));
+    AT_CMD_PARSE_NUMBER(2, &srv_type);
+
+    if (srv_idx < 0 || srv_idx >= BLE_SRV_MAX_NUM)
+        return AT_RESULT_CODE_ERROR;
+    srv_uuid_len = utils_hex2bin(srv_uuid_string, strlen(srv_uuid_string), srv_uuid, sizeof(srv_uuid));
+    if (srv_uuid_len != 16)
+        return AT_RESULT_CODE_ERROR;
+    if (srv_type != BLE_GATT_SRV_PRIMARY && srv_type != BLE_GATT_SRV_SECONDARY)
+        return AT_RESULT_CODE_ERROR;
+
+    if (!at_ble_gatts_service_set(srv_idx, srv_uuid, srv_type)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_cmd_ble_gatts_service_delete(int argc, const char **argv)
+{
+    int srv_idx = 0;
+
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
+    AT_CMD_PARSE_NUMBER(0, &srv_idx);
+
+    if (srv_idx < 0 || srv_idx >= BLE_SRV_MAX_NUM)
+        return AT_RESULT_CODE_ERROR;
+
+    if (!at_ble_gatts_service_del(srv_idx)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_query_cmd_ble_gatts_char(int argc, const char **argv)
+{
+    int i, j;
+    uint8_t uuid[16];
+    uint32_t prop;
+    char uuid_string[33];
+
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
+    for (i = 0; i < BLE_SRV_MAX_NUM; i++) {
+        for (j = 0; j < BLE_CHAR_MAX_NUM; j++) {
+            if (at_ble_gatts_service_char_get(i, j, uuid, &prop)) {
+                hex_to_string(uuid, sizeof(uuid), uuid_string, sizeof(uuid_string));
+                at_response_string("+BLEGATTSCHAR:%d,%d,\"%s\",%d\r\n", i, j, uuid_string, prop);
+            }
+        }
+    }
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_cmd_ble_gatts_char_create(int argc, const char **argv)
+{
+    int srv_idx = 0;
+    int char_idx = 0;
+    char char_uuid_string[33];
+    int char_prop = 0;
+    uint8_t char_uuid[16];
+    int char_uuid_len = 0;
+    uint32_t all_prop = BLE_GATT_CHAR_PROP_READ|BLE_GATT_CHAR_PROP_WRITE_WITHOUT_RESP|BLE_GATT_CHAR_PROP_WRITE|BLE_GATT_CHAR_PROP_NOTIFY|BLE_GATT_CHAR_PROP_INDICATE;
+
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
+    AT_CMD_PARSE_NUMBER(0, &srv_idx);
+    AT_CMD_PARSE_NUMBER(1, &char_idx );
+    AT_CMD_PARSE_STRING(2, char_uuid_string, sizeof(char_uuid_string));
+    AT_CMD_PARSE_NUMBER(3, &char_prop);
+
+    if (srv_idx < 0 || srv_idx >= BLE_SRV_MAX_NUM)
+        return AT_RESULT_CODE_ERROR;
+    if (char_idx < 0 || char_idx >= BLE_CHAR_MAX_NUM)
+        return AT_RESULT_CODE_ERROR;
+    char_uuid_len = utils_hex2bin(char_uuid_string, strlen(char_uuid_string), char_uuid, sizeof(char_uuid));
+    if (char_uuid_len != 16)
+        return AT_RESULT_CODE_ERROR;
+    /*if (char_prop & (~all_prop))
+        return AT_RESULT_CODE_ERROR;*/
+    if (char_prop != BLE_GATT_CHAR_PROP_READ &&
+            char_prop != BLE_GATT_CHAR_PROP_WRITE_WITHOUT_RESP &&
+            char_prop != BLE_GATT_CHAR_PROP_WRITE && 
+            char_prop != BLE_GATT_CHAR_PROP_NOTIFY &&
+            char_prop != BLE_GATT_CHAR_PROP_INDICATE)
+        return AT_RESULT_CODE_ERROR;
+
+    if (!at_ble_gatts_service_char_set(srv_idx, char_idx, char_uuid, char_prop)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    return AT_RESULT_CODE_OK;
+}
+
+#if 0
+static int at_setup_cmd_ble_gatts_notify(int argc, const char **argv)
+{
+    int srv_idx = 0;
+    int char_idx = 0;
+    int length = 0;
+    int recv_num = 0;
+    int send_num = 0;
+    int ret;
+
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
+    AT_CMD_PARSE_NUMBER(0, &srv_idx);
+    AT_CMD_PARSE_NUMBER(1, &char_idx );
+    AT_CMD_PARSE_NUMBER(2, &length);
+
+    if (srv_idx < 0 || srv_idx >= BLE_SRV_MAX_NUM)
+        return AT_RESULT_CODE_ERROR;
+    if (char_idx < 0 || char_idx >= BLE_CHAR_MAX_NUM)
+        return AT_RESULT_CODE_ERROR;
+    if (length <= 0 || length > 517) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    char *buffer = (char *)pvPortMalloc(length);
+    if (!buffer) {
+        AT_BLE_CMD_PRINTF("malloc %d bytes failed\r\n", length);
+        return AT_RESULT_CODE_FAIL;
+    }
+
+    AT_CMD_RESPONSE(AT_CMD_MSG_WAIT_DATA);
+    while(recv_num < length) {
+        ret = AT_CMD_DATA_RECV(buffer + recv_num, length - recv_num);
+        if (ret > 0) {
+            recv_num += ret;
+        }
+    }
+    //at_response_string("Recv %d bytes\r\n", recv_num);
+
+    send_num = at_ble_gatts_service_notify(srv_idx, char_idx, buffer, recv_num);
+    vPortFree(buffer);
+
+    if (send_num != recv_num) {
+        return AT_RESULT_CODE_FAIL;
+    }
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_cmd_ble_gatts_indicate(int argc, const char **argv)
+{
+    int srv_idx = 0;
+    int char_idx = 0;
+    int length = 0;
+    int recv_num = 0;
+    int send_num = 0;
+    int ret;
+
+    if (at_ble_config->work_role != BLE_SERVER)
+        return AT_RESULT_CODE_ERROR;
+
+    AT_CMD_PARSE_NUMBER(0, &srv_idx);
+    AT_CMD_PARSE_NUMBER(1, &char_idx );
+    AT_CMD_PARSE_NUMBER(2, &length);
+
+    if (srv_idx < 0 || srv_idx >= BLE_SRV_MAX_NUM)
+        return AT_RESULT_CODE_ERROR;
+    if (char_idx < 0 || char_idx >= BLE_CHAR_MAX_NUM)
+        return AT_RESULT_CODE_ERROR;
+    if (length <= 0 || length > 517) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    char *buffer = (char *)pvPortMalloc(length);
+    if (!buffer) {
+        AT_BLE_CMD_PRINTF("malloc %d bytes failed\r\n", length);
+        return AT_RESULT_CODE_FAIL;
+    }
+
+    AT_CMD_RESPONSE(AT_CMD_MSG_WAIT_DATA);
+    while(recv_num < length) {
+        ret = AT_CMD_DATA_RECV(buffer + recv_num, length - recv_num);
+        if (ret > 0) {
+            recv_num += ret;
+        }
+    }
+    //at_response_string("Recv %d bytes\r\n", recv_num);
+
+    send_num = at_ble_gatts_service_indicate(srv_idx, char_idx, buffer, recv_num);
+    vPortFree(buffer);
+
+    if (send_num != recv_num) {
+        return AT_RESULT_CODE_FAIL;
+    }
+
+    return AT_RESULT_CODE_OK;
+    return AT_RESULT_CODE_OK;
+}
+#endif
+
 static const at_cmd_struct at_ble_cmd[] = {
     {"+BLEINIT", NULL, at_query_cmd_ble_init, at_setup_cmd_ble_init, NULL, 1, 1},
     //{"+BLEADDR", NULL, at_query_cmd_ble_addr, at_setup_cmd_ble_addr, NULL, 1, 2},
@@ -541,8 +810,13 @@ static const at_cmd_struct at_ble_cmd[] = {
     {"+BLEDISCONN", NULL, NULL, NULL, at_exe_cmd_ble_disconn, 0, 0},
     {"+BLEDATALEN", NULL, NULL, at_setup_cmd_ble_datalen, NULL, 2, 2},
     {"+BLECFGMTU", NULL, at_query_cmd_ble_cfg_mtu, at_setup_cmd_ble_cfg_mtu, NULL, 2, 2},
-    /*{"+BLEGATTSNTFY", NULL, NULL, NULL, NULL, 0, 0},
-    {"+BLEGATTSIND", NULL, NULL, NULL, NULL, 0, 0},*/
+    {"+BLEGATTSSRV", NULL, at_query_cmd_ble_gatts_service, NULL, NULL, 0, 0},
+    {"+BLEGATTSSRVCRE", NULL, NULL, at_setup_cmd_ble_gatts_service_create, NULL, 3, 3},
+    {"+BLEGATTSSRVDEL", NULL, NULL, at_setup_cmd_ble_gatts_service_delete, NULL, 1, 1},
+    {"+BLEGATTSCHAR", NULL, at_query_cmd_ble_gatts_char, NULL, NULL, 0, 0},
+    {"+BLEGATTSCHARCRE", NULL, NULL, at_setup_cmd_ble_gatts_char_create, NULL, 4, 4},
+    //{"+BLEGATTSNTFY", NULL, NULL, at_setup_cmd_ble_gatts_notify, NULL, 3, 3},
+    //{"+BLEGATTSIND", NULL, NULL, at_setup_cmd_ble_gatts_indicate, NULL, 3, 3},
 };
 
 bool at_ble_cmd_regist(void)

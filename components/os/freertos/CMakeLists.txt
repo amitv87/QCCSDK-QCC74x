@@ -9,12 +9,13 @@ sdk_library_add_sources(timers.c)
 sdk_library_add_sources(freertos_port.c)
 sdk_library_add_sources(portable/MemMang/heap_3.c)
 sdk_library_add_sources(stream_buffer.c)
-#sdk_library_add_sources(freertos_helper/ps_extend.c)
+sdk_library_add_sources_ifdef(CONFIG_PS_EXTEND freertos_helper/ps_extend.c portable/GCC/RISC-V/common/portStatTrap.c)
 
 sdk_add_include_directories(include)
-#sdk_add_include_directories(freertos_helper/include)
+sdk_add_include_directories_ifdef(CONFIG_PS_EXTEND freertos_helper/include)
 
 sdk_add_compile_definitions(-DCONFIG_FREERTOS)
+sdk_add_compile_definitions_ifdef(CONFIG_PS_EXTEND -DCONFIG_PS_EXTEND)
 
 if(("${CHIP}" STREQUAL "qcc74x_undef") AND ("${CPU_ID}" STREQUAL "d0"))
 sdk_library_add_sources(portable/GCC/RISC-V/c906/port.c)

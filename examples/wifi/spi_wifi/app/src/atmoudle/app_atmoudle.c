@@ -7,7 +7,7 @@
 #include <mem.h>
 #include <shell.h>
 #include <spisync.h>
-
+#include "at_main.h"
 #include "qcc74x_dma.h"
 
 const struct spisync_config spisync_config = {
@@ -65,6 +65,8 @@ static void atspisync_fakepush_forpop_cmd(int argc, char **argv)
     }
     msg_len = cmd_len;
 
+    extern struct at_struct *at;
+    at->fakeoutput = 1;
     msg_len = spisync_fakewrite_forread(at_spisync, msg, msg_len, 0);
 
     printf("fakewrite len:%d, hascrlf:%d\r\n", msg_len, hascrlf);
@@ -77,11 +79,11 @@ SHELL_CMD_EXPORT_ALIAS(atspisync_fakepush_forpop_cmd, atfake, spisync fake push 
 
 static void at_dump_cmd(int argc, char **argv)
 {
-    spisync_dump(at_spisync);
+    spisync_dump_internal(at_spisync);
 }
 SHELL_CMD_EXPORT_ALIAS(at_dump_cmd, at, at dump spisync dump);
 
-static void at_iperfrx_cmd(int argc, char **argv)
+static void at_iperf_cmd(int argc, char **argv)
 {
     int enable = 1;
 
@@ -89,22 +91,24 @@ static void at_iperfrx_cmd(int argc, char **argv)
         enable = atoi(argv[1]);
     }
 
-    spisync_iperfrx(at_spisync, enable);
+    spisync_iperf(at_spisync, enable);
 }
-SHELL_CMD_EXPORT_ALIAS(at_iperfrx_cmd, at_iperfrx, at_iperfrx 1);
+SHELL_CMD_EXPORT_ALIAS(at_iperf_cmd, at_iperf, at_iperf [0 or 1]);
 
 static void at_iperftx_cmd(int argc, char **argv)
 {
     uint32_t time_sec;
 
     if (argc < 2) {
-        printf("Usage: at_iperf <time_sec>\r\n");
-        return;
+        time_sec = 20;
+    } else if (argc == 2) {
+        time_sec = atoi(argv[1]);
     }
-    time_sec = atoi(argv[1]);
+    printf("Usage: at_iperftx [time_sec]\r\n");
+
     spisync_iperftx(at_spisync, time_sec);
 }
-SHELL_CMD_EXPORT_ALIAS(at_iperftx_cmd, at_iperftx, at_iperf 10);
+SHELL_CMD_EXPORT_ALIAS(at_iperftx_cmd, at_iperftx, at_iperftx [20]);
 
 void app_atmoudle_init(void)
 {

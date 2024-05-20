@@ -67,6 +67,7 @@ struct at_struct {
     int echo;
     int syslog;
     int store;
+    int fakeoutput;
     int exit;
     at_work_mode incmd;
     at_device_ops device_ops;

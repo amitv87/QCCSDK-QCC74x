@@ -193,6 +193,40 @@ void qcc74x_show_log(void)
     printf("Build:%s,%s\r\n", __TIME__, __DATE__);
 }
 
+static const char* qcc74x_sys_version(const char ***ctx)
+{
+    extern uint8_t _version_info_section_start;
+    extern uint8_t _version_info_section_end;
+    const char ** const version_section_start = (const char**)&_version_info_section_start;
+    const char ** const version_section_end = (const char**)&_version_info_section_end;
+    const char *version_str;
+
+    //init
+    if (NULL == (*ctx)) {
+        (*ctx) = version_section_start;
+    }
+    //check the end
+    if (version_section_end == (*ctx)) {
+        return NULL;
+    }
+    version_str = (**ctx);
+    *ctx = (*ctx) + 1;
+    return version_str;
+}
+
+void qcc74x_show_component_version(void)
+{
+    const char **ctx = NULL;
+    const char *version_str;
+
+    puts("Version of used components:\r\n");
+    while ((version_str = qcc74x_sys_version(&ctx))) {
+        puts("\tVersion: ");
+        puts(version_str);
+        puts("\r\n");
+    }
+}
+
 void qcc74x_show_flashinfo(void)
 {
     spi_flash_cfg_type flashCfg;
@@ -630,7 +664,12 @@ static void reboot_cmd(int argc, char **argv)
 {
     GLB_SW_POR_Reset();
 }
+static void show_sys_versoin_cmd(int argc, char **argv)
+{
+    qcc74x_show_component_version();
+}
 SHELL_CMD_EXPORT_ALIAS(reboot_cmd, reboot, reboot);
+SHELL_CMD_EXPORT_ALIAS(show_sys_versoin_cmd, sysver, show sys version);
 
 #ifdef LP_APP
 #include "qcc74x_lp.h"

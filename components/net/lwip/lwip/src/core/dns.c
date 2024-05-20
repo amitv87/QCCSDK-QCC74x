@@ -94,6 +94,7 @@
 #include "lwip/memp.h"
 #include "lwip/dns.h"
 #include "lwip/prot/dns.h"
+#include "lwip/timeouts.h"
 
 #include <string.h>
 
@@ -391,11 +392,34 @@ dns_getserver(u8_t numdns)
  * The DNS resolver client timer - handle retries and timeouts and should
  * be called every DNS_TMR_INTERVAL milliseconds (every second by default).
  */
+#if DNS_TIMER_PRECISE_NEEDED
+static bool
+dns_check_table_empty(void)
+{
+  u8_t i;
+
+  for (i = 0; i < DNS_TABLE_SIZE; i++) {
+    if (dns_table[i].state != DNS_STATE_UNUSED) {
+      break;
+    }
+  }
+
+  return ((i == DNS_TABLE_SIZE) ? true : false);
+}
+#endif
 void
 dns_tmr(void)
 {
   LWIP_DEBUGF(DNS_DEBUG, ("dns_tmr: dns_check_entries\n"));
+#if !DNS_TIMER_PRECISE_NEEDED
   dns_check_entries();
+#else
+  if (dns_check_table_empty()) {
+    sys_timeouts_set_timer_enable(false, dns_tmr);
+  } else {
+    dns_check_entries();
+  }
+#endif
 }
 
 #if DNS_LOCAL_HOSTLIST
@@ -1520,6 +1544,10 @@ dns_enqueue(const char *name, size_t hostnamelen, dns_found_callback found,
 
   /* force to send query without waiting timer */
   dns_check_entry(i);
+
+#if DNS_TIMER_PRECISE_NEEDED
+  sys_timeouts_set_timer_enable(true, dns_tmr);
+#endif
 
   /* dns query is enqueued */
   return ERR_INPROGRESS;

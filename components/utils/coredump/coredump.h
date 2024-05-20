@@ -2,8 +2,8 @@
 #define __COREDUMP_H__
 
 struct dump_section {
-	uint32_t addr;
-	uint32_t len;
+    uint32_t addr;
+    uint32_t len;
 };
 extern __attribute__((weak)) struct dump_section _dump_sections;
 

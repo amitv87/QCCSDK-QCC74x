@@ -1,2 +1,6 @@
 sdk_add_include_directories(include)
+if(DEFINED CONFIG_LPAPP)
+sdk_add_static_library(lib/libqcc74x_macsw_lp.a)
+else()
 sdk_add_static_library(lib/libqcc74x_macsw.a)
+endif()

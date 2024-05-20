@@ -119,7 +119,8 @@ void m154_init(void)
 {
     // Initialize MAC154
     lmac154_init();
-    qcc74x_irq_attach(M154_INT_IRQn, qcc743_lmac154_getInterruptHandler, NULL);
+    // qcc74x_irq_attach(M154_INT_IRQn, qcc743_lmac154_getInterruptHandler, NULL);
+    qcc74x_irq_attach(M154_INT_IRQn, lmac154_getInterruptHandler(), NULL);
     qcc74x_irq_enable(M154_INT_IRQn);
 
     // Set PAN ID and Short Address

@@ -72,7 +72,6 @@ static int at_query_cmd_cmd(int argc, const char **argv)
     int t, q, s, e;
     char *name;
     char outbuf[64];
-    int offset = 0;
 
     memset(outbuf, 0, sizeof(outbuf));
     snprintf(outbuf, sizeof(outbuf), "+CMD:0,\"AT\",0,0,0,1\r\n");
@@ -141,6 +140,27 @@ static int at_exe_cmd_restore(int argc, const char **argv)
     vTaskDelay(pdMS_TO_TICKS(100));
     GLB_SW_POR_Reset();
 
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_query_fakeout(int argc, const char **argv)
+{
+    at_response_string("+FAKEOUTPUT:%d\r\n", at->fakeoutput);
+    at_response_string(AT_CMD_MSG_OK);
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_exe_fakeout(int argc, const char **argv)
+{
+    int enable = 0;
+
+    AT_CMD_PARSE_NUMBER(0, &enable);
+
+    if (enable == 0 || enable == 1) {
+        at->fakeoutput = enable;
+    } else {
+        return AT_RESULT_CODE_ERROR;
+    }
     return AT_RESULT_CODE_OK;
 }
 
@@ -545,6 +565,7 @@ static const at_cmd_struct at_base_cmd[] = {
     {"E0", NULL, NULL, NULL, at_exe_cmd_close_echo, 0, 0},
     {"E1", NULL, NULL, NULL, at_exe_cmd_open_echo, 0, 0},
     {"+RESTORE", NULL, NULL, NULL, at_exe_cmd_restore, 0, 0},
+    {"+FAKEOUTPUT", NULL, at_query_fakeout, at_exe_fakeout, NULL, 1, 1},
 #if 0
     {"+UART_CUR", NULL, at_query_cmd_uart_cur, at_setup_cmd_uart_cur, NULL, 5, 5},
     {"+UART_DEF", NULL, at_query_cmd_uart_def, at_setup_cmd_uart_def, NULL, 5, 5},

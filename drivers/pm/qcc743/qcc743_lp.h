@@ -15,7 +15,7 @@ extern int32_t (*shared_pds_default_level_config)(uint32_t*, uint32_t);
 #endif
 
 #ifndef LP_FW_START_ADDR
-#define LP_FW_START_ADDR          0x68012800//0x63026800
+#define LP_FW_START_ADDR          0x63026800//0x68012800
 #endif
 
 #define IOT2LP_PARA_ADDR          0x20010400
@@ -59,6 +59,7 @@ enum PSM_EVENT {
     PSM_EVENT_CONNECT,
     PSM_EVENT_DISCONNECT,
     PSM_EVENT_PS,
+    PSM_EVENT_AP,
     PSM_EVENT_APP,
     PSM_EVENT_LP_BUF_REUSED,
 };
@@ -117,11 +118,11 @@ typedef struct {
     uint8_t flash_clk;
     uint8_t flash_clk_div;
     uint8_t do_xip_recovery;
-    uint8_t xip_rsvd;
+    uint8_t unkown_io_wakeup_en;
 
     /* wifi para */
     uint8_t ap_channel;
-    uint8_t rsvd_1;
+    uint8_t tim_wakeup_en;
     uint16_t aid;
     uint8_t bssid[6];
     uint8_t local_mac[6];
@@ -171,9 +172,11 @@ typedef struct {
     int32_t bcn_delay_offset;
 
     uint32_t continuous_loss_cnt;
+    uint32_t continuous_loss_cnt_max;
     /* beacon loss ctrl */
     lp_fw_bcn_loss_level_t *bcn_loss_cfg_table;
     int32_t bcn_loss_level;
+    int32_t bcn_loss_loop_start;
     int32_t bcn_loss_level_max;
 
     /* rtc32k_trim */
@@ -219,6 +222,7 @@ typedef int (*qcc74x_lp_cb_t)(void *arg);
 #define LPFW_WAKEUP_IO        (1 << 3)
 #define LPFW_WAKEUP_ACOMP     (1 << 4)
 #define LPFW_WAKEUP_BLE       (1 << 5)
+#define LPFW_WAKEUP_LOSS_CFG_OVER   (1 << 6)
 
 /* beacon stamp valid type */
 #define BEACON_STAMP_LPFW     1
@@ -490,8 +494,10 @@ int qcc74x_lp_get_32k_clock_ready();
 int qcc74x_lp_set_32k_trim_ready(uint8_t ready_val);
 int qcc74x_lp_get_32k_trim_ready();
 
+int qcc74x_lp_get_bcn_delay_ready();
+
 /* bcn loss cfg */
-void qcc74x_lp_fw_bcn_loss_cfg(lp_fw_bcn_loss_level_t *cfg_table, uint32_t num);
+void qcc74x_lp_fw_bcn_loss_cfg(lp_fw_bcn_loss_level_t *cfg_table, uint16_t table_num, uint16_t loop_start, uint16_t loss_max);
 
 /* bcn loss rate */
 int qcc74x_lp_fw_bcn_loss_info_get(uint32_t *try_num, uint32_t *loss_num);

@@ -50,6 +50,7 @@
 #include "lwip/ip6.h"
 #include "lwip/ip6_addr.h"
 #include "lwip/prot/tcp.h"
+#include "lwip/timeouts.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,6 +67,12 @@ void             tcp_tmr     (void);  /* Must be called every
    intervals (instead of calling tcp_tmr()). */
 void             tcp_slowtmr (void);
 void             tcp_fasttmr (void);
+
+#if TCP_TIMER_PRECISE_NEEDED
+void             tcp_keepalive_tmr(void *arg);
+void             tcp_keepalive_timer_stop(struct tcp_pcb *pcb);
+void             tcp_keepalive_timer_start(struct tcp_pcb *pcb);
+#endif
 
 /* Call this from a netif driver (watch out for threading issues!) that has
    returned a memory error on transmit and now has free buffers to send more.
@@ -323,6 +330,7 @@ struct tcp_seg {
 extern struct tcp_pcb *tcp_input_pcb;
 extern u32_t tcp_ticks;
 extern u8_t tcp_active_pcbs_changed;
+extern const u8_t tcp_persist_backoff[7];
 
 /* The TCP PCB lists. */
 union tcp_listen_pcbs_t { /* List of all TCP PCBs in LISTEN state. */

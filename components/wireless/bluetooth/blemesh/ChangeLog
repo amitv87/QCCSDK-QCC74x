@@ -1,4 +1,15 @@
 # Changes
+## 2024-04-24
+1. [BLEMESH][MMDL][PTS] Add gen power model powerup behavior related models state restore 
+
+## 2024-04-23
+1. [PTS][BLEMESH] Use PTS V8.5.3 default TSPX device public key
+## 2024-04-12
+1. [PTS]IUT output mesh auth value
+2. Add Models Binding related callback
+3. [PTS] enhanced LPN CLI command and remove LC server and LC Setup server
+4. [PTS]Add models client command send cli
+
 ## 2024-03-28
 1. Add LPN CLI Command: Friend Req, Poll, Friend Clear
 

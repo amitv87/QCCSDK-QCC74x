@@ -9,6 +9,8 @@ qcc74x_undef/qcc74x_undef_sys.c
 )
 elseif("${CHIP}" STREQUAL "qcc74x_undef")
 sdk_library_add_sources(
+qcc74x_undef/qcc74x_undef_xip_recovery.c
+qcc74x_undef/qcc74x_undef_lp_debug.c
 qcc74x_undef/qcc74x_undef_lp.c
 qcc74x_undef/qcc74x_undef_sys.c
 )

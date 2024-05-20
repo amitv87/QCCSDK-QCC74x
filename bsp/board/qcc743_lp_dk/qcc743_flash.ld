@@ -8,13 +8,11 @@ StackSize    = 0x1000; /*  4KB */
 HeapMinSize  = 0x1000; /*  4KB */
 psram_heap_min_size = 0x1000;
 __EM_SIZE = DEFINED(btble_controller_init) ? 32K : 0K;
-wifi_ram_max_size = DEFINED(wifi_main) ? (160K -  __EM_SIZE): 32K;
-
-remain_wifi_ram = 160K - wifi_ram_max_size - __EM_SIZE;
+__LPFW_SIZE = DEFINED(btble_controller_init) ? 38K : 70K;
 
 __RFTLV_SIZE_OFFSET = 1K;
 __RFTLV_SIZE_HOLE = 2K;
-__RFTLV_HEAD1_H = (0x46524C42); /* */
+__RFTLV_HEAD1_H = (0x46524C42); /* BLRF */
 __RFTLV_HEAD1_L = (0x41524150); /* PAPA */
 
 MEMORY
@@ -22,9 +20,10 @@ MEMORY
     fw_header_memory  (rx)  : ORIGIN = 0xA0000000 - 0x1000, LENGTH = 4K
     xip_memory  (rx)  : ORIGIN = 0xA0000000, LENGTH = 4M
     ram_psram  (wxa)   : ORIGIN = 0xA8000000, LENGTH = 4M
-    ram_nocache (!rx) : ORIGIN = 0x22FC0400, LENGTH = 320K - 1K + remain_wifi_ram /* reserved 1k for security */
-    ram_memory  (!rx) : ORIGIN = 0x62FC0400, LENGTH = 320K - 1K + remain_wifi_ram /* reserved 1k for security */
-    ram_wifi  (wxa)   : ORIGIN = 0x23038000 - wifi_ram_max_size - __EM_SIZE, LENGTH = wifi_ram_max_size
+    ram_nocache (!rx) : ORIGIN = 0x22FC0400, LENGTH = 320K - 1K     /* reserved 1k for security */
+    ram_memory  (!rx) : ORIGIN = 0x62FC0400, LENGTH = 320K - 1K     /* reserved 1k for security */
+    ram_wifi  (wxa)   : ORIGIN = 0x23010000, LENGTH = 160K - __EM_SIZE - __LPFW_SIZE
+    lp_dumy_flag (rw) : ORIGIN = 0xC0000000, LENGTH = 0x40
 }
 
 SECTIONS
@@ -55,28 +54,34 @@ SECTIONS
 
     .text :
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __text_code_start__ = .;
 
         *(.text)
         *(.text.*)
 
         /* section information for shell */
-        . = ALIGN(4);
+        . = ALIGN(32);
         __fsymtab_start = .;
         KEEP(*(FSymTab))
         __fsymtab_end = .;
 
+        /* section information for components's version */
         . = ALIGN(4);
+        _version_info_section_start = .;
+        KEEP(*(.version.*))
+        _version_info_section_end = .;
+
+        . = ALIGN(32);
         __vsymtab_start = .;
         KEEP(*(VSymTab))
         __vsymtab_end = .;
 
         /* section information for usb usbh_class_info */
-        . = ALIGN(4);
+        . = ALIGN(32);
         __usbh_class_info_start__ = .;
         KEEP(*(.usbh_class_info))
-        . = ALIGN(4);
+        . = ALIGN(32);
         __usbh_class_info_end__ = .;
 
         /*put .rodata**/
@@ -94,7 +99,7 @@ SECTIONS
         *(.srodata.*)
 
         /* _dump_sections for qcc74x_coredump.c*/
-        . = ALIGN(4);
+        . = ALIGN(32);
         PROVIDE( _dump_sections = ABSOLUTE(.));
         LONG(ORIGIN(ram_memory));
         LONG(LENGTH(ram_memory));
@@ -112,33 +117,33 @@ SECTIONS
         LONG(0xffffffff);
         /* _dump_sections for qcc74x_coredump.c*/
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __text_code_end__ = .;
     } > xip_memory
 
-    . = ALIGN(4);
+    . = ALIGN(32);
     __nocache_ram_load_addr = .;
 
     .nocache_ram_region  : AT (__nocache_ram_load_addr)
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __nocache_ram_data_start__ = .;
 
         *(.nocache_ram)
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __nocache_ram_data_end__ = .;
     } > ram_nocache
 
     .nocache_noinit_ram_region (NOLOAD) :
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __nocache_noinit_ram_data_start__ = .;
 
         *(.nocache_noinit_ram)
         *(.noncacheable)
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __nocache_noinit_ram_data_end__ = .;
     } > ram_nocache
 
@@ -152,7 +157,7 @@ SECTIONS
 
     .itcm_region : AT (__itcm_load_addr)
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __tcm_code_start__ = .;
 
         *(.tcm_code.*)
@@ -170,7 +175,7 @@ SECTIONS
         *qcc743_ef_ctrl*.o*(.rodata*)
         *qcc743_romapi_patch*.o*(.rodata*)
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __tcm_code_end__ = .;
     } > ram_memory
 
@@ -178,13 +183,13 @@ SECTIONS
 
     .dtcm_region : AT (__dtcm_load_addr)
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __tcm_data_start__ = .;
 
         *(.tcm_data)
         /* *finger_print.o(.data*) */
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __tcm_data_end__ = .;
     } > ram_memory
 
@@ -193,7 +198,7 @@ SECTIONS
     /* Data section */
     RAM_DATA : AT (__ram_load_addr)
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __ram_data_start__ = .;
 
         PROVIDE( __global_pointer$ = . + 0x800 );
@@ -205,10 +210,24 @@ SECTIONS
         *(.sdata2)
         *(.sdata2.*)
 
-        . = ALIGN(4);
+        . = ALIGN(32);
+        *(._k_queue.static.*)
+        *(._k_sem.static.*)
+        *(._k_mutex.static.*)
+        _bt_gatt_service_static_list_start = .;
+        KEEP(*(SORT_BY_NAME("._bt_gatt_service_static.static.*")))
+        _bt_gatt_service_static_list_end = .;
+        _bt_l2cap_fixed_chan_list_start = .;
+        KEEP(*(SORT_BY_NAME("._bt_l2cap_fixed_chan.static.*")))
+        _bt_l2cap_fixed_chan_list_end = .;
+        _bt_l2cap_br_fixed_chan_list_start = .;
+        KEEP(*(SORT_BY_NAME("._bt_l2cap_br_fixed_chan.static.*")))
+        _bt_l2cap_br_fixed_chan_list_end = .;
+
+        . = ALIGN(32);
         __qcc74xlog_tags_start__ = .;
         *(.qcc74xlog_tags_array)
-        . = ALIGN(4);
+        . = ALIGN(32);
         __qcc74xlog_tags_end__ = .;
         __ram_data_end__ = .;
     } > ram_memory
@@ -217,17 +236,34 @@ SECTIONS
 
     .psram_data_region : AT (__psram_load_addr)
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __psram_data_start__ = .;
 
         KEEP(*(.psram_data*))
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __psram_data_end__ = .;
     } > ram_psram
 
     __etext_final = (__psram_load_addr + SIZEOF (.psram_data_region));
     ASSERT(__etext_final <= ORIGIN(xip_memory) + LENGTH(xip_memory), "code memory overflow")
+
+    __lpfw_load_addr = __etext_final;
+
+    .lpfw : AT (__lpfw_load_addr)
+    {
+        /* For DMA Burst copy lpfw binary from flash to ram */
+        . = ALIGN(32);
+        LONG(0x0);        /* LPFW SHA256 */
+        . = ALIGN(32);
+        LONG(0x5746504C); /* LPFW */
+        . = ALIGN(32);
+    } > lp_dumy_flag
+
+    __lpfw_start = (__lpfw_load_addr + SIZEOF (.lpfw));
+    ASSERT(((ABSOLUTE(__lpfw_start) & 0x1F) == 0), "LPFW not aligned 32!")
+
+    PROVIDE(__binary_length = __lpfw_start - ORIGIN(xip_memory));
 
     .stack (NOLOAD):
     {
@@ -244,36 +280,36 @@ SECTIONS
 
     .bss (NOLOAD) :
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __bss_start__ = .;
 
         *(.bss*)
         *(.sbss*)
         *(COMMON)
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __bss_end__ = .;
     } > ram_memory
 
     .noinit_data (NOLOAD) :
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __noinit_data_start__ = .;
 
         *(.noinit_data*)
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __noinit_data_end__ = .;
     } > ram_memory
 
     .heap (NOLOAD):
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __HeapBase = .;
 
         KEEP(*(.heap*))
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __HeapLimit = .;
     } > ram_memory
 
@@ -282,22 +318,22 @@ SECTIONS
 
     .psram_noinit_data (NOLOAD):
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __psram_noinit_data_start__ = .;
 
         KEEP(*(.psram_noinit*))
         KEEP(*(.img_buf*))
 
-        . = ALIGN(4);
+        . = ALIGN(32);
         __psram_noinit_data_end__ = .;
     } > ram_psram
 
     .psram_heap (NOLOAD):
     {
-        . = ALIGN(4);
+        . = ALIGN(32);
         __psram_heap_base = .;
         KEEP(*(.psram_heap*))
-        . = ALIGN(4);
+        . = ALIGN(32);
         __psram_heap_end = .;
     } > ram_psram
 
@@ -325,9 +361,15 @@ SECTIONS
       . = ALIGN(16);
     } > ram_wifi
 
+    .lp_mon (NOLOAD)   :
+    {
+        PROVIDE( __lp_mon_start = ADDR(.lp_mon) );
+        PROVIDE( __lp_mon_end = ADDR(.lp_mon) + SIZEOF(.lp_mon) );
+        *(.lp_mon_ctx)
+    } > ram_memory
+
     PROVIDE( _heap_wifi_start = . );
     PROVIDE( _heap_wifi_size = ORIGIN(ram_wifi) + LENGTH(ram_wifi) - _heap_wifi_start );
     PROVIDE(__LD_CONFIG_EM_SEL = __EM_SIZE);
-    ASSERT((wifi_ram_max_size + __EM_SIZE) <= 160K,"wifi ram overflow")
 }
 

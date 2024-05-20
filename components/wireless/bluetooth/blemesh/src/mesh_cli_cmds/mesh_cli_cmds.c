@@ -78,6 +78,62 @@ static struct {
 	.local = BT_MESH_ADDR_UNASSIGNED,
 	.dst = BT_MESH_ADDR_UNASSIGNED,
 };
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
+
+#define MMDL_DST_ADDR 0x0001
+#define MMDL_NET_IDX  0x0000
+#define MMDL_APP_IDX  0x0000
+
+static qcc74x_ble_mesh_client_common_param_t client_common = {
+    .msg_timeout = 0,
+    .msg_role = ROLE_NODE,
+    .ctx.send_ttl = 3,
+    .ctx.addr = MMDL_DST_ADDR,
+    .ctx.net_idx = MMDL_NET_IDX,
+    .ctx.app_idx = MMDL_APP_IDX,
+};
+static void common_get(u16_t id, uint32_t opcode)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], id);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = opcode;
+    qcc74x_ble_mesh_generic_client_get_state(&client_common, NULL);
+
+}
+static void common_set(u16_t id, uint32_t opcode, uint8_t ack,
+                qcc74x_ble_mesh_generic_client_set_state_t* gen_client_set)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], id);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = opcode - ack;
+    client_common.model = mesh_model;
+
+    qcc74x_ble_mesh_generic_client_set_state(&client_common, gen_client_set);
+
+}
+#endif
 
 #if defined(QCC74x_undef) || defined(QCC74x_undef) || defined(QCC74x_undefP) || defined(QCC743) || defined(QCC74x_undef) || defined(QCC74x_undefL)
 #define vOutputString(...)  printf(__VA_ARGS__)
@@ -139,7 +195,10 @@ BLEMESH_CLI(light_hsl_cli);
 #if defined(CONFIG_BT_MESH_MODEL_VENDOR_CLI)
 BLEMESH_CLI(vendor_cli);
 #endif
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 BLEMESH_CLI(models_cli);
+BLEMESH_CLI(pts_models_client_cli);
+#endif
 #endif /* CONFIG_BT_MESH_MODEL */
 BLEMESH_CLI(pb);
 #if defined(CONFIG_BT_MESH_PB_ADV)
@@ -365,11 +424,15 @@ static qcc74x_ble_mesh_client_t lightness_client;
 	
 #if defined(CONFIG_BT_MESH_MODEL_LIGHT_SRV)
 QCC74x_BLE_MESH_MODEL_PUB_DEFINE(ctl_pub, 2 + 9, ROLE_NODE);
-static qcc74x_ble_mesh_light_ctl_state_t ctl_state;
+qcc74x_ble_mesh_light_ctl_state_t light_ctl_state = {
+    .temperature_range_min = 0x320,
+    .temperature_range_max = 0x4E20,
+    .temperature = 0x320,
+};
 static qcc74x_ble_mesh_light_ctl_srv_t ctl_server = {
 	.rsp_ctrl.get_auto_rsp = QCC74x_BLE_MESH_SERVER_AUTO_RSP,
 	.rsp_ctrl.set_auto_rsp = QCC74x_BLE_MESH_SERVER_AUTO_RSP,
-	.state = &ctl_state,
+	.state = &light_ctl_state,
 };
 #endif
 
@@ -509,11 +572,6 @@ static qcc74x_ble_mesh_gen_client_prop_srv_t client_prop_server = {
     .rsp_ctrl.set_auto_rsp = QCC74x_BLE_MESH_SERVER_AUTO_RSP,
     .id_count = 1,
     .property_ids =  &property_ids,
-};
-qcc74x_ble_mesh_light_ctl_state_t light_ctl_state = {
-    .temperature_range_min = 0x320,
-    .temperature_range_max = 0x4E20,
-    .temperature = 0x320,
 };
 QCC74x_BLE_MESH_MODEL_PUB_DEFINE(lightness_setup_pub, MESH_MSG_LEN, ROLE_NODE);
 static qcc74x_ble_mesh_light_lightness_setup_srv_t lightness_setup_server = {
@@ -800,7 +858,10 @@ static const struct bt_mesh_comp comp = {
 #if defined(CONFIG_BT_MESH_MODEL_VENDOR_CLI)
     SHELL_CMD_EXPORT_ALIAS(blemeshcli_vendor_cli, blemesh_vendor_cli, blemesh_vendor_cli Parameter:[cmd op app_idx opcode msg_role addr net_idx]);
 #endif
-    SHELL_CMD_EXPORT_ALIAS(blemeshcli_models_cli, blemesh_models_cli, blemesh_models_cli Parameter:[app_idx opcode addr net_idx models_id payload]);
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
+    SHELL_CMD_EXPORT_ALIAS(blemeshcli_pts_models_client_cli, blemesh_pts_models_client_cli, blemeshcli_pts_models_client_cli Parameter:[app_idx opcode addr net_idx models_id payload]);
+	SHELL_CMD_EXPORT_ALIAS(blemeshcli_models_cli, blemesh_models_cli, blemesh_models_cli Parameter:[opcode payload]);
+#endif
 #endif
 #if defined(CONFIG_BT_MESH_CDB)
     SHELL_CMD_EXPORT_ALIAS(blemeshcli_cdb_create, blemesh_cdb_create, );
@@ -1206,10 +1267,12 @@ static void read_str(char* str, u8_t size)
 #else
 
 static char* str_s = NULL;
+static u8_t str_size;
 static struct k_sem read_sem;
 static void read_str(char* str, u8_t size)
 {
 	str_s=k_malloc(size);
+	str_size=size;
 	if(str_s!=NULL)
 	{
 		k_sem_init(&read_sem,0,1);
@@ -1235,7 +1298,8 @@ BLEMESH_CLI(read_str)
 	{
 		if(str_s!=NULL)
 		{
-			memcpy(str_s,argv[1],sizeof(argv[1]));
+			memset(str_s,0,str_size);
+			memcpy(str_s,argv[1],str_size);
 			k_sem_give(&read_sem);
 		}
 		else
@@ -1341,6 +1405,776 @@ BLEMESH_CLI(lpn_group_add)
 }
 #endif
 
+#endif
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
+
+static void light_get(u16_t id, uint32_t opcode,
+                qcc74x_ble_mesh_light_client_get_state_t *get_state)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], id);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = opcode;
+    qcc74x_ble_mesh_light_client_get_state(&client_common, get_state);
+
+}
+static void gen_onoff_get(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_ONOFF_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_ONOFF_GET;
+    qcc74x_ble_mesh_generic_client_get_state(&client_common, NULL);
+}
+static void gen_onoff_set(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    memset(&gen_client_set, 0, sizeof(gen_client_set));
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_ONOFF_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_ONOFF_SET_UNACK - data[0];
+    client_common.model = mesh_model;
+    gen_client_set.onoff_set.onoff = data[1];
+    if(len > 2){
+        gen_client_set.onoff_set.trans_time = data[2];
+        gen_client_set.onoff_set.delay = data[3];
+        gen_client_set.onoff_set.op_en = 1;
+    }
+    qcc74x_ble_mesh_generic_client_set_state(&client_common, &gen_client_set);
+}
+static void light_set(u16_t id, uint32_t opcode, uint8_t ack,
+                qcc74x_ble_mesh_light_client_set_state_t *set_state)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], id);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = opcode - ack;
+    client_common.model = mesh_model;
+
+    qcc74x_ble_mesh_light_client_set_state(&client_common, set_state);
+}
+static void gen_lvl_get(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_LEVEL_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_LEVEL_GET;
+    qcc74x_ble_mesh_generic_client_get_state(&client_common, NULL);
+}
+static void gen_lvl_set(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    memset(&gen_client_set, 0, sizeof(gen_client_set));
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_LEVEL_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_LEVEL_SET_UNACK - data[0];
+    client_common.model = mesh_model;
+    gen_client_set.level_set.level = data[1] + (data[2] << 8);
+    if(len > 3){
+        gen_client_set.level_set.trans_time = data[3];
+        gen_client_set.level_set.delay = data[4];
+        gen_client_set.level_set.op_en = 1;
+    }
+    qcc74x_ble_mesh_generic_client_set_state(&client_common, &gen_client_set);
+}
+static void gen_lvl_delta_set(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    memset(&gen_client_set, 0, sizeof(gen_client_set));
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_LEVEL_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_DELTA_SET_UNACK - data[0];
+    client_common.model = mesh_model;
+    gen_client_set.delta_set.level = data[1] + (data[2] << 8) + (data[3] << 16) + (data[4] << 24);
+    if(len > 3){
+        gen_client_set.delta_set.trans_time = data[5];
+        gen_client_set.delta_set.delay = data[6];
+        gen_client_set.delta_set.op_en = 1;
+    }
+    qcc74x_ble_mesh_generic_client_set_state(&client_common, &gen_client_set);
+
+}
+static void gen_lvl_move_set(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    memset(&gen_client_set, 0, sizeof(gen_client_set));
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_LEVEL_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_MOVE_SET_UNACK - data[0];
+    client_common.model = mesh_model;
+    gen_client_set.move_set.delta_level = data[1] + (data[2] << 8);
+    if(len > 3){
+        gen_client_set.move_set.trans_time = data[3];
+        gen_client_set.move_set.delay = data[4];
+        gen_client_set.move_set.op_en = 1;
+    }
+    qcc74x_ble_mesh_generic_client_set_state(&client_common, &gen_client_set);
+}
+
+static void gen_dtt_get(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_DEF_TRANS_TIME_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_GET;
+    qcc74x_ble_mesh_generic_client_get_state(&client_common, NULL);
+}
+
+static void gen_dtt_set(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    memset(&gen_client_set, 0, sizeof(gen_client_set));
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_DEF_TRANS_TIME_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_SET_UNACK - data[0];
+    client_common.model = mesh_model;
+    gen_client_set.def_trans_time_set.trans_time = data[1];
+
+    qcc74x_ble_mesh_generic_client_set_state(&client_common, &gen_client_set);
+}
+
+static void gen_ponoff_get(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_ONOFF_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_GET;
+    qcc74x_ble_mesh_generic_client_get_state(&client_common, NULL);
+}
+static void gen_ponoff_set(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    memset(&gen_client_set, 0, sizeof(gen_client_set));
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_ONOFF_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_SET_UNACK - data[0];
+    client_common.model = mesh_model;
+    gen_client_set.power_set.onpowerup = data[1];
+
+    qcc74x_ble_mesh_generic_client_set_state(&client_common, &gen_client_set);
+
+}
+
+static void gen_plvl_get(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_LEVEL_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_LEVEL_GET;
+    qcc74x_ble_mesh_generic_client_get_state(&client_common, NULL);
+
+}
+static void gen_plvl_set(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+
+    memset(&gen_client_set, 0, sizeof(gen_client_set));
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_LEVEL_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+
+    client_common.opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_LEVEL_SET_UNACK - data[0];
+    client_common.model = mesh_model;
+    gen_client_set.power_level_set.power = data[1] + (data[2] << 8);
+    if(len > 3){
+        gen_client_set.power_level_set.trans_time = data[3];
+        gen_client_set.power_level_set.delay = data[4];
+        gen_client_set.power_level_set.op_en = 1;
+    }
+
+    qcc74x_ble_mesh_generic_client_set_state(&client_common, &gen_client_set);
+
+}
+
+static void gen_plvl_last_get(uint8_t *data, uint16_t len)
+{
+    common_get(QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_LEVEL_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_LAST_GET);
+}
+static void gen_plvl_dflt_get(uint8_t *data, uint16_t len)
+{
+    common_get(QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_LEVEL_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_DEFAULT_GET);
+}
+static void gen_plvl_range_get(uint8_t *data, uint16_t len)
+{
+    common_get(QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_LEVEL_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_RANGE_GET);
+}
+static void gen_plvl_dflt_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    gen_client_set.power_default_set.power = data[1] + (data[2] << 8);
+    common_set(QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_LEVEL_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_DEFAULT_SET_UNACK,data[0], &gen_client_set);
+}
+static void gen_plvl_range_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    gen_client_set.power_range_set.range_min = data[1] + (data[2] << 8);
+    gen_client_set.power_range_set.range_max = data[3] + (data[4] << 8);
+    common_set(QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_LEVEL_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_RANGE_SET_UNACK, data[0], &gen_client_set);
+}
+static void gen_battery_get(uint8_t *data, uint16_t len)
+{
+    common_get(QCC74x_BLE_MESH_MODEL_ID_GEN_BATTERY_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_BATTERY_GET);
+}
+static void gen_loc_global_get(uint8_t *data, uint16_t len)
+{
+    common_get(QCC74x_BLE_MESH_MODEL_ID_GEN_LOCATION_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_GLOBAL_GET);
+}
+static void gen_loc_local_get(uint8_t *data, uint16_t len)
+{
+    common_get(QCC74x_BLE_MESH_MODEL_ID_GEN_LOCATION_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_LOCAL_GET);
+}
+static void gen_loc_global_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    gen_client_set.loc_global_set.global_latitude = data[1] + (data[2] << 8) + (data[3] << 16) + (data[4] << 24);
+    gen_client_set.loc_global_set.global_longitude = data[5] + (data[6] << 8) + (data[7] << 16) + (data[8] << 24);
+    gen_client_set.loc_global_set.global_altitude = data[9] + (data[10] << 8);
+    common_set(QCC74x_BLE_MESH_MODEL_ID_GEN_LOCATION_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_GLOBAL_SET_UNACK,data[0], &gen_client_set);
+}
+static void gen_loc_local_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    gen_client_set.loc_local_set.local_north = data[1] + (data[2] << 8);
+    gen_client_set.loc_local_set.local_east = data[3] + (data[4] << 8);
+    gen_client_set.loc_local_set.local_altitude = data[5] + (data[6] << 8);
+    gen_client_set.loc_local_set.floor_number = data[7];
+    gen_client_set.loc_local_set.uncertainty = data[8] + (data[9] << 8);
+    common_set(QCC74x_BLE_MESH_MODEL_ID_GEN_LOCATION_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_LOCAL_SET_UNACK, data[0], &gen_client_set);
+
+}
+static void light_lightness_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_GET, NULL);
+}
+
+static void light_lightness_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.lightness_set.lightness = data[1] + (data[2] << 8);
+    if(len > 3){
+        set_state.lightness_set.trans_time = data[3];
+        set_state.lightness_set.delay = data[4];
+        set_state.lightness_set.op_en = 1;
+    }
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_SET_UNACK,data[0], &set_state);
+}
+
+static void light_lightness_linear_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_LINEAR_GET, NULL);
+}
+
+static void light_lightness_linear_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.lightness_linear_set.lightness = data[1] + (data[2] << 8);
+    if(len > 3){
+        set_state.lightness_set.trans_time = data[3];
+        set_state.lightness_set.delay = data[4];
+        set_state.lightness_set.op_en = 1;
+    }
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_LINEAR_SET_UNACK,data[0], &set_state);
+}
+static void light_lightness_last_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_LAST_GET, NULL);
+}
+static void light_lightness_default_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_DEFAULT_GET, NULL);
+}
+static void light_lightness_default_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.lightness_default_set.lightness = data[1] + (data[2] << 8);
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_DEFAULT_SET_UNACK, data[0], &set_state);
+}
+static void light_lightness_range_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_RANGE_GET, NULL);
+}
+static void light_lightness_range_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.lightness_range_set.range_min = data[1] + (data[2] << 8);
+    set_state.lightness_range_set.range_max = data[3] + (data[4] << 8);
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_RANGE_SET_UNACK, data[0], &set_state);
+}
+static void light_lc_mode_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LC_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LC_MODE_GET, NULL);
+}
+static void light_lc_mode_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.lc_mode_set.mode = data[1];
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LC_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_LC_MODE_SET_UNACK,data[0], &set_state);
+
+}
+
+static void light_ctl_states_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_GET, NULL);
+}
+static void light_ctl_states_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.ctl_set.ctl_lightness = data[1] + (data[2] << 8);
+    set_state.ctl_set.ctl_temperatrue = data[3] + (data[4] << 8);
+    set_state.ctl_set.ctl_delta_uv = data[5] + (data[6] << 8);
+
+    if(len > 7){
+        set_state.ctl_set.trans_time = data[7];
+        set_state.ctl_set.delay = data[8];
+        set_state.ctl_set.op_en = 1;
+    }
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_SET_UNACK, data[0], &set_state);
+}
+static void light_ctl_temperature_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_GET, NULL);
+}
+static void light_ctl_temperature_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.ctl_temperature_set.ctl_temperatrue = data[1] + (data[2] << 8);
+    set_state.ctl_temperature_set.ctl_delta_uv = data[3] + (data[4] << 8);
+
+    if(len > 5){
+        set_state.ctl_temperature_set.trans_time = data[5];
+        set_state.ctl_temperature_set.delay = data[6];
+        set_state.ctl_temperature_set.op_en = 1;
+    }
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_SET_UNACK, data[0], &set_state);
+}
+static void light_ctl_default_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_DEFAULT_GET, NULL);
+}
+static void light_ctl_default_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.ctl_default_set.lightness = data[1] + (data[2] << 8);
+    set_state.ctl_default_set.temperature = data[3] + (data[4] << 8);
+    set_state.ctl_default_set.delta_uv = data[5] + (data[6] << 8);
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_DEFAULT_SET_UNACK, data[0], &set_state);
+}
+static void light_ctl_temp_range_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_RANGE_GET, NULL);
+}
+static void light_ctl_temp_range_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.ctl_temperature_range_set.range_min = data[1] + (data[2] << 8);
+    set_state.ctl_temperature_range_set.range_max = data[3] + (data[4] << 8);
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_RANGE_SET_UNACK, data[0], &set_state);
+}
+
+static void light_xyl_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_XYL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_GET, NULL);
+}
+static void light_xyl_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.xyl_set.xyl_lightness = data[1] + (data[2] << 8);
+    set_state.xyl_set.xyl_x = data[3] + (data[4] << 8);
+    set_state.xyl_set.xyl_y = data[5] + (data[6] << 8);
+    if(len > 7){
+        set_state.xyl_set.op_en = 1;
+        set_state.xyl_set.trans_time = data[7];
+        set_state.xyl_set.delay = data[8];
+    }
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_XYL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_SET_UNACK,data[0], &set_state);
+}
+static void light_xyl_target_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_XYL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_TARGET_GET, NULL);
+}
+static void light_xyl_default_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_XYL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_DEFAULT_GET, NULL);
+}
+static void light_xyl_default_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.xyl_default_set.lightness = data[1] + (data[2] << 8);
+    set_state.xyl_default_set.xyl_x = data[3] + (data[4] << 8);
+    set_state.xyl_default_set.xyl_y = data[5] + (data[6] << 8);
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_XYL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_DEFAULT_SET_UNACK, data[0], &set_state);
+}
+static void light_xyl_range_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_XYL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_RANGE_GET, NULL);
+}
+static void light_xyl_range_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.xyl_range_set.xyl_x_range_min = data[1] + (data[2] << 8);
+    set_state.xyl_range_set.xyl_y_range_min = data[3] + (data[4] << 8);
+    set_state.xyl_range_set.xyl_x_range_max = data[5] + (data[6] << 8);
+    set_state.xyl_range_set.xyl_y_range_max = data[7] + (data[8] << 8);
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_XYL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_RANGE_SET_UNACK, data[0], &set_state);
+}
+static void light_hsl_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_GET, NULL);
+}
+static void light_hsl_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.hsl_set.hsl_lightness = data[1] + (data[2] << 8);
+    set_state.hsl_set.hsl_hue = data[3] + (data[4] << 8);
+    set_state.hsl_set.hsl_saturation = data[5] + (data[6] << 8);
+    if(len > 7){
+        set_state.xyl_set.op_en = 1;
+        set_state.xyl_set.trans_time = data[7];
+        set_state.xyl_set.delay = data[8];
+    }
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_SET_UNACK, data[0], &set_state);
+}
+static void light_hsl_target_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+                QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_TARGET_GET, NULL);
+}
+static void light_hsl_default_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+                    QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_DEFAULT_GET, NULL);
+}
+static void light_hsl_default_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.hsl_default_set.lightness = data[1] + (data[2] << 8);
+    set_state.hsl_default_set.hue = data[3] + (data[4] << 8);
+    set_state.hsl_default_set.saturation = data[5] + (data[6] << 8);
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_DEFAULT_SET_UNACK,data[0], &set_state);
+}
+static void light_hsl_range_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+                        QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_RANGE_GET, NULL);
+}
+static void light_hsl_range_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.hsl_range_set.hue_range_min = data[1] + (data[2] << 8);
+    set_state.hsl_range_set.saturation_range_min = data[3] + (data[4] << 8);
+    set_state.hsl_range_set.hue_range_max = data[5] + (data[6] << 8);
+    set_state.hsl_range_set.saturation_range_max = data[7] + (data[8] << 8);
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_RANGE_SET_UNACK, data[0], &set_state);
+
+}
+static void light_hsl_hue_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+                        QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_HUE_GET, NULL);
+}
+static void light_hsl_hue_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.hsl_hue_set.hue = data[1] + (data[2] << 8);
+    if(len > 3){
+        set_state.hsl_hue_set.op_en = 1;
+        set_state.hsl_hue_set.trans_time = data[3];
+        set_state.hsl_hue_set.delay = data[4];
+    }
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_HUE_SET_UNACK,data[0], &set_state);
+}
+static void light_hsl_saturation_get(uint8_t *data, uint16_t len)
+{
+    light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+                        QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_SATURATION_GET, NULL);
+}
+static void light_hsl_saturation_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_light_client_set_state_t set_state = {0};
+    set_state.hsl_saturation_set.saturation = data[1] + (data[2] << 8);
+    if(len > 3){
+        set_state.hsl_saturation_set.op_en = 1;
+        set_state.hsl_saturation_set.trans_time = data[3];
+        set_state.hsl_saturation_set.delay = data[4];
+    }
+
+    light_set(QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_CLI,
+        QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_SATURATION_SET_UNACK, data[0], &set_state);
+}
+
+
+static void pts_tester_handle_mesh_model(u32_t opcode, uint8_t *data, uint16_t len)
+{
+    switch (opcode) {
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_ONOFF_GET:{gen_onoff_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_ONOFF_SET_UNACK:{gen_onoff_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_LEVEL_GET:{gen_lvl_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_LEVEL_SET_UNACK:{gen_lvl_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_DELTA_SET_UNACK:{gen_lvl_delta_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_MOVE_SET_UNACK:{gen_lvl_move_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_GET:{gen_dtt_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_DEF_TRANS_TIME_SET_UNACK:{gen_dtt_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_GET:{gen_ponoff_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_ONPOWERUP_SET_UNACK:{gen_ponoff_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_LEVEL_GET:{gen_plvl_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_LEVEL_SET_UNACK:{gen_plvl_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_LAST_GET:{gen_plvl_last_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_DEFAULT_GET:{gen_plvl_dflt_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_RANGE_GET:{gen_plvl_range_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_DEFAULT_SET_UNACK:{gen_plvl_dflt_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_POWER_RANGE_SET_UNACK:{gen_plvl_range_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_BATTERY_GET:{gen_battery_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_GLOBAL_GET:{gen_loc_global_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_LOCAL_GET:{gen_loc_local_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_GLOBAL_SET_UNACK:{gen_loc_global_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_LOCAL_SET_UNACK:{gen_loc_local_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_GET:{light_lightness_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_SET_UNACK:{light_lightness_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_LINEAR_GET:{light_lightness_linear_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_LINEAR_SET_UNACK:{light_lightness_linear_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_LAST_GET:{light_lightness_last_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_DEFAULT_GET:{light_lightness_default_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_DEFAULT_SET_UNACK:{light_lightness_default_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_RANGE_GET:{light_lightness_range_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_RANGE_SET_UNACK:{light_lightness_range_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_GET:{light_ctl_states_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_SET_UNACK:{light_ctl_states_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_GET:{light_ctl_temperature_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_SET_UNACK:{light_ctl_temperature_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_DEFAULT_GET:{light_ctl_default_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_DEFAULT_SET_UNACK:{light_ctl_default_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_RANGE_GET:{light_ctl_temp_range_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_CTL_TEMPERATURE_RANGE_SET_UNACK:{light_ctl_temp_range_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_GET:{light_xyl_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_SET_UNACK:{light_xyl_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_TARGET_GET:{light_xyl_target_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_DEFAULT_GET:{light_xyl_default_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_DEFAULT_SET_UNACK:{light_xyl_default_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_RANGE_GET:{light_xyl_range_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_XYL_RANGE_SET_UNACK:{light_xyl_range_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_GET:{light_hsl_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_SET_UNACK:{light_hsl_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_TARGET_GET:{light_hsl_target_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_DEFAULT_GET:{light_hsl_default_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_DEFAULT_SET_UNACK:{light_hsl_default_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_RANGE_GET:{light_hsl_range_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_RANGE_SET_UNACK:{light_hsl_range_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_HUE_GET:{light_hsl_hue_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_HUE_SET_UNACK:{light_hsl_hue_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_SATURATION_GET:{light_hsl_saturation_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_LIGHT_HSL_SATURATION_SET_UNACK:{light_hsl_saturation_set(data, len);}break;
+	default:
+		break;
+	}
+}
+
+BLEMESH_CLI(pts_models_client_cli)
+{
+	u32_t opcode;
+	get_uint32_from_string(&argv[1], &opcode);
+	BT_WARN("Opcode =%lx",opcode);
+	if(argc == 3)
+	{
+		uint16_t len = strlen(argv[2])>>1;
+		uint8_t val[40];
+		get_bytearray_from_string(&argv[2], val, len);
+		for(int i=0; i<len;i++)
+		{
+			BT_WARN("data[%d] =%x",i,val[i]);
+		}
+		pts_tester_handle_mesh_model(opcode,val,len);
+	}
+	else
+	{
+		pts_tester_handle_mesh_model(opcode,NULL,0);
+	}
+}
 #endif
 #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 /*
@@ -1775,7 +2609,165 @@ static void mmdl_lighting_server_cb(qcc74x_ble_mesh_lighting_server_cb_event_t e
     #endif
 }
 
+static void mmdl_ready(void)
+{
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+    struct bt_mesh_model *gpl_m,*goo_m,*gl_m,*gpo_m,*lln_m,*lctl_m,*lhsl_m,*lxyl_m,*lc_m;
+    qcc74x_ble_mesh_gen_power_level_srv_t* gpl_srv;
+    qcc74x_ble_mesh_gen_onoff_srv_t* goo_srv;
+    qcc74x_ble_mesh_gen_level_srv_t* gl_srv;
+    qcc74x_ble_mesh_gen_power_onoff_srv_t* gpo_srv;
+    qcc74x_ble_mesh_light_lightness_srv_t* lln_srv;
+    qcc74x_ble_mesh_light_ctl_srv_t* lctl_srv;
+    qcc74x_ble_mesh_light_hsl_srv_t* lhsl_srv;
+    qcc74x_ble_mesh_light_xyl_srv_t* lxyl_srv;
+    qcc74x_ble_mesh_light_lc_srv_t* lc_srv;
 
+    gpl_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_LEVEL_SRV);
+    gpl_srv = (qcc74x_ble_mesh_gen_power_level_srv_t*)gpl_m->user_data;
+    goo_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_GEN_ONOFF_SRV);
+    goo_srv = (qcc74x_ble_mesh_gen_onoff_srv_t*)goo_m->user_data;
+    gl_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_GEN_LEVEL_SRV);
+    gl_srv = (qcc74x_ble_mesh_gen_level_srv_t*)gl_m->user_data;
+    gpo_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_GEN_POWER_ONOFF_SRV);
+    gpo_srv = (qcc74x_ble_mesh_gen_power_onoff_srv_t*)gpo_m->user_data;
+
+    lln_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_SRV);
+    lln_srv = (qcc74x_ble_mesh_light_lightness_srv_t*)lln_m->user_data;
+    lctl_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_SRV);
+    lctl_srv = (qcc74x_ble_mesh_light_lightness_srv_t*)lctl_m->user_data;
+    lhsl_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_SRV);
+    lhsl_srv = (qcc74x_ble_mesh_light_hsl_srv_t*)lhsl_m->user_data;
+    lxyl_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_LIGHT_XYL_SRV);
+    lxyl_srv = (qcc74x_ble_mesh_light_xyl_srv_t*)lxyl_m->user_data;
+
+    ef_get_env_blob("onpowerup", &gpo_srv->state->onpowerup,
+        sizeof(gpo_srv->state->onpowerup), NULL);
+    BT_WARN("onpowerup_state.onpowerup = %d", gpo_srv->state->onpowerup);
+
+    ef_get_env_blob("gpl_state", gpl_srv->state,
+            sizeof(*gpl_srv->state), NULL);
+    BT_WARN("gpl_state [%x][%x][%x][%x][%x]", gpl_srv->state->power_actual,
+            gpl_srv->state->power_default, gpl_srv->state->power_last,
+            gpl_srv->state->power_range_min, gpl_srv->state->power_range_max);
+
+    ef_get_env_blob("lln_state", lln_srv->state,
+            sizeof(*lln_srv->state), NULL);
+    BT_WARN("lln_state [%x][%x][%x][%x][%x]", lln_srv->state->lightness_linear,
+        lln_srv->state->lightness_default, lln_srv->state->lightness_last,
+        lln_srv->state->lightness_range_min, lln_srv->state->lightness_range_max);
+
+    ef_get_env_blob("lctl_state", lctl_srv->state,
+           sizeof(*lctl_srv->state), NULL);
+    BT_WARN("lctl_state [%x][%x][%x][%x][%x][%x]", lctl_srv->state->temperature,
+            lctl_srv->state->target_temperature, lctl_srv->state->temperature_default,
+            lctl_srv->state->delta_uv, lctl_srv->state->target_delta_uv,
+            lctl_srv->state->target_delta_uv);
+    ef_get_env_blob("lhsl_state", lhsl_srv->state,
+           sizeof(*lhsl_srv->state), NULL);
+    BT_WARN("lhsl_state [%x][%x][%x][%x][%x][%x][%x][%x][%x]", lhsl_srv->state->saturation,
+            lhsl_srv->state->saturation_default, lhsl_srv->state->target_saturation,
+            lhsl_srv->state->hue, lhsl_srv->state->hue_default,
+            lhsl_srv->state->target_hue, lhsl_srv->state->lightness,
+            lhsl_srv->state->lightness_default, lhsl_srv->state->target_lightness);
+    ef_get_env_blob("lxyl_state", lxyl_srv->state,
+           sizeof(*lxyl_srv->state), NULL);
+    BT_WARN("lxyl_state [%x][%x][%x][%x][%x][%x][%x][%x][%x]", lxyl_srv->state->x,
+            lxyl_srv->state->x_default, lxyl_srv->state->target_x,
+            lxyl_srv->state->y, lxyl_srv->state->y_default,
+            lxyl_srv->state->target_y, lxyl_srv->state->lightness,
+            lxyl_srv->state->lightness_default, lxyl_srv->state->target_lightness);
+
+    if(gpo_srv->state->onpowerup > 2){
+        gpo_srv->state->onpowerup = 0;
+    }
+    if(gpo_srv->state->onpowerup == 0){
+        goo_srv->state.onoff = 0;
+        gpl_srv->state->power_actual = 0;
+        lln_srv->state->lightness_actual = 0;
+        /* Light CTL Temperature */
+        lctl_srv->state->temperature = lctl_srv->state->temperature_default;
+        /* Light CTL Delta UV */
+        lctl_srv->state->delta_uv = lctl_srv->state->delta_uv_default;
+        //lctl_srv->state->lightness = lln_srv->state->lightness_actual;
+
+        /* Light HSL Saturation */
+        lhsl_srv->state->saturation = lhsl_srv->state->saturation_default;
+        /* Light HSL Hue */
+        lhsl_srv->state->hue = lhsl_srv->state->hue_default;
+        lhsl_srv->state->lightness = 0;
+
+        /* Light xyL x */
+        lxyl_srv->state->x = lxyl_srv->state->x_default;
+        /* Light xyL y */
+        lxyl_srv->state->y = lxyl_srv->state->y_default;
+        lxyl_srv->state->lightness = 0;
+
+    }
+    else if(gpo_srv->state->onpowerup == 1){
+        goo_srv->state.onoff = 1;
+        gpl_srv->state->power_actual = gpl_srv->state->power_default ?
+            gpl_srv->state->power_default : gpl_srv->state->power_last;
+        lln_srv->state->lightness_actual = lln_srv->state->lightness_default ?
+            lln_srv->state->lightness_default : lln_srv->state->lightness_last;
+        /* Light CTL Temperature */
+        lctl_srv->state->temperature = lctl_srv->state->temperature_default;
+        /* Light CTL Delta UV */
+        lctl_srv->state->delta_uv = lctl_srv->state->delta_uv_default;
+        //lctl_srv->state->lightness = lln_srv->state->lightness_actual;
+
+        /* Light HSL Saturation */
+        lhsl_srv->state->saturation = lhsl_srv->state->saturation_default;
+        /* Light HSL Hue */
+        lhsl_srv->state->hue = lhsl_srv->state->hue_default;
+        //TODO
+        lhsl_srv->state->lightness = lhsl_srv->state->lightness_default ?
+            lhsl_srv->state->lightness_default : 0;
+
+        /* Light xyL x */
+        lxyl_srv->state->x = lxyl_srv->state->x_default;
+        /* Light xyL y */
+        lxyl_srv->state->y = lxyl_srv->state->y_default;
+        //TODO
+        lxyl_srv->state->lightness = lxyl_srv->state->lightness_default ?
+            lxyl_srv->state->lightness_default : 0;
+
+    }
+    else if(gpo_srv->state->onpowerup == 2){
+        ef_get_env_blob("target_onoff", &goo_srv->state.onoff,
+            sizeof(goo_srv->state.onoff), NULL);
+        BT_WARN("onoff_server.state.onoff = %d", goo_srv->state.onoff);
+        /*  last known value of the Generic Power Actual state before the node is powered down */
+        gpl_srv->state->power_actual = gpl_srv->state->target_power_actual;
+        lln_srv->state->lightness_actual = lln_srv->state->target_lightness_actual;
+        /* Light CTL Temperature */
+        lctl_srv->state->temperature = lctl_srv->state->target_temperature;
+        /* Light CTL Delta UV */
+        lctl_srv->state->delta_uv = lctl_srv->state->target_delta_uv;
+        //lctl_srv->state->lightness = lln_srv->state->lightness_actual;
+
+        /* Light HSL Saturation */
+        lhsl_srv->state->saturation = lhsl_srv->state->target_saturation;
+        /* Light HSL Hue */
+        lhsl_srv->state->hue = lhsl_srv->state->target_hue;
+        //TODO
+        lhsl_srv->state->lightness = lhsl_srv->state->target_lightness;
+
+        /* Light xyL x */
+        lxyl_srv->state->x = lxyl_srv->state->target_x;
+        /* Light xyL y */
+        lxyl_srv->state->y = lxyl_srv->state->target_y;
+        //TODO
+        lxyl_srv->state->lightness = lxyl_srv->state->target_lightness;
+
+    }
+
+    gen_power_level_publish(gpl_m, BLE_MESH_MODEL_OP_GEN_POWER_LEVEL_STATUS);
+    light_lightness_publish(lln_m, BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_STATUS);
+    light_ctl_publish(lctl_m, BLE_MESH_MODEL_OP_LIGHT_CTL_STATUS);
+    light_hsl_publish(lhsl_m, BLE_MESH_MODEL_OP_LIGHT_HSL_STATUS);
+    light_xyl_publish(lxyl_m, BLE_MESH_MODEL_OP_LIGHT_XYL_STATUS);
+}
 void mmdl_generic_client_cb(qcc74x_ble_mesh_generic_client_cb_event_t event,
         qcc74x_ble_mesh_generic_client_cb_param_t *param)
 {
@@ -2156,6 +3148,7 @@ BLEMESH_CLI(init)
 #endif
 #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 	models_callback_init();
+	mmdl_ready();
 #endif
 }
 
@@ -2385,11 +3378,11 @@ static u8_t capabilities(prov_caps_t* prv_caps, prov_start_t* prv_start)
 		//get_bytearray_from_string(&pstr, prv_start->pub_key_data, 64);
 		
 		const u8_t prvee_key[] = {
-			0xF4,0x65,0xE4,0x3F,0xF2,0x3D,0x3F,0x1B,0x9D,0xC7,0xDF,0xC0,0x4D,0xA8,0x75,0x81,
-			0x84,0xDB,0xC9,0x66,0x20,0x47,0x96,0xEC,0xCF,0x0D,0x6C,0xF5,0xE1,0x65,0x00,0xCC,
-			0x02,0x01,0xD0,0x48,0xBC,0xBB,0xD8,0x99,0xEE,0xEF,0xC4,0x24,0x16,0x4E,0x33,0xC2,
-			0x01,0xC2,0xB0,0x10,0xCA,0x6B,0x4D,0x43,0xA8,0xA1,0x55,0xCA,0xD8,0xEC,0xB2,0x79
-			};
+		0x5B, 0x2A, 0xD8, 0xB0, 0x34, 0xD8, 0x07, 0x43, 0x53, 0x6E, 0x7F, 0x1B, 0x23, 0x54, 0xFE, 0x08,
+		0x69, 0xF5, 0x0E, 0x8F, 0x08, 0x5B, 0xEA, 0x04, 0x71, 0x19, 0x59, 0x0F, 0x4E, 0x74, 0xAC, 0x67,
+		0xF0, 0x15, 0x1E, 0xFB, 0xC5, 0x31, 0xFB, 0xAB, 0x26, 0x73, 0xB1, 0xD1, 0xAD, 0xF7, 0x89, 0x31,
+		0xF4, 0x00, 0xD9, 0x50, 0xE4, 0x66, 0xD0, 0x26, 0xFC, 0x2E, 0x7D, 0x09, 0x0E, 0x2A, 0x1A, 0x0C
+		};
 		memcpy(&prv_start->pub_key_data, prvee_key, sizeof(prv_start->pub_key_data));
 		vOutputString(">>>Recved Provisionee's public key:%s\n"
 					, bt_hex(prv_start->pub_key_data, sizeof(prv_start->pub_key_data)));

@@ -48,6 +48,7 @@
 #include "lwip/netif.h"
 #include "lwip/stats.h"
 #include "lwip/icmp.h"
+#include "lwip/timeouts.h"
 
 #include <string.h>
 
@@ -130,6 +131,14 @@ ip_reass_tmr(void)
   struct ip_reassdata *r, *prev = NULL;
 
   r = reassdatagrams;
+#if IP4_FRAG_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(IP_REASS_DEBUG, ("ip_reass_tmr: enable=%d", r != NULL));
+  if (r != NULL) {
+    sys_timeouts_set_timer_enable(true, ip_reass_tmr);
+  } else {
+    sys_timeouts_set_timer_enable(false, ip_reass_tmr);
+  }
+#endif
   while (r != NULL) {
     /* Decrement the timer. Once it reaches 0,
      * clean up the incomplete fragment assembly */
@@ -306,6 +315,12 @@ ip_reass_enqueue_new_datagram(struct ip_hdr *fraghdr, int clen)
   /* copy the ip header for later tests and input */
   /* @todo: no ip options supported? */
   SMEMCPY(&(ipr->iphdr), fraghdr, IP_HLEN);
+
+  #if IP4_FRAG_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(IP_REASS_DEBUG, ("ip_reass_tmr TRUE"));
+  sys_timeouts_set_timer_enable(true, ip_reass_tmr);
+  #endif
+
   return ipr;
 }
 

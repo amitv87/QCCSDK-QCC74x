@@ -50,6 +50,7 @@
 #include "lwip/err.h"
 #include "lwip/ip6.h"
 #include "lwip/ip6_addr.h"
+#include "lwip/timeouts.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -260,6 +261,7 @@ struct tcp_pcb {
 #if LWIP_WND_SCALE
 #define TF_WND_SCALE   0x0100U /* Window Scale option enabled */
 #endif
+#include "lwip/timeouts.h"
 #if TCP_LISTEN_BACKLOG
 #define TF_BACKLOGPEND 0x0200U /* If this is set, a connection pcb has increased the backlog on its listener */
 #endif
@@ -275,9 +277,18 @@ struct tcp_pcb {
      as we have to do some math with them */
 
   /* Timers */
-  u8_t polltmr, pollinterval;
+#if !TCP_TIMER_PRECISE_NEEDED
+  u8_t polltmr;
+#else
+  u32_t polltmr;
+#endif
+  u8_t pollinterval;
   u8_t last_timer;
   u32_t tmr;
+
+#if TCP_TIMER_PRECISE_NEEDED
+  u32_t fin_wait1_tmr;
+#endif
 
   /* receiver variables */
   u32_t rcv_nxt;   /* next seqno expected */
@@ -292,7 +303,11 @@ struct tcp_pcb {
 #endif /* LWIP_TCP_SACK_OUT */
 
   /* Retransmission timer. */
+#if !TCP_TIMER_PRECISE_NEEDED
   s16_t rtime;
+#else
+  u32_t rtime;
+#endif
 
   u16_t mss;   /* maximum segment size */
 
@@ -373,7 +388,11 @@ struct tcp_pcb {
 #endif /* LWIP_TCP_KEEPALIVE */
 
   /* Persist timer counter */
+#if !TCP_TIMER_PRECISE_NEEDED
   u8_t persist_cnt;
+#else
+  u32_t persist_cnt;
+#endif
   /* Persist timer back-off */
   u8_t persist_backoff;
   /* Number of persist probes */
@@ -381,6 +400,10 @@ struct tcp_pcb {
 
   /* KEEPALIVE counter */
   u8_t keep_cnt_sent;
+
+#if TCP_TIMER_PRECISE_NEEDED
+  void *keepalive_os_timer;
+#endif
 
 #if LWIP_WND_SCALE
   u8_t snd_scale;

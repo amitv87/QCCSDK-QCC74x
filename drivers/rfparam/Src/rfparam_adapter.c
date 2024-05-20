@@ -688,7 +688,9 @@ int32_t rfparam_init(uint32_t base_addr, void *rf_para, uint32_t apply_flag)
     g_rfparam_cfg->en_param_load = 1;
     g_rfparam_cfg->mode = WL_API_MODE_ALL;
     g_rfparam_cfg->log_level = WL_LOG_LEVEL_TRACE;
+#ifndef LP_APP
     g_rfparam_cfg->log_printf = vprintf;
+#endif
     HBN_Get_Xtal_Value(&xtal_value);
     g_rfparam_cfg->param.xtalfreq_hz = xtal_value;
     rfparam_printf("xtal value %d\r\n",(int)xtal_value);

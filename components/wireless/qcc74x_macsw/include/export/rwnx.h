@@ -97,6 +97,7 @@ bool rwnxl_cpu_can_sleep(void);
  ****************************************************************************************
  */
 int rwnxl_sleep(void);
+int rwnxl_common_sleep(void);
 
 /**
  ****************************************************************************************
@@ -122,6 +123,7 @@ void rwnxl_show_not_sleep_reason(void);
  ****************************************************************************************
  */
 int rwnxl_ps_sleep_check(void);
+int rwnxl_ps_sleep_common_check(void);
 
 /**
  ****************************************************************************************
@@ -170,8 +172,7 @@ int rwnxl_pds_wifi_config(qcc74x_lp_fw_cfg_t *pcfg);
  *
  ****************************************************************************************
  */
-void rwnxl_resume_wifi_evt(int x);
-void rwnxl_resume_defer(void);
+void rwnxl_resume_wifi(void);
 
 /**
  ****************************************************************************************
@@ -188,8 +189,6 @@ int rwnxl_wifi_notify_resume(void);
  ****************************************************************************************
  */
 void rwnxl_mm_active(void);
-#else
-void rwnxl_resume_wifi_evt(int x);
 #endif
 
 

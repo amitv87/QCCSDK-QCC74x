@@ -79,6 +79,15 @@ build:Makefile
 	$(CMAKE) -S . -B build -G $(cmake_generator) $(cmake_definition)
 	$(MAKE) -C build -j8
 	$(MAKE) -C build combine
+ifeq ($(CONFIG_LPAPP),y)
+	$(MAKE) -C build patch_lpfw
+endif
+ifeq ($(CONFIG_UPDATE_BSP_MFG_BIN),y)
+	$(MAKE) -C build update_bsp_mfg_bin
+endif
+ifeq ($(CONFIG_RELEASE_MFG),y)
+	$(MAKE) -C build release_mfg
+endif
 
 ninja:Makefile
 	$(CMAKE) -S . -B build -G Ninja $(cmake_definition)

@@ -49,7 +49,7 @@
 
 #define QCC743_ACOMP_VREF_1V65 33
 
-#if (1 && !defined(LPFW_BIN))
+#if (0 && !defined(QCC74x_WIFI_LP_FW))
 #define QCC74x_LP_LOG        printf
 #define QCC74x_LP_TIME_DEBUG 0
 #else
@@ -447,7 +447,7 @@ void qcc74x_lp_fw_init()
     iot2lp_para->debug_io = 0xFF;
 
     iot2lp_para->bcn_loss_level = 0;
-    qcc74x_lp_fw_bcn_loss_cfg(NULL, 0);
+    qcc74x_lp_fw_bcn_loss_cfg(NULL, 0, 0, 0);
 
     /* Save rc32k code in HBN_RAM */
     iot2lp_para->rc32k_fr_ext = (*((volatile uint32_t *)0x2000F200)) >> 22;
@@ -513,42 +513,68 @@ int qcc74x_lp_beacon_interval_update(uint16_t beacon_interval_tu)
     return 0;
 }
 
-void qcc74x_lp_fw_bcn_loss_cfg(lp_fw_bcn_loss_level_t *cfg_table, uint32_t num)
+void qcc74x_lp_fw_bcn_loss_cfg(lp_fw_bcn_loss_level_t *cfg_table, uint16_t table_num, uint16_t loop_start, uint16_t loss_max)
 {
     /* bcn loss ctrl */
     static lp_fw_bcn_loss_level_t bcn_loss_cfg_table[] = {
-        {6, 0,  1000,   2000},      /* loss 1 */
-        {2, 0,  2000,   3000},      /* loss 2 */
-        {2, 0,  3000,   5000},      /* loss 3 */
-        {1, 0,  4000,   8000},      /* loss 4 */
-        {1, 0,  5000,   12000},     /* loss 5 */
-        {1, 0,  6000,   24000},     /* loss 6 */
-        {1, 0,  15000,  50000},     /* loss 7 */
-        {1, 0,  25000,  100000},    /* loss 8 */
+        {10,  0,  2000,   4000},     /* loss 0, unused */
+        {6,  0,  2000,   4000},     /* loss 1 */
+        {6,  0,  3000,   6000},     /* loss 2 */
+        {3,  0,  4000,   8000},     /* loss 3 */
+        {3,  0,  6000,   14000},    /* loss 4 */
+        {3,  1,  20000,  40000},    /* loss 5, wakeup */
 
-        {3, 0,  8000,   24000},     /* loss 9 */
-        {3, 0,  8000,   24000},     /* loss 10 */
-        {3, 1,  8000,   24000},     /* loss 11, wakeup */
-                                    /* wakeup, and win invalid */
+        {10, 0, 2000,   4000},      /* loss 1 */
+        {6,  0, 4000,   8000},      /* loss 2 */
+        {6,  0, 6000,   12000},     /* loss 3 */
+        {3,  0, 6000,   12000},     /* loss 4 */
+        {3,  1, 8000,   20000},     /* loss 5, wakeup */
+
+        {10, 0, 2000,   4000},      /* loss 1 */
+        {6,  0, 4000,   8000},      /* loss 2 */
+        {6,  0, 6000,   12000},     /* loss 3 */
+        {3,  0, 6000,   12000},     /* loss 4 */
+        {3,  1, 20000,  50000},     /* loss 5, wakeup */
+
+        {10, 0, 2000,   4000},      /* loss 1 */
+        {6,  0, 4000,   8000},      /* loss 2 */
+        {6,  0, 6000,   12000},     /* loss 3 */
+        {3,  0, 6000,   12000},     /* loss 4 */
+        {3,  1, 8000,   20000},     /* loss 5, wakeup */
+
+        {10, 0, 2000,   4000},      /* loss 1 */
+        {6,  0, 4000,   8000},      /* loss 2 */
+        {6,  0, 6000,   12000},     /* loss 3 */
+        {3,  0, 6000,   12000},     /* loss 4 */
+        {3,  1, 50000,  110000},    /* loss 5, wakeup */
+                                    /* cfg table over */
     };
 
-    if (cfg_table == NULL) {
+    if(cfg_table == NULL) {
         cfg_table = bcn_loss_cfg_table;
-        num = sizeof(bcn_loss_cfg_table) / sizeof(lp_fw_bcn_loss_level_t);
+        table_num = sizeof(bcn_loss_cfg_table) / sizeof(lp_fw_bcn_loss_level_t);
+        loop_start = 6;
+        loss_max = 6 + 20 * 10;
+    }
+
+    if(loop_start >= table_num){
+        loop_start = table_num;
     }
 
     /* cache clean */
-    csi_dcache_clean_range((void*)cfg_table, sizeof(lp_fw_bcn_loss_level_t) * num);
+    csi_dcache_clean_range(cfg_table, sizeof(lp_fw_bcn_loss_level_t) * table_num);
 
     /* nocache ram */
     cfg_table = (void *)(((uint32_t)cfg_table) & 0x2fffffff);
 
+    iot2lp_para->continuous_loss_cnt_max = loss_max;
     iot2lp_para->bcn_loss_cfg_table = cfg_table;
-    iot2lp_para->bcn_loss_level_max = num;
+    iot2lp_para->bcn_loss_loop_start = loop_start;
+    iot2lp_para->bcn_loss_level_max = table_num;
 
-    if(iot2lp_para->bcn_loss_level >= num){
-        iot2lp_para->bcn_loss_level = num - 1;
-    }
+    /* clear */
+    iot2lp_para->bcn_loss_level = 0;
+    iot2lp_para->continuous_loss_cnt = 0;
 }
 
 int qcc74x_lp_fw_bcn_loss_info_get(uint32_t *try_num, uint32_t *loss_num)
@@ -1233,6 +1259,17 @@ int ATTR_TCM_SECTION qcc74x_lp_fw_enter(qcc74x_lp_fw_cfg_t *qcc74x_lp_fw_cfg)
     /* rc32k auto calibration */
     iot2lp_para->rc32k_auto_cal_en = 1;
 
+    /* allow dtim wakeup ,if tim_wakeup_en == 1 */
+    iot2lp_para->tim_wakeup_en = qcc74x_lp_fw_cfg->tim_wakeup_en;
+
+#ifndef CONFIG_UNKNOWN_IO_WAKEUP_FORBIDDEN
+    /* allow unkown_reason wakeup */
+    iot2lp_para->unkown_io_wakeup_en = 1;
+#else
+    /* forbid unkown_reason wakeup */
+    iot2lp_para->unkown_io_wakeup_en = 0;
+#endif
+
     if (qcc74x_lp_fw_cfg->tim_wakeup_en) {
         iot2lp_para->tim_wake_enable = 1;
         /* lpfw cfg: wifi para */
@@ -1248,10 +1285,10 @@ int ATTR_TCM_SECTION qcc74x_lp_fw_enter(qcc74x_lp_fw_cfg_t *qcc74x_lp_fw_cfg)
         /* take rc32k error rate as default */
         if (!(*((volatile uint32_t *)0x2000f030) & (1 << 3))) {
             /* rc32k 1500-ppm */
-            iot2lp_para->rtc32k_jitter_error_ppm = 1000;
+            iot2lp_para->rtc32k_jitter_error_ppm = 1200;
         } else {
-            /* xtal 50-ppm */
-            iot2lp_para->rtc32k_jitter_error_ppm = 200;
+            /* xtal 500-ppm */
+            iot2lp_para->rtc32k_jitter_error_ppm = 300;
         }
 
         /* Compensates for pds goto sleep error */
@@ -1270,6 +1307,9 @@ int ATTR_TCM_SECTION qcc74x_lp_fw_enter(qcc74x_lp_fw_cfg_t *qcc74x_lp_fw_cfg)
     } else {
         /* total error form (now -> next bcn), jitter error compensation (ppm) */
         total_error = (int64_t)pds_sleep_us * iot2lp_para->rtc32k_jitter_error_ppm / (1000 * 1000);
+    }
+    if (total_error > 2 * 1000) {
+        total_error = 2 * 1000;
     }
     if (pds_sleep_us > total_error) {
         pds_sleep_us -= total_error;
@@ -1433,7 +1473,7 @@ int ATTR_TCM_SECTION qcc74x_lp_fw_enter(qcc74x_lp_fw_cfg_t *qcc74x_lp_fw_cfg)
     qcc74x_lp_fw_cfg->lpfw_recv_cnt = iot2lp_para->lpfw_recv_cnt;
     qcc74x_lp_fw_cfg->lpfw_loss_cnt = iot2lp_para->lpfw_loss_cnt;
 
-    if (iot2lp_para->wake_io_bits || iot2lp_para->wake_acomp_bits) {
+    if ((iot2lp_para->wakeup_reason & LPFW_WAKEUP_IO) || (iot2lp_para->wakeup_reason & LPFW_WAKEUP_ACOMP) ) {
         /* register */
         qcc74x_irq_attach(MSOFT_IRQn, (irq_callback)qcc74x_lp_soft_irq, NULL);
         /* trig soft int */
@@ -1755,11 +1795,11 @@ static void qcc74x_lp_soft_irq(void)
     /* clear soft int */
     QCC74x_LP_SOFT_INT_CLEAR;
 
-    if (wakeup_io_bits && lp_soft_callback.wakeup_io_callback) {
+    if ((iot2lp_para->wakeup_reason & LPFW_WAKEUP_IO) && lp_soft_callback.wakeup_io_callback) {
         lp_soft_callback.wakeup_io_callback(wakeup_io_bits);
     }
 
-    if (wakeup_acmp_bits && lp_soft_callback.wakeup_acomp_callback) {
+    if ((iot2lp_para->wakeup_reason & LPFW_WAKEUP_ACOMP)  && lp_soft_callback.wakeup_acomp_callback) {
         lp_soft_callback.wakeup_acomp_callback(wakeup_acmp_bits);
     }
 
@@ -1936,8 +1976,6 @@ int qcc74x_check_fw_ready(void)
 
     return gp_lp_env->wifi_fw_ready;
 }
-
-
 
 static void qcc74x_lp_set_aon_io( qcc74x_lp_aon_io_cfg_t cfg )
 {

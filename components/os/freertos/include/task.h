@@ -3227,6 +3227,12 @@ void vTaskInternalSetTimeOutState( TimeOut_t * const pxTimeOut ) PRIVILEGED_FUNC
 
 #endif /* #if ( ( portUSING_MPU_WRAPPERS == 1 ) && ( configUSE_MPU_WRAPPERS_V1 == 0 ) && ( configENABLE_ACCESS_CONTROL_LIST == 1 ) ) */
 
+#if (config_CUSTOM_TICKLESS == 2)
+typedef void (*foreach_handler_cb)(TaskHandle_t, eTaskState);
+uint8_t * pcTaskGetVendorFlags(TaskHandle_t tsk);
+void vTaskHandleForeach(foreach_handler_cb cb);
+#endif
+
 /* *INDENT-OFF* */
 #ifdef __cplusplus
     }

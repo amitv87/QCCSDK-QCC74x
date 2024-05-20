@@ -64,10 +64,16 @@ extern "C" {
 /** Function prototype for a stack-internal timer function that has to be
  * called at a defined interval */
 typedef void (* lwip_cyclic_timer_handler)(void);
+typedef enum {
+  LWIP_TIMER_STATUS_IDLE = 0,
+  LWIP_TIMER_STATUS_RUNNING = 1,
+  LWIP_TIMER_STATUS_STOPPING = 2, /* After set to stopping, the statue will change to idle until the last timer timeout */
+} lwip_timer_status_t;
 
 /** This struct contains information about a stack-internal timer function
  that has to be called at a defined interval */
 struct lwip_cyclic_timer {
+  lwip_timer_status_t status;
   u32_t interval_ms;
   lwip_cyclic_timer_handler handler;
 #if LWIP_DEBUG_TIMERNAMES
@@ -77,7 +83,7 @@ struct lwip_cyclic_timer {
 
 /** This array contains all stack-internal cyclic timers. To get the number of
  * timers, use lwip_num_cyclic_timers */
-extern const struct lwip_cyclic_timer lwip_cyclic_timers[];
+extern struct lwip_cyclic_timer lwip_cyclic_timers[];
 /** Array size of lwip_cyclic_timers[] */
 extern const int lwip_num_cyclic_timers;
 
@@ -102,6 +108,7 @@ struct sys_timeo {
 
 void sys_timeouts_init(void);
 
+void sys_timeouts_set_timer_enable(bool enable, lwip_cyclic_timer_handler handler);
 #if LWIP_DEBUG_TIMERNAMES
 void sys_timeout_debug(u32_t msecs, sys_timeout_handler handler, void *arg, const char* handler_name);
 #define sys_timeout(msecs, handler, arg) sys_timeout_debug(msecs, handler, arg, #handler)
@@ -113,6 +120,10 @@ void sys_untimeout(sys_timeout_handler handler, void *arg);
 void sys_restart_timeouts(void);
 void sys_check_timeouts(void);
 u32_t sys_timeouts_sleeptime(void);
+
+#if LWIP_TCP && TCP_TIMER_PRECISE_NEEDED
+void tcpip_tmr_compensate_tick(void);
+#endif
 
 #if LWIP_TESTMODE
 struct sys_timeo** sys_timeouts_get_next_timeout(void);

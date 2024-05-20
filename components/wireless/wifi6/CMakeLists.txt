@@ -60,12 +60,13 @@ sdk_add_compile_definitions(-DCFG_SMARTCONFIG)
 sdk_add_compile_definitions(-DQCC743_IOTSDK)
 sdk_add_compile_definitions(-DWL_BB_TPC=1)
 sdk_add_compile_definitions(-DWL_BB_PD=1)
-sdk_add_compile_definitions(-DCFG_PLATFORM_DMA_ENABLE=1)
+#sdk_add_compile_definitions(-DCFG_PLATFORM_DMA_ENABLE=1) disable for lp, enable for other
 
 #sdk_add_compile_definitions(-DCONFIG_VIF_MAX=${CONFIG_VIF_MAX})
 #sdk_add_compile_definitions(-DCONFIG_STA_MAX=${CONFIG_STA_MAX})
 sdk_add_compile_definitions(-DCONFIG_MAC_TXQ_DEPTH=${CONFIG_MAC_TXQ_DEPTH})
 sdk_add_compile_definitions(-DCONFIG_MAC_RXQ_DEPTH=${CONFIG_MAC_RXQ_DEPTH})
 sdk_add_compile_definitions(-D__FILENAME__=__FILE__)
+sdk_add_compile_definitions_ifdef(CONFIG_CSIDMA_CLI -DCFG_CSIDMA_CLI=1)
 
 sdk_add_compile_definitions_ifdef(CONFIG_IPV6 -DCFG_IPV6)

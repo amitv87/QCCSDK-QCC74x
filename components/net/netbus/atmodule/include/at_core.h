@@ -126,7 +126,7 @@ int at_cmd_unregister(const at_cmd_struct *cmds, int num_cmds);
 
 int at_cmd_input(uint8_t *data, int32_t len);
 
-int at_cmd_set_error(at_error_code error);
+int at_cmd_set_error(uint32_t error);
 
 int at_arg_is_null(const char *arg);
 

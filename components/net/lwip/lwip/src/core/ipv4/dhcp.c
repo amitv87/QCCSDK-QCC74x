@@ -80,6 +80,7 @@
 #include "lwip/etharp.h"
 #include "lwip/prot/dhcp.h"
 #include "lwip/prot/iana.h"
+#include "lwip/timeouts.h"
 
 #include <string.h>
 
@@ -252,6 +253,10 @@ static void dhcp_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_a
 static void dhcp_timeout(struct netif *netif);
 static void dhcp_t1_timeout(struct netif *netif);
 static void dhcp_t2_timeout(struct netif *netif);
+static void dhcp_timer_coarse_remove(void);
+static void dhcp_timer_coarse_needed(void);
+static void dhcp_timer_fine_remove(void);
+static void dhcp_timer_fine_needed(void);
 
 /* build outgoing messages */
 /* create a DHCP message, fill in common headers */
@@ -367,6 +372,7 @@ dhcp_conflict_callback(struct netif *netif, acd_callback_enum_t state)
        dhcp_set_state(dhcp, DHCP_STATE_BACKING_OFF);
        msecs = 10 * 1000;
        dhcp->request_timeout = (u16_t)((msecs + DHCP_FINE_TIMER_MSECS - 1) / DHCP_FINE_TIMER_MSECS);
+       dhcp_timer_fine_needed();
        LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_decline(): set request timeout %"U16_F" msecs\n", msecs));
       break;
     case ACD_DECLINE:
@@ -498,8 +504,41 @@ dhcp_select(struct netif *netif)
   }
   msecs = (u16_t)((dhcp->tries < 6 ? 1 << dhcp->tries : 60) * 1000);
   dhcp->request_timeout = (u16_t)((msecs + DHCP_FINE_TIMER_MSECS - 1) / DHCP_FINE_TIMER_MSECS);
+  dhcp_timer_fine_needed();
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_STATE, ("dhcp_select(): set request timeout %"U16_F" msecs\n", msecs));
   return result;
+}
+
+static void
+dhcp_timer_coarse_remove(void) {
+#if DHCP_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_STATE, ("dhcp_timer_coarse_remove"));
+  sys_timeouts_set_timer_enable(false, dhcp_coarse_tmr);
+#endif
+}
+
+static void
+dhcp_timer_coarse_needed(void) {
+#if DHCP_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_STATE, ("dhcp_timer_coarse_needed"));
+  sys_timeouts_set_timer_enable(true, dhcp_coarse_tmr);
+#endif
+}
+
+static void
+dhcp_timer_fine_remove(void) {
+#if DHCP_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_STATE, ("dhcp_timer_fine_remove"));
+  sys_timeouts_set_timer_enable(false, dhcp_fine_tmr);
+#endif
+}
+
+static void
+dhcp_timer_fine_needed(void) {
+#if DHCP_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_STATE, ("dhcp_timer_fine_needed"));
+  sys_timeouts_set_timer_enable(true, dhcp_fine_tmr);
+#endif
 }
 
 /**
@@ -510,16 +549,19 @@ void
 dhcp_coarse_tmr(void)
 {
   struct netif *netif;
+  int running_netif_cnt = 0;
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE, ("dhcp_coarse_tmr()\n"));
   /* iterate through all network interfaces */
   NETIF_FOREACH(netif) {
     /* only act on DHCP configured interfaces */
     struct dhcp *dhcp = netif_dhcp_data(netif);
     if ((dhcp != NULL) && (dhcp->state != DHCP_STATE_OFF)) {
+      running_netif_cnt++;
       /* compare lease time to expire timeout */
       if (dhcp->t0_timeout && (++dhcp->lease_used == dhcp->t0_timeout)) {
         LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_coarse_tmr(): t0 timeout\n"));
         /* this clients' lease time has expired */
+        running_netif_cnt--;
         dhcp_release_and_stop(netif);
         dhcp_start(netif);
         /* timer is active (non zero), and triggers (zeroes) now? */
@@ -535,6 +577,9 @@ dhcp_coarse_tmr(void)
       }
     }
   }
+if (running_netif_cnt <= 0) {
+    dhcp_timer_coarse_remove();
+  }
 }
 
 /**
@@ -548,11 +593,13 @@ void
 dhcp_fine_tmr(void)
 {
   struct netif *netif;
+  int running_netif_cnt = 0;
   /* loop through netif's */
   NETIF_FOREACH(netif) {
     struct dhcp *dhcp = netif_dhcp_data(netif);
     /* only act on DHCP configured interfaces */
     if (dhcp != NULL) {
+      running_netif_cnt++;
       /* timer is active (non zero), and is about to trigger now */
       if (dhcp->request_timeout > 1) {
         dhcp->request_timeout--;
@@ -562,8 +609,13 @@ dhcp_fine_tmr(void)
         LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_fine_tmr(): request timeout\n"));
         /* this client's request timeout triggered */
         dhcp_timeout(netif);
+      } else {
+        running_netif_cnt--;
       }
     }
+  }
+  if (running_netif_cnt <= 0) {
+    dhcp_timer_fine_remove();
   }
 }
 
@@ -1083,6 +1135,7 @@ dhcp_discover(struct netif *netif)
   }
   msecs = DHCP_REQUEST_BACKOFF_SEQUENCE(dhcp->tries);
   dhcp->request_timeout = (u16_t)((msecs + DHCP_FINE_TIMER_MSECS - 1) / DHCP_FINE_TIMER_MSECS);
+  dhcp_timer_fine_needed();
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_discover(): set request timeout %"U16_F" msecs\n", msecs));
   return result;
 }
@@ -1159,6 +1212,8 @@ dhcp_bind(struct netif *netif)
 
   netif_set_addr(netif, &dhcp->offered_ip_addr, &sn_mask, &gw_addr);
   /* interface is used by routing now that an address is set */
+
+  dhcp_timer_coarse_needed();
 }
 
 /**
@@ -1214,6 +1269,7 @@ dhcp_renew(struct netif *netif)
   /* back-off on retries, but to a maximum of 20 seconds */
   msecs = (u16_t)(dhcp->tries < 10 ? dhcp->tries * 2000 : 20 * 1000);
   dhcp->request_timeout = (u16_t)((msecs + DHCP_FINE_TIMER_MSECS - 1) / DHCP_FINE_TIMER_MSECS);
+  dhcp_timer_fine_needed();
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_renew(): set request timeout %"U16_F" msecs\n", msecs));
   return result;
 }
@@ -1268,6 +1324,7 @@ dhcp_rebind(struct netif *netif)
   }
   msecs = (u16_t)(dhcp->tries < 10 ? dhcp->tries * 1000 : 10 * 1000);
   dhcp->request_timeout = (u16_t)((msecs + DHCP_FINE_TIMER_MSECS - 1) / DHCP_FINE_TIMER_MSECS);
+  dhcp_timer_fine_needed();
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_rebind(): set request timeout %"U16_F" msecs\n", msecs));
   return result;
 }
@@ -1325,6 +1382,7 @@ dhcp_reboot(struct netif *netif)
   }
   msecs = (u16_t)(dhcp->tries < 10 ? dhcp->tries * 1000 : 10 * 1000);
   dhcp->request_timeout = (u16_t)((msecs + DHCP_FINE_TIMER_MSECS - 1) / DHCP_FINE_TIMER_MSECS);
+  dhcp_timer_fine_needed();
   LWIP_DEBUGF(DHCP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("dhcp_reboot(): set request timeout %"U16_F" msecs\n", msecs));
   return result;
 }

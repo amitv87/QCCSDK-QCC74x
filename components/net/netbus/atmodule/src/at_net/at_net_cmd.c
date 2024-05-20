@@ -56,7 +56,6 @@ static int string_host_to_ip(char *host, uint32_t *ip)
 
 static int at_exe_cmd_cifsr(int argc, const char **argv)
 {
-    int state;
     ip4_addr_t sta_addr = {0}, sta_gw = {0}, sta_mask = {0}, dns = {0};
     ip4_addr_t ap_addr;
 

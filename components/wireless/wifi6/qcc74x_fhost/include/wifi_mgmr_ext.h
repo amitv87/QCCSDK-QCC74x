@@ -829,27 +829,6 @@ int wifi_mgmr_wifi_pwr_off(void);
  */
 int wifi_mgmr_wifi_pwr_on(void);
 
-#ifdef CFG_QCC74x_WIFI_PS_ENABLE
-/**
- * wifi_mgmr_sta_start_keep_alive
- * Start keep alive.
- * return:
- *  0 : Success
- *  -1 : Failed
- *  Others is Failed
- */
-int wifi_mgmr_sta_start_keep_alive(uint16_t seconds);
-
-/**
- * wifi_mgmr_sta_stop_keep_alive
- * Stop keep alive.
- * return:
- *  0 : Success
- *  -1 : Failed
- *  Others is Failed
- */
-int wifi_mgmr_sta_stop_keep_alive(void);
-#endif
 /**
  * wifi_mgmr_rate_config
  * return:
@@ -860,11 +839,4 @@ int wifi_mgmr_sta_stop_keep_alive(void);
  */
 int wifi_mgmr_rate_config(uint16_t fixed_rate_cfg);
 
-/**
- *
- * wifi_mgmr_sta_extra_timcnt_get
- * return:
- *  Tim cnt
- */
-uint8_t wifi_mgmr_sta_extra_timcnt_get(void);
 #endif

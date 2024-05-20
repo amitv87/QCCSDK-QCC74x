@@ -1255,6 +1255,10 @@ tcp_output(struct tcp_pcb *pcb)
   LWIP_ASSERT("don't call tcp_output for listen-pcbs",
               pcb->state != LISTEN);
 
+#if TCP_TIMER_PRECISE_NEEDED
+  tcpip_tmr_compensate_tick();
+#endif
+
   /* First, check if we are invoked by the TCP input processing
      code. If so, we do not output anything. Instead, we rely on the
      input processing code to call us when input processing is done
@@ -1314,7 +1318,11 @@ tcp_output(struct tcp_pcb *pcb)
      * smaller than 1 SMSS implies in-flight data
      */
     if (wnd == pcb->snd_wnd && pcb->unacked == NULL && pcb->persist_backoff == 0) {
+#if !TCP_TIMER_PRECISE_NEEDED
       pcb->persist_cnt = 0;
+#else
+      pcb->persist_cnt = tcp_ticks;
+#endif
       pcb->persist_backoff = 1;
       pcb->persist_probe = 0;
     }
@@ -1533,11 +1541,19 @@ tcp_output_segment(struct tcp_seg *seg, struct tcp_pcb *pcb, struct netif *netif
   }
 #endif
 
+#if !TCP_TIMER_PRECISE_NEEDED
   /* Set retransmission timer running if it is not currently enabled
      This must be set before checking the route. */
   if (pcb->rtime < 0) {
     pcb->rtime = 0;
   }
+#else
+  /* Update retransmission time if it is not currently in retransmitting
+     This must be set before checking the route. */
+  if (pcb->unacked == NULL) {
+    pcb->rtime = tcp_ticks;
+  }
+#endif
 
   if (pcb->rttest == 0) {
     pcb->rttest = tcp_ticks;
@@ -1608,6 +1624,10 @@ tcp_output_segment(struct tcp_seg *seg, struct tcp_pcb *pcb, struct netif *netif
   TCP_STATS_INC(tcp.xmit);
 
   NETIF_SET_HINTS(netif, &(pcb->netif_hints));
+#if TCP_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(TCP_DEBUG, ("tcp_timer_opt tcp_output_segment"));
+  tcp_timer_needed();
+#endif
   err = ip_output_if(seg->p, &pcb->local_ip, &pcb->remote_ip, pcb->ttl,
                      pcb->tos, IP_PROTO_TCP, netif);
   NETIF_RESET_HINTS(netif);
@@ -1813,7 +1833,11 @@ tcp_rexmit_fast(struct tcp_pcb *pcb)
       tcp_set_flags(pcb, TF_INFR);
 
       /* Reset the retransmission timer to prevent immediate rto retransmissions */
+#if !TCP_TIMER_PRECISE_NEEDED
       pcb->rtime = 0;
+#else
+      pcb->rtime = tcp_ticks;
+#endif
     }
   }
 }
@@ -1969,6 +1993,10 @@ tcp_output_control_segment_netif(const struct tcp_pcb *pcb, struct pbuf *p,
     tos = 0;
   }
   TCP_STATS_INC(tcp.xmit);
+#if TCP_TIMER_PRECISE_NEEDED
+  LWIP_DEBUGF(TCP_DEBUG, ("tcp_timer_opt tcp_output_control_segment_netif"));
+  tcp_timer_needed();
+#endif
   err = ip_output_if(p, src, dst, ttl, tos, IP_PROTO_TCP, netif);
   NETIF_RESET_HINTS(netif);
 

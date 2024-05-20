@@ -349,7 +349,7 @@ static int udp_client_connect(uint16_t port)
     unsigned char loop= 0;
     int so_broadcast=1;
 
-    AT_NET_PRINTF("udp client create port %d\r\n", port);
+    AT_NET_PRINTF("udp client connect port %d\r\n", port);
     if ( (fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {		
         return -1;	
     }
