@@ -25,24 +25,12 @@ struct _ramsync_low_priv {
 	DMA_NodeTypeDef *rx_llis;
 };
 
-/* DMA ISR profiling */
-static unsigned txdma_isr_cnt = 0;
-static unsigned rxdma_isr_cnt = 0;
-
-void get_dma_stats(unsigned int *tx_cnt, unsigned int *rx_cnt)
-{
-	*tx_cnt = txdma_isr_cnt;
-	*rx_cnt = rxdma_isr_cnt;
-}
-
 static void dma_xfer_done(DMA_HandleTypeDef *hdma)
 {
 	if (hdma == &handle_GPDMA1_Channel0) {
-		txdma_isr_cnt++;
 	    if (g_ctx->tx_cb)
 	        g_ctx->tx_cb(g_ctx->tx_arg);
 	} else if (hdma == &handle_GPDMA1_Channel1) {
-		rxdma_isr_cnt++;
 	    if (g_ctx->rx_cb)
 	        g_ctx->rx_cb(g_ctx->rx_arg);
 	} else {
@@ -262,6 +250,7 @@ int lramsync_deinit(lramsync_ctx_t *ctx)
 }
 
 int lramsync_init(
+		const spisync_config_t *config,
         lramsync_ctx_t *ctx,
         node_mem_t *node_tx, uint32_t items_tx,
         lramsync_cb_func_t tx_cb, void *tx_arg,
@@ -335,5 +324,21 @@ rsl_init_err:
     if (priv)
         rsl_free(priv);
     return -1;
+}
+
+int lramsync_suspend(lramsync_ctx_t *ctx)
+{
+    printf("%s\r\n", __func__);
+    HAL_DMAEx_Suspend(ctx->dma_tx_chan);
+    HAL_DMAEx_Suspend(ctx->dma_rx_chan);
+    return 0;
+}
+
+int lramsync_resume(lramsync_ctx_t *ctx)
+{
+    printf("%s\r\n", __func__);
+    HAL_DMAEx_Resume(ctx->dma_rx_chan);
+    HAL_DMAEx_Resume(ctx->dma_tx_chan);
+    return 0;
 }
 

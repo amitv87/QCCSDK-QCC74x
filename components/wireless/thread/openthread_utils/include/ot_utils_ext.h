@@ -5,7 +5,7 @@
 
 #define VERSION_OT_UTILS_MAJOR 1
 #define VERSION_OT_UTILS_MINOR 6
-#define VERSION_OT_UTILS_PATCH 1
+#define VERSION_OT_UTILS_PATCH 4
 
 #define VENDOR_IE_HEADER_ID                 0
 #define VENDOR_IE_THREAD_OUI                0xeab89b
@@ -21,6 +21,15 @@
 #define LMAC154_ALARM_MICRO_TIMER_ID        (1)
 #define LMAC154_ALAMR_PDS_TIMER_ID          (0)
 
+/****************************************************************************//**
+ * @brief  Initalize utilize module
+ *
+ * @param  None
+ *
+ * @return None
+ *
+*******************************************************************************/
+void ot_utils_init(void);
 
 /****************************************************************************//**
  * @brief  Get the version number
@@ -94,6 +103,16 @@ uint32_t otLinkMetrics_genEnhAckData(otInternel_addrType_t addrType, uint8_t *pA
 void ot_radioEnable(void);
 
 /****************************************************************************//**
+ * @brief  Enable/Disable RX Promiscuous Mode
+ *
+ * @param  None
+ *
+ * @return None
+ *
+*******************************************************************************/
+void ot_setRxPromiscuousMode(bool isEnable, bool isEnhancedMode);
+
+/****************************************************************************//**
  * @brief  FTD device address from address mapping
  *
  * @param  addrType, address type to input to find another address
@@ -141,4 +160,16 @@ void ot_radioEnqueueRecvPacket(uint32_t * rx_buf, uint32_t rx_len);
  *
 *******************************************************************************/
 int ot_radioSend(otRadioFrame *aFrame);
+
+#ifdef QCC743
+/****************************************************************************//**
+ * @brief  Init WiFi/M154 co-exist module
+ *
+ * @param  None
+ *
+ * @return None
+ *
+*******************************************************************************/
+int ot_coexist_event_init(void);
+#endif
 #endif

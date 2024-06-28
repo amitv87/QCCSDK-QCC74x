@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define AT_THROUGH_MAX_LEN 2920
+#define AT_THROUGH_MAX_LEN (1024*6)
 #define AT_THROUGH_EXIT_CMD "+++"
 
 int at_through_input(uint8_t *data, int32_t len);

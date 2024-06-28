@@ -354,7 +354,6 @@ typedef struct tskTaskControlBlock       /* The old naming convention is used to
     #endif
 
     #if (config_CUSTOM_TICKLESS == 2)
-        /* Bouffalo added */
         uint8_t vendor_flags;
     #endif
 } tskTCB;

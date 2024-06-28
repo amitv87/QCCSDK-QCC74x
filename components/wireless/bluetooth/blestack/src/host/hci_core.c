@@ -5800,6 +5800,14 @@ static void hci_rx_thread(void)
 }
 #endif /* !CONFIG_BT_RECV_IS_RX_THREAD */
 
+bool bt_is_ready(void)
+{
+    if(atomic_test_bit(bt_dev.flags, BT_DEV_READY))
+        return true;
+    else
+        return false;
+}
+
 int bt_enable(bt_ready_cb_t cb)
 {
 	int err;

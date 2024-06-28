@@ -1756,7 +1756,7 @@ void bt_l2cap_recv(struct bt_conn *conn, struct net_buf *buf)
 	BT_DBG("Packet for CID %u len %u", cid, buf->len);
 
 	chan = bt_l2cap_le_lookup_rx_cid(conn, cid);
-	if (!chan) {
+	if (!chan || !chan->conn) {
 		BT_WARN("Ignoring data for unknown CID 0x%04x", cid);
 		net_buf_unref(buf);
 		return;

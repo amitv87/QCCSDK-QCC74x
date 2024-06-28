@@ -12,7 +12,7 @@
 #include "mesh_cli_cmds.h"
 #include "src/include/mesh.h"
 #include "bt_errno.h"
-
+#include "access.h"
 #include "src/mesh.h"
 #include "net.h"
 #include "transport.h"
@@ -24,6 +24,8 @@
 #include "bt_log.h"
 #if defined(CONFIG_BT_MESH_MODEL)
 #include "model_opcode.h"
+#include "state_transition.h"
+#include "state_binding.h"
 #if (defined(CONFIG_BT_MESH_MODEL_GEN_SRV) || defined(CONFIG_BT_MESH_MODEL_GEN_CLI))
 #include "qcc74x_ble_mesh_generic_model_api.h"
 #endif
@@ -173,6 +175,9 @@ static void attn_on(struct bt_mesh_model *model);
 static void attn_off(struct bt_mesh_model *model);
 
 BLEMESH_CLI(init);
+#if defined(CONFIG_BT_MESH_GATT_PROXY)
+BLEMESH_CLI(proxy_identity);
+#endif
 #if defined(CONFIG_BT_MESH_PROVISIONER)
 BLEMESH_CLI(pvnr_init);
 #endif
@@ -216,7 +221,7 @@ BLEMESH_CLI(fault_set);
 
 #if defined(CONFIG_BT_MESH_LOW_POWER)
 BLEMESH_CLI(lpn_set);
-#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
+#if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS) 
 BLEMESH_CLI(lpn_poll);
 BLEMESH_CLI(lpn_clear_friend_send);
 BLEMESH_CLI(lpn_friend_req);
@@ -816,6 +821,9 @@ static const struct bt_mesh_comp comp = {
 };
 #if defined(CONFIG_SHELL)
     SHELL_CMD_EXPORT_ALIAS(blemeshcli_init, blemesh_init, blemesh Initialize Parameter:[Null]);
+#if defined(CONFIG_BT_MESH_GATT_PROXY)
+    SHELL_CMD_EXPORT_ALIAS(blemeshcli_proxy_identity, blemesh_proxy_identity, blemesh proxy identity);
+#endif
 #if defined(CONFIG_BT_MESH_PROVISIONER)
     SHELL_CMD_EXPORT_ALIAS(blemeshcli_pvnr_init, blemesh_pvnr_init, blemesh_pvnr Initialize Parameter:[Null]);
 #endif
@@ -1359,7 +1367,7 @@ static void lpn_cb(u16_t friend_addr, bool established)
 		vOutputString("Friendship (as LPN) lost with Friend 0x%04x\r\n", friend_addr);
 	}
 }
-
+#if defined(CONFIG_BT_MESH_LOW_POWER)
 #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 BLEMESH_CLI(lpn_poll)
 {
@@ -1371,6 +1379,7 @@ BLEMESH_CLI(lpn_poll)
 
 BLEMESH_CLI(lpn_clear_friend_send)
 {
+	extern int send_friend_clear(void);
 	send_friend_clear();
 }
 
@@ -1392,19 +1401,19 @@ BLEMESH_CLI(lpn_group_del)
 {
 	u16_t groupaddr;
 	int err;
-	get_uint8_from_string(&argv[2], &groupaddr);
-	bt_mesh_lpn_group_del(groupaddr,1);
+	get_uint16_from_string(&argv[1], &groupaddr);
+	bt_mesh_lpn_group_del(&groupaddr,1);
 }
 
 BLEMESH_CLI(lpn_group_add)
 {
 	u16_t groupaddr;
 	int err;
-	get_uint8_from_string(&argv[1], &groupaddr);
+	get_uint16_from_string(&argv[1], &groupaddr);
 	bt_mesh_lpn_group_add(groupaddr);
 }
 #endif
-
+#endif
 #endif
 #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
 
@@ -1786,6 +1795,122 @@ static void gen_loc_local_set(uint8_t *data, uint16_t len)
     common_set(QCC74x_BLE_MESH_MODEL_ID_GEN_LOCATION_CLI, QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_LOCAL_SET_UNACK, data[0], &gen_client_set);
 
 }
+static void gen_props_get(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_get_state_t get_state;
+    uint16_t property_id = data[1] + (data[2] << 8);
+    uint32_t opcode;
+
+    switch(data[0]){
+    case 0:/*mfr_props*/
+        get_state.manufacturer_property_get.property_id = property_id;
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_MANUFACTURER_PROPERTIES_GET;
+        break;
+    case 1:/*admin_props*/
+        get_state.admin_property_get.property_id = property_id;
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_ADMIN_PROPERTIES_GET;
+        break;
+    case 2:/*usr_props*/
+        get_state.user_property_get.property_id = property_id;
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_USER_PROPERTIES_GET;
+        break;
+    case 3:/*cli_props*/
+        get_state.client_properties_get.property_id = property_id;
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_CLIENT_PROPERTIES_GET;
+        break;
+    default:
+        return;
+        break;
+    }
+
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_PROP_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = opcode,
+    qcc74x_ble_mesh_generic_client_get_state(&client_common, &get_state);
+}
+static void gen_prop_get(uint8_t *data, uint16_t len)
+{
+    struct bt_mesh_model *mesh_model = NULL;
+    qcc74x_ble_mesh_generic_client_get_state_t get_state;
+    uint16_t property_id = data[1] + (data[2] << 8);
+    uint32_t opcode;
+
+    switch(data[0]){
+    case 0:/*mfr_props*/
+        get_state.manufacturer_property_get.property_id = property_id;
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_MANUFACTURER_PROPERTY_GET;
+        break;
+    case 1:/*admin_props*/
+        get_state.admin_property_get.property_id = property_id;
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_ADMIN_PROPERTY_GET;
+        break;
+    case 2:/*usr_props*/
+        get_state.user_property_get.property_id = property_id;
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_USER_PROPERTY_GET;
+        break;
+    default:
+        return;
+        break;
+    }
+
+    const struct bt_mesh_comp *mesh_comp = bt_mesh_comp_get();
+    for(int i = 0; i < mesh_comp->elem_count; ++i){
+        mesh_model = bt_mesh_model_find(&mesh_comp->elem[i], QCC74x_BLE_MESH_MODEL_ID_GEN_PROP_CLI);
+        if(mesh_model != NULL){
+            break;
+        }
+    }
+    if(mesh_model == NULL){
+        return;
+    }
+    client_common.model = mesh_model;
+    client_common.opcode = opcode,
+    qcc74x_ble_mesh_generic_client_get_state(&client_common, &get_state);
+
+}
+static void gen_prop_set(uint8_t *data, uint16_t len)
+{
+    qcc74x_ble_mesh_generic_client_set_state_t gen_client_set = {0};
+    uint32_t opcode;
+    struct net_buf_simple *buf = NET_BUF_SIMPLE(40);
+
+    net_buf_simple_init(buf, 0);
+    switch(data[1]){
+    case 0:/*mfr_props*/
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_MANUFACTURER_PROPERTY_SET_UNACK;
+        gen_client_set.manufacturer_property_set.property_id = data[2] + (data[3] << 8);
+        gen_client_set.manufacturer_property_set.user_access = data[4];
+        break;
+    case 1:/*admin_props*/
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_ADMIN_PROPERTY_SET_UNACK;
+        gen_client_set.admin_property_set.property_id = data[2] + (data[3] << 8);
+        gen_client_set.admin_property_set.user_access = data[4];
+        net_buf_simple_add_mem(buf, &data[6], data[5]);
+        gen_client_set.admin_property_set.property_value = buf;
+        break;
+    case 2:/*usr_props*/
+        opcode = QCC74x_BLE_MESH_MODEL_OP_GEN_USER_PROPERTY_SET_UNACK;
+        gen_client_set.user_property_set.property_id = data[2] + (data[3] << 8);
+        net_buf_simple_add_mem(buf, &data[6], data[5]);
+        gen_client_set.user_property_set.property_value = buf;
+        break;
+    default:
+        return;
+        break;
+    }
+
+    common_set(QCC74x_BLE_MESH_MODEL_ID_GEN_PROP_CLI, opcode, data[0], &gen_client_set);
+}
 static void light_lightness_get(uint8_t *data, uint16_t len)
 {
     light_get(QCC74x_BLE_MESH_MODEL_ID_LIGHT_LIGHTNESS_CLI,
@@ -2114,6 +2239,15 @@ static void pts_tester_handle_mesh_model(u32_t opcode, uint8_t *data, uint16_t l
     case QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_LOCAL_GET:{gen_loc_local_get(data, len);}break;
     case QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_GLOBAL_SET_UNACK:{gen_loc_global_set(data, len);}break;
     case QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_LOCAL_SET_UNACK:{gen_loc_local_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_MANUFACTURER_PROPERTIES_GET:{gen_props_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_ADMIN_PROPERTIES_GET:{gen_props_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_USER_PROPERTIES_GET:{gen_props_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_MANUFACTURER_PROPERTY_GET:{gen_prop_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_ADMIN_PROPERTY_GET:{gen_prop_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_USER_PROPERTY_GET:{gen_prop_get(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_MANUFACTURER_PROPERTY_SET_UNACK:{gen_prop_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_ADMIN_PROPERTY_SET_UNACK:{gen_prop_set(data, len);}break;
+    case QCC74x_BLE_MESH_MODEL_OP_GEN_USER_PROPERTY_SET_UNACK:{gen_prop_set(data, len);}break;
     case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_GET:{light_lightness_get(data, len);}break;
     case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_SET_UNACK:{light_lightness_set(data, len);}break;
     case QCC74x_BLE_MESH_MODEL_OP_LIGHT_LIGHTNESS_LINEAR_GET:{light_lightness_linear_get(data, len);}break;
@@ -2243,7 +2377,7 @@ static void mmdl_generic_server_cb(qcc74x_ble_mesh_generic_server_cb_event_t eve
     lhsl_srv = (qcc74x_ble_mesh_light_hsl_srv_t*)lhsl_m->user_data;
 
     //qcc74x_ble_mesh_gen_onoff_srv_t *srv;
-    BT_WARN("event 0x%02x, opcode 0x%04x, src 0x%04x, dst 0x%04x\n",
+    BT_WARN("event 0x%02x, opcode 0x%04lx, src 0x%04x, dst 0x%04x\n",
         event, param->ctx.recv_op, param->ctx.addr, param->ctx.recv_dst);
 
     switch (event) {
@@ -2397,7 +2531,7 @@ static void mmdl_lighting_server_cb(qcc74x_ble_mesh_lighting_server_cb_event_t e
     goo_m = bt_mesh_model_find(&mesh_comp->elem[0], QCC74x_BLE_MESH_MODEL_ID_GEN_ONOFF_SRV);
     goo_srv = (qcc74x_ble_mesh_gen_onoff_srv_t*)goo_m->user_data;
 
-    BT_WARN("event 0x%02x, opcode 0x%04x, src 0x%04x, dst 0x%04x\n",
+    BT_WARN("event 0x%02x, opcode 0x%04lx, src 0x%04x, dst 0x%04x\n",
         event, param->ctx.recv_op, param->ctx.addr, param->ctx.recv_dst);
 
     switch (event) {
@@ -2570,7 +2704,7 @@ static void mmdl_lighting_server_cb(qcc74x_ble_mesh_lighting_server_cb_event_t e
         }
         break;
     default:
-        BT_WARN( "Unknown Server event opcode[%x] 0x%02x", param->ctx.recv_op, event);
+        BT_WARN( "Unknown Server event opcode[%lx] 0x%02x", param->ctx.recv_op, event);
         break;
     }
     ef_set_env_blob("lln_state", lln_srv->state,
@@ -2773,7 +2907,7 @@ void mmdl_generic_client_cb(qcc74x_ble_mesh_generic_client_cb_event_t event,
 {
     uint32_t opcode = param->params->opcode;
 
-    BT_WARN("enter %s: event is %d, error code is %d, opcode is 0x%x\n",
+    BT_WARN("enter %s: event is %d, error code is %d, opcode is 0x%lx\n",
              __func__, event, param->error_code, opcode);
 
     switch (event) {
@@ -2866,7 +3000,7 @@ void mmdl_generic_client_cb(qcc74x_ble_mesh_generic_client_cb_event_t event,
             qcc74x_ble_mesh_gen_loc_global_status_cb_t* location_global_status;
             location_global_status = &param->status_cb.location_global_status;
             if (param->error_code == QCC74x_OK) {
-                BT_WARN("GEN_BATTERY_GET:OK[%x][%x][%x]\n", location_global_status->global_latitude,
+                 BT_WARN("GEN_BATTERY_GET:OK[%lx][%lx][%x]\n", location_global_status->global_latitude,
                     location_global_status->global_longitude, location_global_status->global_altitude);
             } else {
                 BT_WARN("GEN_BATTERY_GET:Fail[%x]\n", param->error_code);
@@ -2891,7 +3025,7 @@ void mmdl_generic_client_cb(qcc74x_ble_mesh_generic_client_cb_event_t event,
             qcc74x_ble_mesh_gen_user_properties_status_cb_t* user_properties_status;
             user_properties_status = &param->status_cb.user_properties_status;
             if (param->error_code == QCC74x_OK) {
-                BT_WARN("PROPERTIES_GET:OK[%x]\n", user_properties_status->property_ids);
+                BT_WARN("PROPERTIES_GET:OK[%p]\n", user_properties_status->property_ids);
             } else {
                 BT_WARN("PROPERTIES_GET:Fail[%x]\n", param->error_code);
             }
@@ -2980,7 +3114,7 @@ void mmdl_generic_client_cb(qcc74x_ble_mesh_generic_client_cb_event_t event,
             break;
         case QCC74x_BLE_MESH_MODEL_OP_GEN_LOC_GLOBAL_SET:
             if (param->error_code == QCC74x_OK) {
-                BT_WARN("GEN_LOC_GLOBAL_SET:OK[%x][%x][%x]\n", param->status_cb.location_global_status.global_latitude,
+               BT_WARN("GEN_LOC_GLOBAL_SET:OK[%lx][%lx][%x]\n", param->status_cb.location_global_status.global_latitude,
                     param->status_cb.location_global_status.global_longitude, param->status_cb.location_global_status.global_altitude);
             } else {
                 BT_WARN("GEN_LOC_GLOBAL_SET:Fail[%x]\n", param->error_code);
@@ -3010,7 +3144,7 @@ void mmdl_generic_client_cb(qcc74x_ble_mesh_generic_client_cb_event_t event,
         /* This case maybe delete */
         case QCC74x_BLE_MESH_MODEL_OP_GEN_ONOFF_SET_UNACK:
             if (param->error_code == QCC74x_OK) {
-                BT_WARN("GenOnOffClient:SetUNACK,OK, opcode[%x] raddr[%x]\n", 
+                 BT_WARN("GenOnOffClient:SetUNACK,OK, opcode[%lx] raddr[%x]\n", 
                                 opcode, param->params->ctx.addr);
             } else {
                 BT_WARN("GenOnOffClient:SetUNACK,Fail[%x]\n", param->error_code);
@@ -3050,7 +3184,7 @@ void mmdl_light_client_cb(qcc74x_ble_mesh_light_client_cb_event_t event,
 {
     uint32_t opcode = param->params->opcode;
 
-    BT_WARN("enter %s: event is %d, error code is %d, opcode is 0x%x\n",
+    BT_WARN("enter %s: event is %d, error code is %d, opcode is 0x%lx\n",
              __func__, event, param->error_code, opcode);
 
 }
@@ -3077,6 +3211,52 @@ static uint8_t models_callback_init(void)
     if(err != QCC74x_OK){
         return err;
     }
+
+#if defined(MESH_LCTL_BIND_WITH_GENLVL) 	// MMDL/SR/LCTLT/BV-02-C
+
+    struct bt_mesh_model *gl_m,*lctl_m;
+    qcc74x_ble_mesh_gen_level_srv_t* gl_srv;
+    qcc74x_ble_mesh_light_ctl_srv_t* lctl_srv;
+
+    gl_m = bt_mesh_model_find(&elements[0], QCC74x_BLE_MESH_MODEL_ID_GEN_LEVEL_SRV);
+    gl_srv = (qcc74x_ble_mesh_gen_level_srv_t*)gl_m->user_data;
+    lctl_m = bt_mesh_model_find(&elements[0], QCC74x_BLE_MESH_MODEL_ID_LIGHT_CTL_SRV);
+    lctl_srv = (qcc74x_ble_mesh_light_ctl_srv_t*)lctl_m->user_data;
+    lctl_srv->state->temperature_range_min = 0x0320;
+    lctl_srv->state->temperature_range_max = 0x4E20;
+    lctl_srv->state->temperature = 0x320;
+    lctl_srv->state->delta_uv = 0;
+    lctl_srv->state->lightness = 0;
+    gl_srv->state.level = bt_mesh_convert_temperature_to_gen_level(lctl_srv->state->temperature,
+        lctl_srv->state->temperature_range_min, lctl_srv->state->temperature_range_max);
+
+#endif
+
+#if defined(MESH_LHSL_BIND_WITH_GENLVL) //MMDL/SR/LHSLH/BV-02-C
+
+    struct bt_mesh_model *gl_m,*lhsl_m;
+    qcc74x_ble_mesh_gen_level_srv_t* gl_srv;
+    qcc74x_ble_mesh_light_hsl_srv_t* lhsl_srv;
+    gl_m = bt_mesh_model_find(&elements[0], QCC74x_BLE_MESH_MODEL_ID_GEN_LEVEL_SRV);
+    gl_srv = (qcc74x_ble_mesh_gen_level_srv_t*)gl_m->user_data;
+    lhsl_m = bt_mesh_model_find(&elements[0], QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_SRV);
+    lhsl_srv = (qcc74x_ble_mesh_light_hsl_srv_t*)lhsl_m->user_data;
+    gl_srv->state.level = lhsl_srv->state->hue - 32768;
+
+#endif
+
+#if defined(MESH_LHSLSA_BIND_WITH_GENLVL) //MMDL/SR/LHSLSA/BV-02-C
+
+    struct bt_mesh_model *gl_m,*lhsl_m;
+    qcc74x_ble_mesh_gen_level_srv_t* gl_srv;
+    qcc74x_ble_mesh_light_hsl_srv_t* lhsl_srv;
+    gl_m = bt_mesh_model_find(&elements[0], QCC74x_BLE_MESH_MODEL_ID_GEN_LEVEL_SRV);
+    gl_srv = (qcc74x_ble_mesh_gen_level_srv_t*)gl_m->user_data;
+    lhsl_m = bt_mesh_model_find(&elements[0], QCC74x_BLE_MESH_MODEL_ID_LIGHT_HSL_SRV);
+    lhsl_srv = (qcc74x_ble_mesh_light_hsl_srv_t*)lhsl_m->user_data;
+    gl_srv->state.level = lhsl_srv->state->saturation - 32768;
+
+#endif
 
     return err;
 }
@@ -3147,8 +3327,8 @@ BLEMESH_CLI(init)
 	bt_mesh_lpn_set_cb(lpn_cb);
 #endif
 #if defined(CONFIG_BT_MESH_PTS) || defined(CONFIG_AUTO_PTS)
+        mmdl_ready();
 	models_callback_init();
-	mmdl_ready();
 #endif
 }
 
@@ -4585,7 +4765,7 @@ static void attn_off(struct bt_mesh_model *model)
 }
 
 #if defined(CONFIG_BT_MESH_GATT_PROXY)
-static void __attribute__((unused)) blemeshcli_ident(char *pcWriteBuffer, int xWriteBufferLen, int argc, char **argv)
+BLEMESH_CLI(proxy_identity)
 {
 	int err;
 
@@ -5291,7 +5471,7 @@ static const u8_t default_new_key[16] = {
 /* Added by qcc74x */
 BLEMESH_CLI(net_key_update)
 {
-	bool has_key_val = (argc > 2);
+	bool has_key_val = (argc > 4);
 	u8_t key_val[16];
 	u16_t key_net_idx, net_idx, dst;
 	u8_t status;
@@ -5307,7 +5487,7 @@ BLEMESH_CLI(net_key_update)
 	if (has_key_val) {
 		size_t len;
 
-		len = hex2bin(argv[5], strlen(argv[5]),
+		len = hex2bin(argv[4], strlen(argv[4]),
 			      key_val, sizeof(key_val));
 		(void)memset(key_val, 0, sizeof(key_val) - len);
 	} else {
@@ -5457,7 +5637,7 @@ BLEMESH_CLI(app_key_update)
 {
 	u8_t key_val[16];
 	u16_t key_net_idx, key_app_idx, net_idx, dst;
-	bool has_key_val = (argc > 3);
+	bool has_key_val = (argc > 6);
 	u8_t status;
 	int err;
 
@@ -6377,7 +6557,7 @@ static void hb_sub_set(size_t argc, char *argv[])
 
 BLEMESH_CLI(hb_sub)
 {
-	if (argc > 1) {
+	if (argc > 3) {
 		if (argc < 4) {
 			return;
 		}
@@ -6507,18 +6687,18 @@ BLEMESH_CLI(krp_set)
 	u8_t status;
 	u16_t net_idx, dst;
 	int err;
-	if (argc != 3) {
+	if (argc != 5) {
 		return;
 	}
 	
 	get_uint16_from_string(&argv[1], &net_idx);
 	get_uint16_from_string(&argv[2], &dst);
 	get_uint16_from_string(&argv[3], &krp_buf.NetKeyIndex);
-	get_uint8_from_string(&argv[4], &krp_buf.Phase);
+	get_uint8_from_string(&argv[4], &krp_buf.Transition);
 	err = bt_mesh_cfg_krp_set(net_idx, dst,
 					&status, &krp_buf);
 	if (err) {
-		vOutputString("Getting Key Refresh Phase failed (err %d)\n", err);
+		vOutputString("Setting Key Refresh Phase failed (err %d)\n", err);
 		return;
 	}
 
@@ -6862,7 +7042,7 @@ BLEMESH_CLI(network_trans)
 		get_uint8_from_string(&argv[4], &interval);
 		err = bt_mesh_cfg_network_transmit_set(net_idx, dst,
 						&count, &interval);
-	} else if (argc == 1) {
+	} else if (argc == 3) {
 		err = bt_mesh_cfg_network_transmit_get(net_idx, dst,
 						&count, &interval);
 	}

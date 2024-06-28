@@ -618,10 +618,13 @@ void ATTR_TCM_SECTION pm_pds_mode_enter(enum pm_pds_sleep_level pds_level,
     /* get xtal type */
     HBN_Get_Xtal_Type(&xtal_type);
 
-    HBN_Set_Ldo11_Rt_Vout(PM_PDS_LDO_LEVEL_DEFAULT);
-    /************************ PDS INT SET ***********************/
-    QCC74x_WR_REG(HBN_BASE, HBN_IRQ_CLR, 0xffffffff);
-    QCC74x_WR_REG(HBN_BASE, HBN_IRQ_CLR, 0);
+    /* pm_pds_mode_enter not change ldo's value */
+    // HBN_Set_Ldo11_Rt_Vout(PM_PDS_LDO_LEVEL_DEFAULT);
+
+    /* if HBN irq isn't 0 and not clear HBN irq, will wakeup at once */
+    /* clear HBN irq*/
+    // QCC74x_WR_REG(HBN_BASE, HBN_IRQ_CLR, 0xffffffff);
+    // QCC74x_WR_REG(HBN_BASE, HBN_IRQ_CLR, 0);
 
     tmpVal = QCC74x_RD_REG(PDS_BASE, PDS_INT);
 
@@ -815,6 +818,11 @@ ATTR_TCM_SECTION void pm_hbn_mode_enter(enum pm_hbn_sleep_level hbn_level,
     if (sleep_time) {
         struct qcc74x_device_s *rtc_dev = NULL;
         qcc74x_rtc_set_time(rtc_dev,sleep_time); // sleep time,unit is cycle
+    } else {
+        /* clear RTC timer interrupt */
+        HBN_Clear_RTC_INT();
+        /* commpare value set max value */
+        HBN_Set_RTC_Timer(0,0xFFFFFFFF,0xFF,0);
     }
 
     if (hbn_level >= PM_HBN_LEVEL_2) {
@@ -1030,6 +1038,83 @@ void pm_rc32k_auto_cal(void)
 
 }
 
+/******************************************************************************
+ * @brief  config ldo_soc & ldo_rt & ldo_aon
+ *
+ * @param  soc_v:ldo_soc
+ * @param  rt_v:ldo_rt
+ * @param  aon_v:ldo_aon
+ *
+ * @return NULL
+ *
+ *******************************************************************************/
+void hal_pm_ldo11_cfg(uint8_t soc_v, uint8_t rt_v, uint8_t aon_v)
+{
+    uint32_t tmpVal;
+    uint8_t soc_v_cur, rt_v_cur, aon_v_cur;
+
+    AON_Output_Float_DCDC18();
+
+    /* get current vol */
+    tmpVal = QCC74x_RD_REG(HBN_BASE, HBN_GLB);
+    soc_v_cur = QCC74x_GET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11SOC_VOUT_SEL_AON);
+    rt_v_cur  = QCC74x_GET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11_RT_VOUT_SEL);
+    aon_v_cur = QCC74x_GET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11_AON_VOUT_SEL);
+
+    while((soc_v_cur != soc_v) || (rt_v_cur != rt_v) || (aon_v_cur != aon_v)) {
+        /* soc vol */
+        if(soc_v_cur > soc_v){
+            soc_v_cur -= 1;
+        }else if (soc_v_cur < soc_v){
+            soc_v_cur += 1;
+        }
+
+        /* rt vol */
+        if(rt_v_cur > rt_v){
+            rt_v_cur -= 1;
+        }else if (rt_v_cur < rt_v){
+            rt_v_cur += 1;
+        }
+
+        /* aon vol */
+        if(aon_v_cur > aon_v){
+            aon_v_cur -= 1;
+        }else if (aon_v_cur < aon_v){
+            aon_v_cur += 1;
+        }
+
+        /* write reg */
+        tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11SOC_VOUT_SEL_AON, soc_v_cur);
+        tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11_RT_VOUT_SEL, rt_v_cur);
+        tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11_AON_VOUT_SEL, aon_v_cur);
+        QCC74x_WR_REG(HBN_BASE, HBN_GLB, tmpVal);
+
+        /* delay 1ms */
+        arch_delay_ms(1);
+    }
+}
+
+
+/******************************************************************************
+ * @brief  Get ldo_soc & ldo_rt & ldo_aon
+ *
+ * @param  soc_v ldo_soc
+ * @param  rt_v ldo_rt
+ * @param  aon_v ldo_aon
+ *
+ * @return NULL
+ *
+ *******************************************************************************/
+void hal_pm_ldo11_cfg_get(uint8_t *soc_v, uint8_t *rt_v, uint8_t *aon_v)
+{
+    uint32_t tmpVal;
+
+    tmpVal = QCC74x_RD_REG(HBN_BASE, HBN_GLB);
+    *soc_v = QCC74x_GET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11SOC_VOUT_SEL_AON);
+    *rt_v  = QCC74x_GET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11_RT_VOUT_SEL);
+    *aon_v = QCC74x_GET_REG_BITS_VAL(tmpVal, HBN_SW_LDO11_AON_VOUT_SEL);
+
+}
 
 void hal_pm_ldo11_use_ext_dcdc(void)
 {

@@ -359,9 +359,14 @@ static void wpa_find_assoc_pmkid(struct wpa_supplicant *wpa_s)
 	struct wpa_ie_data ie;
 	int pmksa_set = -1;
 	size_t i;
+	struct rsn_pmksa_cache_entry *cur_pmksa;
 
-	/* Start with assumption of no PMKSA cache entry match */
-	pmksa_cache_clear_current(wpa_s->wpa);
+	/* Start with assumption of no PMKSA cache entry match for cases other
+	 * than SAE. In particular, this is needed to generate the PMKSA cache
+	 * entries for Suite B cases with driver-based roaming indication. */
+	cur_pmksa = pmksa_cache_get_current(wpa_s->wpa);
+	if (cur_pmksa && !wpa_key_mgmt_sae(cur_pmksa->akmp))
+		pmksa_cache_clear_current(wpa_s->wpa);
 
 	if (wpa_sm_parse_own_wpa_ie(wpa_s->wpa, &ie) < 0 ||
 	    ie.pmkid == NULL)
@@ -1871,7 +1876,7 @@ wpas_get_est_throughput_from_bss_snr(const struct wpa_supplicant *wpa_s,
 	const u8 *ies = wpa_bss_ie_ptr(bss);
 	size_t ie_len = bss->ie_len ? bss->ie_len : bss->beacon_ie_len;
 
-	return wpas_get_est_tpt(wpa_s, ies, ie_len, rate, snr);
+	return wpas_get_est_tpt(wpa_s, ies, ie_len, rate, snr, bss->freq);
 }
 
 
@@ -2190,7 +2195,7 @@ static int _wpa_supplicant_event_scan_results(struct wpa_supplicant *wpa_s,
 	if (wnm_scan_process(wpa_s, 1) > 0)
 		goto scan_work_done;
 
-	if (sme_proc_obss_scan(wpa_s, scan_res) > 0)
+	if (sme_proc_obss_scan(wpa_s) > 0)
 		goto scan_work_done;
 
 #ifdef CONFIG_RRM
@@ -2301,7 +2306,7 @@ static int wpas_select_network_from_last_scan(struct wpa_supplicant *wpa_s,
 		if (ssid != wpa_s->current_ssid &&
 		    wpa_s->wpa_state >= WPA_AUTHENTICATING) {
 			wpa_s->own_disconnect_req = 1;
-            wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+            wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 			wpa_supplicant_deauthenticate(
 				wpa_s, WLAN_REASON_DEAUTH_LEAVING);
 		}
@@ -2653,7 +2658,7 @@ static void multi_ap_set_4addr_mode(struct wpa_supplicant *wpa_s)
 	return;
 
 fail:
-    wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+    wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
 }
 
@@ -2700,6 +2705,205 @@ static int wpas_fst_update_mbie(struct wpa_supplicant *wpa_s,
 	return -ENOENT;
 }
 #endif /* CONFIG_FST */
+
+
+static int wpa_supplicant_use_own_rsne_params(struct wpa_supplicant *wpa_s,
+					      union wpa_event_data *data)
+{
+	int sel;
+	const u8 *p;
+	int l, len;
+	bool found = false;
+	struct wpa_ie_data ie;
+	struct wpa_ssid *ssid = wpa_s->current_ssid;
+	struct wpa_bss *bss = wpa_s->current_bss;
+	int pmf;
+
+	if (!ssid)
+		return 0;
+
+	p = data->assoc_info.req_ies;
+	l = data->assoc_info.req_ies_len;
+
+	while (p && l >= 2) {
+		len = p[1] + 2;
+		if (len > l) {
+			wpa_hexdump(MSG_DEBUG, "Truncated IE in assoc_info",
+				    p, l);
+			break;
+		}
+		if (((p[0] == WLAN_EID_VENDOR_SPECIFIC && p[1] >= 6 &&
+		      (os_memcmp(&p[2], "\x00\x50\xF2\x01\x01\x00", 6) == 0)) ||
+		     (p[0] == WLAN_EID_VENDOR_SPECIFIC && p[1] >= 4 &&
+		      (os_memcmp(&p[2], "\x50\x6F\x9A\x12", 4) == 0)) ||
+		     (p[0] == WLAN_EID_RSN && p[1] >= 2))) {
+			found = true;
+			break;
+		}
+		l -= len;
+		p += len;
+	}
+
+	if (!found || wpa_parse_wpa_ie(p, len, &ie) < 0)
+		return 0;
+
+	wpa_hexdump(MSG_DEBUG,
+		    "WPA: Update cipher suite selection based on IEs in driver-generated WPA/RSNE in AssocReq",
+		    p, l);
+
+	/* Update proto from (Re)Association Request frame info */
+	wpa_s->wpa_proto = ie.proto;
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_PROTO, wpa_s->wpa_proto);
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_RSN_ENABLED,
+			 !!(wpa_s->wpa_proto &
+			    (WPA_PROTO_RSN | WPA_PROTO_OSEN)));
+
+	/* Update AKMP suite from (Re)Association Request frame info */
+	sel = ie.key_mgmt;
+	if (ssid->key_mgmt)
+		sel &= ssid->key_mgmt;
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+		"WPA: AP key_mgmt 0x%x network key_mgmt 0x%x; available key_mgmt 0x%x",
+		ie.key_mgmt, ssid->key_mgmt, sel);
+	if (ie.key_mgmt && !sel) {
+		wpa_supplicant_deauthenticate(
+			wpa_s, WLAN_REASON_AKMP_NOT_VALID);
+		return -1;
+	}
+
+	wpa_s->key_mgmt = ie.key_mgmt;
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_KEY_MGMT, wpa_s->key_mgmt);
+	wpa_dbg(wpa_s, MSG_DEBUG, "WPA: using KEY_MGMT %s and proto %d",
+		wpa_key_mgmt_txt(wpa_s->key_mgmt, wpa_s->wpa_proto),
+		wpa_s->wpa_proto);
+
+	/* Update pairwise cipher from (Re)Association Request frame info */
+	sel = ie.pairwise_cipher;
+	if (ssid->pairwise_cipher)
+		sel &= ssid->pairwise_cipher;
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+		"WPA: AP pairwise cipher 0x%x network pairwise cipher 0x%x; available pairwise cipher 0x%x",
+		ie.pairwise_cipher, ssid->pairwise_cipher, sel);
+	if (ie.pairwise_cipher && !sel) {
+		wpa_supplicant_deauthenticate(
+			wpa_s, WLAN_REASON_PAIRWISE_CIPHER_NOT_VALID);
+		return -1;
+	}
+
+	wpa_s->pairwise_cipher = ie.pairwise_cipher;
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_PAIRWISE,
+			 wpa_s->pairwise_cipher);
+	wpa_dbg(wpa_s, MSG_DEBUG, "WPA: using PTK %s",
+		wpa_cipher_txt(wpa_s->pairwise_cipher));
+
+	/* Update other parameters based on AP's WPA IE/RSNE, if available */
+	if (!bss) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"WPA: current_bss == NULL - skip AP IE check");
+		return 0;
+	}
+
+	/* Update GTK and IGTK from AP's RSNE */
+	found = false;
+
+	if (wpa_s->wpa_proto & (WPA_PROTO_RSN | WPA_PROTO_OSEN)) {
+		const u8 *bss_rsn;
+
+		bss_rsn = wpa_bss_get_ie(bss, WLAN_EID_RSN);
+		if (bss_rsn) {
+			p = bss_rsn;
+			len = 2 + bss_rsn[1];
+			found = true;
+		}
+	} else if (wpa_s->wpa_proto & WPA_PROTO_WPA) {
+		const u8 *bss_wpa;
+
+		bss_wpa = wpa_bss_get_vendor_ie(bss, WPA_IE_VENDOR_TYPE);
+		if (bss_wpa) {
+			p = bss_wpa;
+			len = 2 + bss_wpa[1];
+			found = true;
+		}
+	}
+
+	if (!found || wpa_parse_wpa_ie(p, len, &ie) < 0)
+		return 0;
+
+	pmf = wpas_get_ssid_pmf(wpa_s, ssid);
+	if (!(ie.capabilities & WPA_CAPABILITY_MFPC) &&
+	    pmf == MGMT_FRAME_PROTECTION_REQUIRED) {
+		/* AP does not support MFP, local configuration requires it */
+		wpa_supplicant_deauthenticate(
+			wpa_s, WLAN_REASON_INVALID_RSN_IE_CAPAB);
+		return -1;
+	}
+	if ((ie.capabilities & WPA_CAPABILITY_MFPR) &&
+	    pmf == NO_MGMT_FRAME_PROTECTION) {
+		/* AP requires MFP, local configuration disables it */
+		wpa_supplicant_deauthenticate(
+			wpa_s, WLAN_REASON_INVALID_RSN_IE_CAPAB);
+		return -1;
+	}
+
+	/* Update PMF from local configuration now that MFP validation was done
+	 * above */
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_MFP, pmf);
+
+	/* Update GTK from AP's RSNE */
+	sel = ie.group_cipher;
+	if (ssid->group_cipher)
+		sel &= ssid->group_cipher;
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+		"WPA: AP group cipher 0x%x network group cipher 0x%x; available group cipher 0x%x",
+		ie.group_cipher, ssid->group_cipher, sel);
+	if (ie.group_cipher && !sel) {
+		wpa_supplicant_deauthenticate(
+			wpa_s, WLAN_REASON_GROUP_CIPHER_NOT_VALID);
+		return -1;
+	}
+
+	wpa_s->group_cipher = ie.group_cipher;
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_GROUP, wpa_s->group_cipher);
+	wpa_dbg(wpa_s, MSG_DEBUG, "WPA: using GTK %s",
+		wpa_cipher_txt(wpa_s->group_cipher));
+
+	/* Update IGTK from AP RSN IE */
+	sel = ie.mgmt_group_cipher;
+	if (ssid->group_mgmt_cipher)
+		sel &= ssid->group_mgmt_cipher;
+
+	wpa_dbg(wpa_s, MSG_DEBUG,
+		"WPA: AP mgmt_group_cipher 0x%x network mgmt_group_cipher 0x%x; available mgmt_group_cipher 0x%x",
+		ie.mgmt_group_cipher, ssid->group_mgmt_cipher, sel);
+
+	if (pmf == NO_MGMT_FRAME_PROTECTION ||
+	    !(ie.capabilities & WPA_CAPABILITY_MFPC)) {
+		wpa_dbg(wpa_s, MSG_DEBUG,
+			"WPA: STA/AP is not MFP capable; AP RSNE caps 0x%x",
+			ie.capabilities);
+		ie.mgmt_group_cipher = 0;
+	}
+
+	if (ie.mgmt_group_cipher && !sel) {
+		wpa_supplicant_deauthenticate(
+			wpa_s, WLAN_REASON_CIPHER_SUITE_REJECTED);
+		return -1;
+	}
+
+	wpa_s->mgmt_group_cipher = ie.mgmt_group_cipher;
+	wpa_sm_set_param(wpa_s->wpa, WPA_PARAM_MGMT_GROUP,
+			 wpa_s->mgmt_group_cipher);
+	if (wpa_s->mgmt_group_cipher)
+		wpa_dbg(wpa_s, MSG_DEBUG, "WPA: using MGMT group cipher %s",
+			wpa_cipher_txt(wpa_s->mgmt_group_cipher));
+	else
+		wpa_dbg(wpa_s, MSG_DEBUG, "WPA: not using MGMT group cipher");
+
+	return 0;
+}
 
 
 static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
@@ -2815,7 +3019,7 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 	     fils_process_assoc_resp(wpa_s->wpa,
 				     data->assoc_info.resp_frame,
 				     data->assoc_info.resp_frame_len) < 0)) {
-        wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+        wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 		wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_UNSPECIFIED);
 		return -1;
 	}
@@ -2833,7 +3037,7 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 	     owe_process_assoc_resp(wpa_s->wpa, bssid,
 				    data->assoc_info.resp_ies,
 				    data->assoc_info.resp_ies_len) < 0)) {
-        wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+        wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 		wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_UNSPECIFIED);
 		return -1;
 	}
@@ -2852,7 +3056,7 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 			goto no_pfs;
 		if (dpp_pfs_process(wpa_s->dpp_pfs, elems.owe_dh,
 				    elems.owe_dh_len) < 0) {
-            wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+            wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 			wpa_supplicant_deauthenticate(wpa_s,
 						      WLAN_REASON_UNSPECIFIED);
 			return -1;
@@ -2873,7 +3077,7 @@ no_pfs:
 						 bssid) < 0) {
 			wpa_dbg(wpa_s, MSG_DEBUG, "FT: Validation of "
 				"Reassociation Response failed");
-            wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+            wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 			wpa_supplicant_deauthenticate(
 				wpa_s, WLAN_REASON_INVALID_IE);
 			return -1;
@@ -2896,7 +3100,7 @@ no_pfs:
 
 		if (wps_validate_assoc_resp(wps) < 0) {
 			wpabuf_free(wps);
-            wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+            wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 			wpa_supplicant_deauthenticate(
 				wpa_s, WLAN_REASON_INVALID_IE);
 			return -1;
@@ -2935,7 +3139,7 @@ no_pfs:
 						 bssid) < 0) {
 			wpa_dbg(wpa_s, MSG_DEBUG, "FT: Validation of "
 				"Reassociation Response failed");
-            wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+            wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 			wpa_supplicant_deauthenticate(
 				wpa_s, WLAN_REASON_INVALID_IE);
 			return -1;
@@ -3004,6 +3208,9 @@ no_pfs:
 	}
 
 	wpa_s->assoc_freq = data->assoc_info.freq;
+
+	wpas_handle_assoc_resp_qos_mgmt(wpa_s, data->assoc_info.resp_ies,
+					data->assoc_info.resp_ies_len);
 
 	return 0;
 }
@@ -3114,7 +3321,7 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 
 	if (wpa_drv_get_bssid(wpa_s, bssid) < 0) {
 		wpa_dbg(wpa_s, MSG_ERROR, "Failed to get BSSID");
-        wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+        wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 		wpa_supplicant_deauthenticate(
 			wpa_s, WLAN_REASON_DEAUTH_LEAVING);
 		return;
@@ -3144,12 +3351,16 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 			wpa_clear_keys(wpa_s, bssid);
 		}
 		if (wpa_supplicant_select_config(wpa_s) < 0) {
-            wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+            wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 			wpa_supplicant_deauthenticate(
 				wpa_s, WLAN_REASON_DEAUTH_LEAVING);
 			return;
 		}
 	}
+
+	if (!(wpa_s->drv_flags & WPA_DRIVER_FLAGS_SME) &&
+	    data && wpa_supplicant_use_own_rsne_params(wpa_s, data) < 0)
+		return;
 
 	multi_ap_set_4addr_mode(wpa_s);
 
@@ -3311,7 +3522,7 @@ static void wpa_supplicant_event_assoc(struct wpa_supplicant *wpa_s,
 		wpa_s->ibss_rsn = ibss_rsn_init(wpa_s, wpa_s->current_ssid);
 		if (!wpa_s->ibss_rsn) {
 			wpa_msg(wpa_s, MSG_INFO, "Failed to init IBSS RSN");
-            wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+            wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 			wpa_supplicant_deauthenticate(
 				wpa_s, WLAN_REASON_DEAUTH_LEAVING);
 			return;
@@ -3617,7 +3828,7 @@ wpa_supplicant_event_michael_mic_failure(struct wpa_supplicant *wpa_s,
 		os_sleep(0, 10000);
 
 		wpa_drv_set_countermeasures(wpa_s, 1);
-        wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+        wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 		wpa_supplicant_deauthenticate(wpa_s,
 					      WLAN_REASON_MICHAEL_MIC_FAILURE);
 		eloop_cancel_timeout(wpa_supplicant_stop_countermeasures,
@@ -4294,9 +4505,23 @@ static void wpas_event_rx_mgmt_action(struct wpa_supplicant *wpa_s,
 #endif /* CONFIG_DPP */
 
 	if (category == WLAN_ACTION_ROBUST_AV_STREAMING &&
+	    payload[0] == ROBUST_AV_SCS_RESP) {
+		wpas_handle_robust_av_scs_recv_action(wpa_s, mgmt->sa,
+						      payload + 1, plen - 1);
+		return;
+	}
+
+	if (category == WLAN_ACTION_ROBUST_AV_STREAMING &&
 	    payload[0] == ROBUST_AV_MSCS_RESP) {
 		wpas_handle_robust_av_recv_action(wpa_s, mgmt->sa,
 						  payload + 1, plen - 1);
+		return;
+	}
+
+	if (category == WLAN_ACTION_VENDOR_SPECIFIC_PROTECTED && plen > 4 &&
+	    WPA_GET_BE32(payload) == QM_ACTION_VENDOR_TYPE) {
+		wpas_handle_qos_mgmt_recv_action(wpa_s, mgmt->sa,
+						 payload + 4, plen - 4);
 		return;
 	}
 
@@ -4659,6 +4884,7 @@ static void wpas_event_assoc_reject(struct wpa_supplicant *wpa_s,
 #ifdef CONFIG_FILS
 	/* Update ERP next sequence number */
 	if (wpa_s->auth_alg == WPA_AUTH_ALG_FILS) {
+		fils_pmksa_cache_flush(wpa_s);
 		eapol_sm_update_erp_next_seq_num(
 			wpa_s->eapol,
 			data->assoc_reject.fils_erp_next_seq_num);
@@ -5287,13 +5513,21 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 		break;
 	case EVENT_INTERFACE_MAC_CHANGED:
 		wpa_supplicant_update_mac_addr(wpa_s);
+		wpa_sm_pmksa_cache_flush(wpa_s->wpa, NULL);
 		break;
 	case EVENT_INTERFACE_ENABLED:
 		wpa_dbg(wpa_s, MSG_DEBUG, "Interface was enabled");
 		if (wpa_s->wpa_state == WPA_INTERFACE_DISABLED) {
+			u8 addr[ETH_ALEN];
+
 			eloop_cancel_timeout(wpas_clear_disabled_interface,
 					     wpa_s, NULL);
+			os_memcpy(addr, wpa_s->own_addr, ETH_ALEN);
 			wpa_supplicant_update_mac_addr(wpa_s);
+			if (os_memcmp(addr, wpa_s->own_addr, ETH_ALEN) != 0)
+				wpa_sm_pmksa_cache_flush(wpa_s->wpa, NULL);
+			else
+				wpa_sm_pmksa_cache_reconfig(wpa_s->wpa);
 			wpa_supplicant_set_default_scan_ies(wpa_s);
 			if (wpa_s->p2p_mgmt) {
 				wpa_supplicant_set_state(wpa_s,

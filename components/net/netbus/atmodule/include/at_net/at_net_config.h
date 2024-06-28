@@ -17,6 +17,7 @@ extern "C" {
 #define AT_CONFIG_KEY_NET_TCP_OPT "NETSOCK"
 #define AT_CONFIG_KEY_NET_RECONN_INTV "NETRECONNINTV"
 #define AT_CONFIG_KEY_NET_TRANS_LINK "NETTRANSLINK"
+#define AT_CONFIG_KEY_NET_SSLCONF "NETSSLCONF"
 
 typedef enum {
     NET_MODE_NORMAL = 0,
@@ -78,6 +79,12 @@ typedef struct {
 } net_sendl_cfg;
 
 typedef struct {
+    char ca_file[32];
+    char cert_file[32];
+    char key_file[32];
+} net_ssl_conf_t;
+
+typedef struct {
     net_work_mode work_mode;
     net_mux_mode mux_mode;
     net_tcp_opt tcp_opt[AT_NET_CLIENT_HANDLE_MAX];
@@ -90,6 +97,8 @@ typedef struct {
     net_recv_mode recv_mode;
     net_trans_link trans_link;
     net_sendl_cfg sendl_cfg;
+    uint8_t wips_enable;
+    net_ssl_conf_t sslconf[AT_NET_CLIENT_HANDLE_MAX];
 }net_config;
 
 extern net_config *at_net_config;

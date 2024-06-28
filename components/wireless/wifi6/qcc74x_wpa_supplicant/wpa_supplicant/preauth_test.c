@@ -37,7 +37,7 @@ struct preauth_test_data {
 
 static void _wpa_supplicant_deauthenticate(void *wpa_s, u16 reason_code)
 {
-    wpa_qcc74x_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
+    wpa_extra_printf("[WPA] %s: send deauth, Line:%d\r\n", __func__, __LINE__);
 	wpa_supplicant_deauthenticate(wpa_s, reason_code);
 }
 
@@ -221,7 +221,7 @@ static void eapol_test_poll(void *eloop_ctx, void *timeout_ctx)
 }
 
 
-static struct wpa_driver_ops dummy_driver;
+static struct wpa_driver_ops stub_driver;
 
 
 static void wpa_init_conf(struct wpa_supplicant *wpa_s, const char *ifname)
@@ -229,8 +229,8 @@ static void wpa_init_conf(struct wpa_supplicant *wpa_s, const char *ifname)
 	struct l2_packet_data *l2;
 	struct wpa_sm_ctx *ctx;
 
-	os_memset(&dummy_driver, 0, sizeof(dummy_driver));
-	wpa_s->driver = &dummy_driver;
+	os_memset(&stub_driver, 0, sizeof(stub_driver));
+	wpa_s->driver = &stub_driver;
 
 	ctx = os_zalloc(sizeof(*ctx));
 	assert(ctx != NULL);

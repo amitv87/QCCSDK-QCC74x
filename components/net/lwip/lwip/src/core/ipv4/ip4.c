@@ -56,6 +56,7 @@
 #include "lwip/autoip.h"
 #include "lwip/stats.h"
 #include "lwip/prot/iana.h"
+#include "lwip/ip4_napt.h"
 
 #include <string.h>
 
@@ -329,6 +330,14 @@ ip4_forward(struct pbuf *p, struct ip_hdr *iphdr, struct netif *inp)
     return;
   }
 
+#if IP_NAPT
+  /* If the output netif uses NAPT, we will not perform NAPT forwarding (because NAPT netif will not search the NAPT table on ip4_input) */
+  if (!netif->napt) {
+    if (ip_napt_forward(p, iphdr, inp, netif) != ERR_OK)
+      return;
+  }
+#endif
+
   /* Incrementally update the IP checksum. */
   if (IPH_CHKSUM(iphdr) >= PP_HTONS(0xffffU - 0x100)) {
     IPH_CHKSUM_SET(iphdr, (u16_t)(IPH_CHKSUM(iphdr) + PP_HTONS(0x100) + 1));
@@ -459,7 +468,11 @@ ip4_input_accept(struct netif *netif)
 err_t
 ip4_input(struct pbuf *p, struct netif *inp)
 {
+#if IP_NAPT
+  struct ip_hdr *iphdr;
+#else
   const struct ip_hdr *iphdr;
+#endif /* IP_NAPT */
   struct netif *netif;
   u16_t iphdr_hlen;
   u16_t iphdr_len;
@@ -543,6 +556,12 @@ ip4_input(struct pbuf *p, struct netif *inp)
       return ERR_OK;
     }
   }
+#endif
+
+#if IP_NAPT
+  /* for unicast packet, check NAPT table and modify dest if needed */
+  if (!inp->napt && ip4_addr_cmp(&iphdr->dest, netif_ip4_addr(inp)))
+    ip_napt_recv(p, iphdr);
 #endif
 
   /* copy IP addresses to aligned ip_addr_t */
@@ -678,7 +697,11 @@ ip4_input(struct pbuf *p, struct netif *inp)
     if (p == NULL) {
       return ERR_OK;
     }
+#if IP_NAPT
+    iphdr = (struct ip_hdr *)p->payload;
+#else
     iphdr = (const struct ip_hdr *)p->payload;
+#endif
 #else /* IP_REASSEMBLY == 0, no packet fragment reassembly code present */
     pbuf_free(p);
     LWIP_DEBUGF(IP_DEBUG | LWIP_DBG_LEVEL_SERIOUS, ("IP packet dropped since it was fragmented (0x%"X16_F") (while IP_REASSEMBLY == 0).\n",
@@ -1015,6 +1038,10 @@ ip4_output_if_opt_src(struct pbuf *p, const ip4_addr_t *src, const ip4_addr_t *d
   ip4_debug_print(p);
 
 #if ENABLE_LOOPBACK
+#if IP_NAPT
+  /* doesn't work for external wifi interfaces */
+#else
+
   if (ip4_addr_eq(dest, netif_ip4_addr(netif))
 #if !LWIP_HAVE_LOOPIF
       || ip4_addr_isloopback(dest)
@@ -1029,6 +1056,7 @@ ip4_output_if_opt_src(struct pbuf *p, const ip4_addr_t *src, const ip4_addr_t *d
     netif_loop_output(netif, p);
   }
 #endif /* LWIP_MULTICAST_TX_OPTIONS */
+#endif /* IP_NAPT */
 #endif /* ENABLE_LOOPBACK */
 #if IP_FRAG
   /* don't fragment if interface has mtu set to 0 [loopif] */

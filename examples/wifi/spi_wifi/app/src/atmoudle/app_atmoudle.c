@@ -110,6 +110,104 @@ static void at_iperftx_cmd(int argc, char **argv)
 }
 SHELL_CMD_EXPORT_ALIAS(at_iperftx_cmd, at_iperftx, at_iperftx [20]);
 
+void spisync_iperf_cmd(int argc, char **argv)
+{
+    int tx_en;
+    int type;
+
+    // check arg
+    if (argc != 3) {
+        printf("arg error, spisync_iperf <tx_en> <type>\r\n");
+        return;
+    }
+
+    // update tx/rx
+    tx_en = atoi(argv[1]);
+    if (tx_en > 1) {
+        printf("arg error, tx_en;%d\r\n", tx_en);
+        return;
+    }
+
+    // update type
+    type = atoi(argv[2]);
+    if (type >= 3) {
+        printf("arg error, type;%d\r\n", type);
+        return;
+    }
+
+    spisync_iperf_test(at_spisync, tx_en, type, 1, 30);
+}
+SHELL_CMD_EXPORT_ALIAS(spisync_iperf_cmd, spisync_iperf, spisync_iperf <tx_en> <type>);
+
+void spisync_type_cmd(int argc, char **argv)
+{
+    int period;
+    int timeout;
+
+    // check arg
+    if (argc != 3) {
+        printf("arg error, spisync_type <period> <timeout>\r\n");
+        return;
+    }
+
+    // update tx/rx
+    period = atoi(argv[1]);
+    if (period < 0) {
+        printf("arg error, period;%d\r\n", period);
+        return;
+    }
+
+    // update timeout
+    timeout = atoi(argv[2]);
+    if (timeout < period) {
+        printf("arg error, period:%d, timeout:%d\r\n", period, timeout);
+        return;
+    }
+
+    printf("period:%d, timeout:%d\r\n", period, timeout);
+    spisync_type_test(at_spisync, period, timeout);
+}
+SHELL_CMD_EXPORT_ALIAS(spisync_type_cmd, spisync_type, spisync_type <period> <timeout>);
+static void at_debug_cmd(int argc, char **argv)
+{
+    uint8_t *buf;
+    uint32_t type;
+    uint32_t buf_len;
+    int i;
+    int ret;
+
+    if (argc != 3) {
+        type = 0;
+        buf_len = 100;
+        printf("arg null, use def, type:%d, len:%d\r\n", type, buf_len);
+    } else {
+        type = atoi(argv[1]);
+        buf_len = atoi(argv[2]);
+        if ((type < 0) || (type >= 3) || (buf_len < 1)) {
+            printf("arg error, type:%d, len:%d\r\n", type, buf_len);
+            return;
+        }
+        printf("arg type:%d, len:%d\r\n", type, buf_len);
+    }
+    buf = pvPortMalloc(buf_len);
+    for (i = 0; i < buf_len; i++) {
+        buf[i] = (uint8_t)(i&0xFF);
+    }
+
+    ret = spisync_write(at_spisync, type, buf, buf_len, 1000);
+    if (ret != buf_len) {
+        printf("write err ret:%d, buf_len:%d\r\n", ret, buf_len);
+    }
+    vPortFree(buf);
+}
+SHELL_CMD_EXPORT_ALIAS(at_debug_cmd, at_debug, at_debug [0] [100]);
+
+static void spisync_wake_cmd(int argc, char **argv)
+{
+    spisync_wakeup(at_spisync);
+}
+SHELL_CMD_EXPORT_ALIAS(spisync_wake_cmd, spisync_wakeup, spisync_wakeup);
+
 void app_atmoudle_init(void)
 {
     at_spisync = (spisync_t *)pvPortMalloc(sizeof(spisync_t));

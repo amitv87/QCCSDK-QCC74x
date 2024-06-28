@@ -18,6 +18,7 @@
 #include <at_net_sntp.h>
 #include <wifi_mgmr_ext.h>
 #include <qcc74x_sec_trng.h>
+#include <qcc74x_romfs.h>
 
 #include "at_main.h"
 #include "at_core.h"
@@ -55,6 +56,7 @@ typedef enum {
 
 typedef enum {
     NET_SERVER_TCP = 0,
+	NET_SERVER_UDP,
     NET_SERVER_SSL,
 } net_server_type;
 
@@ -83,6 +85,19 @@ typedef struct {
     int so_linger;
     int tcp_nodelay;
     int so_sndtimeo;
+    uint8_t *recv_buf;
+    uint32_t recvbuf_size;
+
+    char ca_path[32];
+    char cert_path[32];
+    char priv_key_path[32];
+    char *ssl_hostname;
+    char *ssl_alpn[6];
+    int ssl_alpn_num;
+    char ssl_psk[32];
+    uint8_t ssl_psklen;
+    char ssl_pskhint[32];
+    uint8_t ssl_pskhint_len;
 }at_net_client_handle;
 
 typedef struct {
@@ -95,17 +110,22 @@ typedef struct {
     uint8_t ca_enable;
     int8_t client_max;
     int8_t client_num;
+    
+    char ca_path[32];
+    char cert_path[32];
+    char priv_key_path[32];
 }at_net_server_handle;
 
 static at_net_client_handle *g_at_client_handle = NULL;
 static at_net_server_handle *g_at_server_handle = NULL;
+static SemaphoreHandle_t net_mutex;
 static uint8_t g_at_net_task_is_start = 0;
-static char g_at_net_recv_buf[AT_NET_RECV_BUF_SIZE];
 static uint8_t g_at_net_sntp_is_start = 0;
 static char g_at_net_savelink_host[128];
 
 static int ip_multicast_enable(int fd, uint32_t ip)
 {
+#if LWIP_IGMP
     char optval;
     /* Close multicast loop. */
     optval =0;
@@ -141,6 +161,7 @@ static int ip_multicast_enable(int fd, uint32_t ip)
     }
 
     AT_NET_PRINTF("sock add membership\r\n");
+#endif
     return 0;
 }
 
@@ -388,13 +409,32 @@ static int udp_client_send(int fd, void *buffer, int length, uint32_t ip, uint16
         toaddr.sin_family = AF_INET;
         toaddr.sin_addr.s_addr = ip;
         toaddr.sin_port = htons(port);
-    
-        return sendto(fd, buffer, length, 0, (struct sockaddr *)&toaddr, sizeof(struct sockaddr_in));
+        
+        int ret = sendto(fd, buffer, length, 0, (struct sockaddr *)&toaddr, sizeof(struct sockaddr_in));
+        return (ret < 0) ? 0 : ret;
+        //printf("sendto ret:%d len:%d\r\n", ret, length);
     }
     return 0;
 }
 
-static int ssl_client_connect(uint32_t ip, uint16_t port, void **priv)
+static int get_romfs_file_content(const char *file, romfs_filebuf_t *buf) 
+{
+    char path[64] = {0};
+    romfs_file_t fp;
+
+    if (!strlen(file)) {
+        return -1;
+    }
+    sprintf(path, AT_FS_ROOT_DIR"/%s", file);
+    romfs_open(&fp, path, 0);
+    romfs_filebuf_get(&fp, buf);
+    romfs_close(&fp);
+
+    buf->bufsize += 1;
+    return 0;
+}
+
+static int ssl_client_connect(int id, uint32_t ip, uint16_t port, void **priv)
 {
     int fd;
     void *handle;
@@ -409,7 +449,15 @@ static int ssl_client_connect(uint32_t ip, uint16_t port, void **priv)
         return -1;
     }
 
-    handle = mbedtls_ssl_connect(fd, NULL, 0, NULL, 0, NULL, 0);
+    romfs_filebuf_t ca = {0}, cert = {0}, key = {0};
+
+    get_romfs_file_content(g_at_client_handle[id].ca_path, &ca);
+    get_romfs_file_content(g_at_client_handle[id].cert_path, &cert);
+    get_romfs_file_content(g_at_client_handle[id].priv_key_path, &key);
+
+    handle = mbedtls_ssl_connect(id, fd, ca.buf, ca.bufsize,
+                                 cert.buf, cert.bufsize,
+                                 key.buf, key.bufsize);
     if (handle == NULL) {
         AT_NET_PRINTF("mbedtls_ssl_connect handle NULL, fd:%d\r\n", fd);
         close(fd);
@@ -437,6 +485,36 @@ static int ssl_client_send(int fd, void *buffer, int length, void *priv)
         return mbedtls_ssl_send(priv, buffer, length);
 
     return 0;
+}
+
+static int udp_server_create(uint16_t port, int listen)
+{	
+    int fd;	
+    struct sockaddr_in servaddr;	
+    int on;
+    struct timeval timeout = { 0 };
+
+    AT_NET_PRINTF("udp server create port %d\r\n", port);
+    if ( (fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+        return -1;	
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));	
+    servaddr.sin_family = AF_INET;	
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);	
+    servaddr.sin_port = htons(port);	
+
+    on= 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    if (bind(fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {		
+        close(fd);
+        return -2;	
+    }
+
+    timeout.tv_sec = 5;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    return fd;
 }
 
 static int tcp_server_create(uint16_t port, int listen)
@@ -482,12 +560,12 @@ static int tcp_server_close(int fd)
 
 static void net_lock(void)
 {
-
+    xSemaphoreTake(net_mutex, portMAX_DELAY);
 }
 
 static void net_unlock(void)
 {
-
+    xSemaphoreGive(net_mutex);
 }
 
 static int net_is_active(void)
@@ -530,26 +608,32 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
 
                 ipaddr.addr = ip;
                 at_net_client_get_info(id, type, NULL, NULL, &local_port, &tetype);
-                at_response_string("+LINK_CONN:%d,%d,\"%s\",%d,\"%s\",%d,%d\r\n", 0, id, type, tetype, ip4addr_ntoa(&ipaddr), port, local_port);
+                if (at_net_config->wips_enable) {
+                    at_response_string("+LINK_CONN:%d,%d,\"%s\",%d,\"%s\",%d,%d\r\n", 0, id, type, tetype, ip4addr_ntoa(&ipaddr), port, local_port);
+                }
             }
             else {
-                if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string("CONNECT\r\n");
-                else
-                    at_response_string("%d,CONNECT\r\n", id);
+                if (at_net_config->wips_enable) {
+                    if (at_net_config->mux_mode == NET_LINK_SINGLE)
+                        at_response_string("+IPS:CONNECT\r\n");
+                    else
+                        at_response_string("+IPS:%d,CONNECT\r\n", id);
+                }
             }
         }
     }
     else if (ipd == NET_IPDINFO_DISCONNECTED) {
-        if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {     
-            if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                at_response_string("CLOSED\r\n");
-            else
-                at_response_string("%d,CLOSED\r\n", id);
+        if (at_net_config->wips_enable) {
+            if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {     
+                if (at_net_config->mux_mode == NET_LINK_SINGLE)
+                    at_response_string("+IPS:CLOSED\r\n");
+                else
+                    at_response_string("+IPS:%d,CLOSED\r\n", id);
+            }
         }
     }
     else if (ipd == NET_IPDINFO_RECVDATA) {
-        if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT) {
+        if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT && at_net_config->wips_enable) {
             if (at_net_config->ipd_info == NET_IPDINFO_DISABLE_IPPORT) {
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
                     at_response_string("\r\n+IPD,%d:", length);
@@ -638,7 +722,7 @@ static int net_socket_connect(int id, net_client_type type, uint32_t ip, uint16_
             ip_multicast_enable(fd, ip);
     }
     else if (type == NET_CLIENT_SSL) {
-        fd = ssl_client_connect(ip, port, &priv);
+        fd = ssl_client_connect(id, ip, port, &priv);
         if (fd >= 0) {
             if (keepalive) {
                 so_keepalive_enable(fd, keepalive, 1, 3);
@@ -674,6 +758,9 @@ static int net_socket_connect(int id, net_client_type type, uint32_t ip, uint16_
     g_at_client_handle[id].so_linger = so_linger;
     g_at_client_handle[id].tcp_nodelay = tcp_nodelay;
     g_at_client_handle[id].so_sndtimeo = so_sndtimeo;
+    if (!g_at_client_handle[id].recv_buf) {
+        g_at_client_handle[id].recv_buf = pvPortMalloc(g_at_client_handle[id].recvbuf_size);
+    }
     net_unlock();
 
     net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
@@ -693,6 +780,13 @@ static int net_socket_close(int id)
         return -1;
     }
 
+    if (type == NET_CLIENT_TCP)
+       tcp_client_close(fd);
+    else if (type == NET_CLIENT_UDP)
+       udp_client_close(fd);
+    else if (type == NET_CLIENT_SSL)
+       ssl_client_close(fd, priv);
+
     net_lock();
     if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT)
         g_at_client_handle[id].valid = 0;
@@ -700,19 +794,14 @@ static int net_socket_close(int id)
     g_at_client_handle[id].priv = NULL;
     g_at_client_handle[id].disconnect_time = os_get_time_ms();
     
+    vPortFree(g_at_client_handle[id].recv_buf);
+    g_at_client_handle[id].recv_buf = NULL;
     if (g_at_client_handle[id].tetype && g_at_server_handle[servid].valid) {
         g_at_server_handle[servid].client_num--;
         if (g_at_server_handle[servid].client_num < 0)
             g_at_server_handle[servid].client_num = 0;
     }
     net_unlock();
-
-    if (type == NET_CLIENT_TCP)
-       tcp_client_close(fd);
-    else if (type == NET_CLIENT_UDP)
-       udp_client_close(fd);
-    else if (type == NET_CLIENT_SSL)
-       ssl_client_close(fd, priv);
 
     net_socket_ipd(NET_IPDINFO_DISCONNECTED, id, NULL, 0, 0, 0);
     return 0;
@@ -754,15 +843,22 @@ static int net_socket_recv(int id)
     uint32_t remote_ip = g_at_client_handle[id].remote_ip;
     uint16_t remote_port = g_at_client_handle[id].remote_port;
     int udp_mode = g_at_client_handle[id].udp_mode;
-    char *recv_buf = g_at_net_recv_buf;
 
     if (type == NET_CLIENT_TCP) {
-        num = recv(fd, recv_buf, AT_NET_RECV_BUF_SIZE, 0);
+        num = recv(fd, 
+                g_at_client_handle[id].recv_buf, 
+                g_at_client_handle[id].recvbuf_size, 
+                0);
         //num = so_recvsize_get(fd);
         //at_response_string("\r\n+IPD,%d:", num);
     }
     else if (type == NET_CLIENT_UDP) {
-        num = recvfrom(fd, recv_buf, AT_NET_RECV_BUF_SIZE, 0, (struct sockaddr *)&remote_addr, (socklen_t *)(&len));
+        num = recvfrom(fd, 
+                g_at_client_handle[id].recv_buf, 
+                g_at_client_handle[id].recvbuf_size, 
+                0, 
+                (struct sockaddr *)&remote_addr, 
+                (socklen_t *)(&len));
 
         //update remote addr
         if (udp_mode == 1 || udp_mode == 2) {
@@ -777,16 +873,35 @@ static int net_socket_recv(int id)
         }
     }
     else if (type == NET_CLIENT_SSL) {
-        num = mbedtls_ssl_recv(priv, recv_buf, AT_NET_RECV_BUF_SIZE);
+        num = mbedtls_ssl_recv(priv, 
+                g_at_client_handle[id].recv_buf, 
+                g_at_client_handle[id].recvbuf_size);
     }
     else
         return 0;
 
-    if (num <= 0) {
+    if (num <= 0 && type != NET_CLIENT_UDP) {
         net_socket_close(id);
     }
     else {
-        net_socket_ipd(NET_IPDINFO_RECVDATA, id, recv_buf, num, g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
+
+        static uint32_t count = 0;
+        static uint32_t sum = 0;
+        uint32_t diff = xTaskGetTickCount() - count;
+            
+        sum += num;
+        if (diff >= 1000) {
+            printf("RX:%.4f Mbps\r\n", (float)sum * 8 / 1000 / 1000 * diff / 1000);
+            count = xTaskGetTickCount();
+            sum = 0;
+        }
+
+        net_socket_ipd(NET_IPDINFO_RECVDATA, 
+                       id, 
+                       g_at_client_handle[id].recv_buf, 
+                       num, 
+                       g_at_client_handle[id].remote_ip, 
+                       g_at_client_handle[id].remote_port);
 
         net_lock();
         g_at_client_handle[id].recv_time = os_get_time_ms();
@@ -796,90 +911,25 @@ static int net_socket_recv(int id)
     return num;
 }
 
-const char ca_cert[] = 
-"-----BEGIN CERTIFICATE-----\r\n" \
-"MIIDLTCCAhWgAwIBAgIJAIkH5/W9RO2GMA0GCSqGSIb3DQEBBQUAMDcxCzAJBgNV\r\n" \
-"BAYTAkMxMQ8wDQYDVQQKDAZFU1AgQzExFzAVBgNVBAMMDkVTUCBSb290IENBIEMx\r\n" \
-"MB4XDTE5MDYyMTA4MDAyM1oXDTI5MDYxODA4MDAyM1owNzELMAkGA1UEBhMCQzEx\r\n" \
-"DzANBgNVBAoMBkVTUCBDMTEXMBUGA1UEAwwORVNQIFJvb3QgQ0EgQzEwggEiMA0G\r\n" \
-"CSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDExt+jvbY8ZZlwgJ7BrNPuwG7FrM4H\r\n" \
-"FSfbWAYRwrXUFYQre8x2ugNpm7pyLXWW8s4nX04++IzkJYDSmpxeNXZkrxPF0MrV\r\n" \
-"56FrPBhvcBvTyjFi34B54llS+NI3fLx9/tCogFx7r+d/XlQlpE71r8n4HSZLpAtD\r\n" \
-"WvUKqCwD71RDa3wmzqpr4RUiGLwer44AY7/wo5FM9adB1HOFt8y8izbsjmOTiEmK\r\n" \
-"2/54fL0tfEvXGohfar/cKdKIhciqjvoj8Vv51l7cidIjipNVBfszsYEsw6+H8fcC\r\n" \
-"ZsRXiRCGJERP/ElPlFuQewUQRT3wepGfFEEyZHrpXw2xkkV7aiIJV43xAgMBAAGj\r\n" \
-"PDA6MAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgGmMB0GA1UdDgQWBBRIEHTyskPy\r\n" \
-"GTAGN0mAOypCgqQd3DANBgkqhkiG9w0BAQUFAAOCAQEAgk0T8iRB6EfCxRKFCm2p\r\n" \
-"TedDEqkf74QrOWBJWwkOixV4cH+5UseLFPtQYY75zK9tIEcQdVzwZyY2NMuF+uC+\r\n" \
-"lOH72dqy0F46GMp3vnZmq5/ZFnqdcGd7S589cPMTc1ZzxuX5q1Af2CXiFIQIMcYh\r\n" \
-"D2EfiRZCZvCmjVmXYKEau9l0zNSQ+drHRIq5bJhqEKRZ8fhd55okqlZ0YeBFfEx7\r\n" \
-"6gZv71LQqIjEU44b0KGFsgGwabjXPefiVjG+FuXuuM8c/2n77uQo6BdhJeFaVy4+\r\n" \
-"SlaqSAycNF0EiPzX2C0dl7z+BOR+XKhDTyRZ6MHg8nBtuW/lrZl4C+f4iVaVP0Wx\r\n" \
-"Vw==\r\n" \
-"-----END CERTIFICATE-----\r\n";
-
-const char server_cert[] = 
-"-----BEGIN CERTIFICATE-----\r\n" \
-"MIIDLTCCAhWgAwIBAgIJAPgqhiqX1DNNMA0GCSqGSIb3DQEBCwUAMDcxCzAJBgNV\r\n" \
-"BAYTAlMxMQ8wDQYDVQQKDAZFU1AgUzExFzAVBgNVBAMMDkVTUCBSb290IENBIFMx\r\n" \
-"MB4XDTE5MDYyMTA4MDAyMloXDTI5MDYxODA4MDAyMlowNzELMAkGA1UEBhMCUzIx\r\n" \
-"DzANBgNVBAoMBkVTUCBTMjEXMBUGA1UEAwwORVNQIFJvb3QgQ0EgUzIwggEiMA0G\r\n" \
-"CSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDJQ79YocJlOmZRPAYLSmzDRjl0wypl\r\n" \
-"IlTUEP7zo1XhOx1DPC5vbTLMmMNEsUF8J3VG8WroYkKfwe26HBz4EfGMnDip+YOZ\r\n" \
-"UqpOSJWDw39dbYtkB3qsSa6ZLCpA1up7GbZpmgriWwQqMo5gpRL0uZjT5l5GUMNb\r\n" \
-"5ljiLkmiq230cTUsBfozOxScUBsNIQk0NsZiXRTAQZp8+dMaarX1ZmN55V3NGiiV\r\n" \
-"U6RYkN6kBdrI0pZYUhOd3rPnx7C7B8n3oYUbppG2CNEP219jwY47SUnLIFPIE+ot\r\n" \
-"2/itnIhQUcdVBBktaEkgER+WnveemEGSagOYwRyvHqogBUT/hzQvcI+/AgMBAAGj\r\n" \
-"PDA6MAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgGmMB0GA1UdDgQWBBRFiQ1STxIw\r\n" \
-"6gxMzTLdYdlDQW3uMDANBgkqhkiG9w0BAQsFAAOCAQEAG5BFCC7D3IrLvPCulVX3\r\n" \
-"jkWq5OZIjxSWaYyOritPY/1oC4LY5WM4QornFt7GEt1d9wADYsmh39y/UPLuK0Cm\r\n" \
-"+msEhxSJ0D7Wx05rbuIfpmpsZD/GBJEZlrykjZz77i1Y/jEVc7fGnA49KCWFx7Ix\r\n" \
-"SSKpdoF5MT0PZeZUijVF28xR2GBRUlbQ6RtCMawsAO/Spq0WfUJHCxbi1C3khNKc\r\n" \
-"H0ltyOHkox8HGQkJv6G610ig3cxKdbxD0JwR5uh7fOG41DwC4sN2y2FTvi+xurZB\r\n" \
-"6ozGuZlMeFS7mFLqU5uQfi730FBJMA05DCpDhAvbFk8mzJdwBMWbqKHsGW0DlNXN\r\n" \
-"zA==\r\n" \
-"-----END CERTIFICATE-----\r\n";
-
-const char server_key[] = 
-"-----BEGIN RSA PRIVATE KEY-----\r\n" \
-"MIIEowIBAAKCAQEAyUO/WKHCZTpmUTwGC0psw0Y5dMMqZSJU1BD+86NV4TsdQzwu\r\n" \
-"b20yzJjDRLFBfCd1RvFq6GJCn8Htuhwc+BHxjJw4qfmDmVKqTkiVg8N/XW2LZAd6\r\n" \
-"rEmumSwqQNbqexm2aZoK4lsEKjKOYKUS9LmY0+ZeRlDDW+ZY4i5Joqtt9HE1LAX6\r\n" \
-"MzsUnFAbDSEJNDbGYl0UwEGafPnTGmq19WZjeeVdzRoolVOkWJDepAXayNKWWFIT\r\n" \
-"nd6z58ewuwfJ96GFG6aRtgjRD9tfY8GOO0lJyyBTyBPqLdv4rZyIUFHHVQQZLWhJ\r\n" \
-"IBEflp73nphBkmoDmMEcrx6qIAVE/4c0L3CPvwIDAQABAoIBADeOvwRNauccrt/f\r\n" \
-"zN9TBSEGgpfLxCk0x+veYTKKNQu+kL5dn4fcwfged1DACY6nKcWSoOtTLIcDNod4\r\n" \
-"eTq1YVNqUG4DVaN+YUrI2JUN41u8AI11TxS+JjdcLLHHYeTnXSZbgoOnkke/uvPM\r\n" \
-"vaXWkex0nDOW2cbFmGWfV25TGkAufj/ZWjA6PTdCI+MaiE0ghKUNLo0eRuYs5+Jg\r\n" \
-"jTNsqewHbEVi8WdMwoF3UTXTk0Vn0CL98FdBNMwfjCHphoGSCNJJEMKaCJkltPq4\r\n" \
-"0t+2ptMusrc8ONZtVXsmjjUvoD27tX7IQrLCO5y6PEuLUKFHHFVXLtSGxYh5vi3r\r\n" \
-"EIFSOnkCgYEA9hJ+xPXUYI79oaDVmv7up5Cm7z3aJZSDLWPDlF2xkf56xjZu0zb1\r\n" \
-"+qFuYVy+cHEqMOwvK48IADFZRmg2ZHfFZ79mA8gXXeoYCdmyHSnrjgb20pw+rhKM\r\n" \
-"tUAP/4cAwuWdFU1LJ+KumI2PPBVv9L0ifJlwErVc8TWuEVZ67TathfUCgYEA0WJ3\r\n" \
-"ZrAzGonUOEizIpd50iDqU2G0Twxv8GWT0k6Burtt3vBhrqCwFEuMsd/eanvz/uAL\r\n" \
-"JIylCEld+5aBaTEBK3bM6hVbEVI/moguWjw0/GxOqmvhO8lC9B7igkCfjC11/1q7\r\n" \
-"n/V42h1XbwpQ89wBMJY9jRJXk8QvvYyk4ugjemMCgYAVJ23ifMevLVu8g1kZpATc\r\n" \
-"PuE6+/Q++s90HXl4zb0wMdJYK+HHIphu3WXh1NlCTVg1MHi1o+wqKBPmq5rRdEJy\r\n" \
-"MtAQTylDF5bNcfuP6kSnxw18+ZWh3VJfWoyFiROVraudYzGs0h30W2cO4UDop0HJ\r\n" \
-"uF8cHJ9K1TSLpQWYUvUD6QKBgH8OGRYe5WO9LyHYO5tJ/4oanxZpu1gcW/CsMr7z\r\n" \
-"FJWTFmCpzRyCNVabYYyuI/DJto16tkg/cAVPP9Biy7RhICyXslB5FQG1vxKugDIR\r\n" \
-"RrXFoxaWz93PiulHtHsFa8tL6sZA8IloEyWHmH6w696OKcqp4D+yWaI48h87MPLf\r\n" \
-"mmexAoGBAJLAgFuuJuYvTfDV6J4s3Hcl6BfXuK/a7pCm/hu45AChxE3LOcA0wfFZ\r\n" \
-"41gBOZFp/qt9ZA3t46ENY7HdyiAukOskJ0ysz6g994qtX1mYyauEjYClXHd51JYW\r\n" \
-"rla3cPUYj9A2XvViLfxe3NpgK9LcWkuVuVvjtK+DBHGLFxwjMvf3\r\n" \
-"-----END RSA PRIVATE KEY-----\r\n";
-
-
-static int net_socket_accept(int fd, int is_ssl, uint16_t port, uint16_t timeout, uint8_t num, uint8_t max_conn)
+static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, uint8_t num, uint8_t max_conn)
 {
     int sock;
     struct sockaddr_in remote_addr;
     socklen_t len = sizeof(struct sockaddr_in);
     int id;
     void *priv = NULL;
-    net_client_type type = NET_CLIENT_TCP;
 
-    sock = accept(fd, (struct sockaddr*)&remote_addr, &len);
+    if (type == NET_SERVER_UDP) {
+    	for (int i = 0; i < AT_NET_CLIENT_HANDLE_MAX; i++) {
+    		if (g_at_client_handle[id].valid && g_at_client_handle[id].fd == fd) {
+    			return 0;
+    		}
+    	}
+    	sock = fd;
+    } else {
+    	sock = accept(fd, (struct sockaddr*)&remote_addr, &len);
+    }
+
     if (sock >= 0) {
         if (num+1 > max_conn) {
             close(sock);
@@ -892,14 +942,20 @@ static int net_socket_accept(int fd, int is_ssl, uint16_t port, uint16_t timeout
             return 0;
         }
 
-        if (is_ssl) {
-            priv = mbedtls_ssl_accept(sock, ca_cert, sizeof(ca_cert), server_cert, sizeof(server_cert), server_key, sizeof(server_key));
+        if (type == NET_SERVER_SSL) {
+
+            romfs_filebuf_t ca = {0}, cert = {0}, key = {0};
+
+            get_romfs_file_content(g_at_server_handle[id].ca_path, &ca);
+            get_romfs_file_content(g_at_server_handle[id].cert_path, &cert);
+            get_romfs_file_content(g_at_server_handle[id].priv_key_path, &key);
+
+            priv = mbedtls_ssl_accept(sock, ca.buf, ca.bufsize, cert.buf, cert.bufsize, key.buf, key.bufsize);
             //priv = mbedtls_ssl_accept(sock, NULL, 0, NULL, 0, NULL, 0);
             if (priv == NULL) {
                 close(sock);
                 return 0;
             }
-            type = NET_CLIENT_SSL;
         }
 
         net_lock();
@@ -918,6 +974,9 @@ static int net_socket_accept(int fd, int is_ssl, uint16_t port, uint16_t timeout
         g_at_client_handle[id].so_linger = -1;
         g_at_client_handle[id].tcp_nodelay = 0;
         g_at_client_handle[id].so_sndtimeo = 0;
+        if (!g_at_client_handle[id].recv_buf) {
+            g_at_client_handle[id].recv_buf = pvPortMalloc(g_at_client_handle[id].recvbuf_size);
+        }
         net_unlock();
 
         net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
@@ -979,7 +1038,7 @@ static void net_poll_reconnect(void)
                 ip_multicast_enable(fd, ip);
         }
         else if (g_at_client_handle[id].type == NET_CLIENT_SSL) {
-            fd = ssl_client_connect(ip, port, &priv);
+            fd = ssl_client_connect(id, ip, port, &priv);
             if (fd >= 0) {
                 if (g_at_client_handle[id].keep_alive)
                     so_keepalive_enable(fd, g_at_client_handle[id].keep_alive, 1, 3);
@@ -998,6 +1057,9 @@ static void net_poll_reconnect(void)
         g_at_client_handle[id].remote_ip = ip;
         g_at_client_handle[id].remote_port = port;
         g_at_client_handle[id].local_port = local_port;
+        if (!g_at_client_handle[id].recv_buf) {
+            g_at_client_handle[id].recv_buf = pvPortMalloc(g_at_client_handle[id].recvbuf_size);
+        }
         net_unlock();
     }
 }
@@ -1008,7 +1070,6 @@ static void net_poll_recv(void)
     struct timeval timeout;
     int maxfd = -1;
     int i;
-    int is_ssl = 0;
 
     FD_ZERO(&fdR);
     for (i = 0; i < AT_NET_CLIENT_HANDLE_MAX; i++) {
@@ -1027,13 +1088,21 @@ static void net_poll_recv(void)
     }
 
     if (maxfd == -1) {
+#ifdef LP_APP
+        vTaskDelay(30000);
+#else
         vTaskDelay(100);
+#endif
         return;
     }
 
     timeout.tv_sec= 0;	
     timeout.tv_usec= 10000;
+#ifdef LP_APP
+    if(select(maxfd+1, &fdR, NULL, NULL, NULL) > 0) {
+#else
     if(select(maxfd+1, &fdR, NULL, NULL, &timeout) > 0) {
+#endif
          for (i = 0; i < AT_NET_CLIENT_HANDLE_MAX; i++) {
             if (g_at_client_handle[i].valid && g_at_client_handle[i].fd >= 0 && FD_ISSET(g_at_client_handle[i].fd, &fdR)) {
                 net_socket_recv(i);
@@ -1041,9 +1110,7 @@ static void net_poll_recv(void)
         }
         for (i = 0; i < AT_NET_SERVER_HANDLE_MAX; i++) {
             if (g_at_server_handle[i].valid && FD_ISSET(g_at_server_handle[i].fd, &fdR)) {
-                if (g_at_server_handle[i].type == NET_SERVER_SSL)
-                    is_ssl = 1;
-                if (net_socket_accept(g_at_server_handle[i].fd, is_ssl, 
+                if (net_socket_accept(g_at_server_handle[i].fd, g_at_server_handle[i].type,
                             g_at_server_handle[i].port, g_at_server_handle[i].recv_timeout,
                             g_at_server_handle[i].client_num, g_at_server_handle[i].client_max) ) {
                     g_at_server_handle[i].client_num++;
@@ -1143,9 +1210,18 @@ static int at_net_init(void)
         g_at_client_handle = NULL;
         return -1;
     }
+    net_mutex = xSemaphoreCreateMutex();
 
     memset(g_at_client_handle, 0, sizeof(at_net_client_handle) * AT_NET_CLIENT_HANDLE_MAX);
     memset(g_at_server_handle, 0, sizeof(at_net_server_handle) * AT_NET_SERVER_HANDLE_MAX);
+
+    for (int id = 0; id < AT_NET_CLIENT_HANDLE_MAX; id++) {
+        g_at_client_handle[id].recvbuf_size = AT_NET_RECV_BUF_SIZE;
+        at_net_ssl_path_set(id, at_net_config->sslconf[id].ca_file, 
+                            at_net_config->sslconf[id].cert_file, 
+                            at_net_config->sslconf[id].key_file); 
+    }
+
     return 0;
 }
 
@@ -1314,6 +1390,35 @@ int at_net_server_id_is_valid(int id)
         return 1;
 }
 
+int at_net_server_udp_create(uint16_t port, int max_conn,  int timeout)
+{
+    int id = 0;
+    int fd;
+
+    if (g_at_server_handle[id].valid) {
+        AT_NET_PRINTF("already create\r\n");
+        return -1;
+    }
+
+    fd = udp_server_create(port, max_conn);
+    if (fd < 0) {
+        AT_NET_PRINTF("create failed\r\n");
+        return -1;
+    }
+
+    net_lock();
+    g_at_server_handle[id].valid = 1;
+    g_at_server_handle[id].type = NET_SERVER_UDP;
+    g_at_server_handle[id].fd = fd;
+    g_at_server_handle[id].port = port;
+    g_at_server_handle[id].recv_timeout = timeout;
+    g_at_server_handle[id].ca_enable = 0;
+    g_at_server_handle[id].client_max = max_conn;
+    g_at_server_handle[id].client_num = 0;
+    net_unlock();
+    return 0;
+}
+
 int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout)
 {
     int id = 0;
@@ -1479,6 +1584,7 @@ int at_net_start(void)
 
     at_net_init();
 
+
     ret = xTaskCreate(net_main_task, (char*)"net_main_task", AT_NET_TASK_STACK_SIZE, NULL, AT_NET_TASK_PRIORITY, NULL);
     if (ret != pdPASS) {
         AT_NET_PRINTF("ERROR: create net_main_task failed, ret = %d\r\n", ret);
@@ -1496,6 +1602,125 @@ int at_net_stop(void)
             vTaskDelay(100);
     }
     at_net_deinit();
+    return 0;
+}
+
+int at_net_recvbuf_size_set(int linkid, uint32_t size)
+{
+    net_lock();
+    if (!g_at_client_handle[linkid].recv_buf) {
+        g_at_client_handle[linkid].recvbuf_size = size;
+    }
+    net_unlock();
+    return 0;
+}
+
+int at_net_recvbuf_size_get(int linkid)
+{
+    return g_at_client_handle[linkid].recvbuf_size;
+}
+
+int at_net_ssl_path_set(int linkid, const char *ca, const char *cert, const char *key)
+{
+    if (ca) {
+        strlcpy(g_at_client_handle[linkid].ca_path, ca, sizeof(g_at_client_handle[linkid].ca_path));
+    } else {
+        g_at_client_handle[linkid].ca_path[0] = '\0';
+    }
+
+    if (cert) {
+        strlcpy(g_at_client_handle[linkid].cert_path, cert, sizeof(g_at_client_handle[linkid].cert_path));
+    } else {
+        g_at_client_handle[linkid].cert_path[0] = '\0';
+    }
+
+    if (key) {
+        strlcpy(g_at_client_handle[linkid].priv_key_path, key, sizeof(g_at_client_handle[linkid].priv_key_path));
+    } else {
+        g_at_client_handle[linkid].priv_key_path[0] = '\0';
+    }
+    return 0;
+}
+
+int at_net_ssl_path_get(int linkid, const char **ca, const char **cert, const char **key)
+{
+    *ca = g_at_client_handle[linkid].ca_path;
+    *cert = g_at_client_handle[linkid].cert_path;
+    *key = g_at_client_handle[linkid].priv_key_path;
+    return 0;
+}
+
+int at_net_ssl_sni_set(int linkid, const char *sni)
+{
+    if (g_at_client_handle[linkid].ssl_hostname) {
+        vPortFree(g_at_client_handle[linkid].ssl_hostname);
+    }
+    g_at_client_handle[linkid].ssl_hostname = strdup(sni);
+    return 0;
+}
+
+char *at_net_ssl_sni_get(int linkid)
+{
+    return g_at_client_handle[linkid].ssl_hostname;
+}
+
+int at_net_ssl_alpn_set(int linkid, int alpn_num, const char *alpn)
+{
+    net_lock();
+
+    if (alpn == NULL) {
+        vPortFree(g_at_client_handle[linkid].ssl_alpn[alpn_num]);
+        g_at_client_handle[linkid].ssl_alpn[alpn_num] = NULL;
+    } else {
+        if (g_at_client_handle[linkid].ssl_alpn[alpn_num]) {
+            vPortFree(g_at_client_handle[linkid].ssl_alpn[alpn_num]);
+        }
+        g_at_client_handle[linkid].ssl_alpn[alpn_num] = strdup(alpn);
+    }
+
+    g_at_client_handle[linkid].ssl_alpn_num = 0;
+    for (int i = 0; i < 6; i++) {
+        if (g_at_client_handle[linkid].ssl_alpn[i]) {
+            g_at_client_handle[linkid].ssl_alpn_num++;
+        }
+    }
+    net_unlock();
+    return 0;
+}
+
+char **at_net_ssl_alpn_get(int linkid, int *alpn_num)
+{
+    if (alpn_num) {
+        *alpn_num = g_at_client_handle[linkid].ssl_alpn_num;
+    }
+    return g_at_client_handle[linkid].ssl_alpn;
+}
+
+int at_net_ssl_psk_set(int linkid, char *psk, int psk_len, char *pskhint, int pskhint_len)
+{
+    memcpy(g_at_client_handle[linkid].ssl_psk, psk, psk_len);
+    g_at_client_handle[linkid].ssl_psklen = psk_len;
+    
+    memcpy(g_at_client_handle[linkid].ssl_pskhint, pskhint, pskhint_len);
+    g_at_client_handle[linkid].ssl_pskhint_len = pskhint_len;
+    return 0;
+}
+
+int at_net_ssl_psk_get(int linkid, char **psk, int *psk_len, char **pskhint, int *pskhint_len)
+{
+    if (psk) {
+        *psk = g_at_client_handle[linkid].ssl_psk;
+    }
+    if (psk_len) {
+        *psk_len = g_at_client_handle[linkid].ssl_psklen;
+    }
+    
+    if (pskhint) {
+        *pskhint = g_at_client_handle[linkid].ssl_pskhint;
+    }
+    if (pskhint_len) {
+        *pskhint_len = g_at_client_handle[linkid].ssl_pskhint_len;
+    }
     return 0;
 }
 

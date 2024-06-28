@@ -10,7 +10,7 @@ sdk_add_compile_definitions(-DCONFIG_HIGH_PERFORMANCE=1)
 sdk_add_compile_definitions(-DCFG_PLATFORM_DMA_ENABLE=1)
 
 sdk_add_compile_definitions(-DHIGH_PERFORMANCE_PBUF=1)
-if(NOT CONFIG_LINK_IN_PSRAM)
+if(NOT CONFIG_PSRAM_COPY_CODE)
 sdk_add_compile_definitions(-DCFG_LINK_ALL_IN_FLASH=1)
 endif()
 

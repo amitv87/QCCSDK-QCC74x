@@ -36,7 +36,7 @@
 #include "aes_wrap.h"
 #include "crypto.h"
 
-#ifdef MBEDTLS_ARC4_C
+#ifdef CONFIG_WIFI6_MBEDTLS_ARC4_C
 #include "mbedtls/arc4.h"
 #endif
 
@@ -116,7 +116,7 @@ int md5_vector(size_t num_elem, const u8 *addr[], const size_t *len, u8 *mac)
 	return digest_vector(MBEDTLS_MD_MD5, num_elem, addr, len, mac);
 }
 
-#ifdef MBEDTLS_MD4_C
+#ifdef CONFIG_WIFI6_MBEDTLS_MD4_C
 int md4_vector(size_t num_elem, const u8 *addr[], const size_t *len, u8 *mac)
 {
 	return digest_vector(MBEDTLS_MD_MD4, num_elem, addr, len, mac);
@@ -529,7 +529,7 @@ static mbedtls_cipher_type_t alg_to_mbedtls_cipher(enum crypto_cipher_alg alg,
 						   size_t key_len)
 {
 	switch (alg) {
-#ifdef MBEDTLS_ARC4_C
+#ifdef CONFIG_WIFI6_MBEDTLS_ARC4_C
 	case CRYPTO_CIPHER_ALG_RC4:
 		return MBEDTLS_CIPHER_ARC4_128;
 #endif
@@ -544,7 +544,7 @@ static mbedtls_cipher_type_t alg_to_mbedtls_cipher(enum crypto_cipher_alg alg,
 			return MBEDTLS_CIPHER_AES_256_CBC;
 		}
 		break;
-#ifdef MBEDTLS_DES_C
+#ifdef CONFIG_WIFI6_MBEDTLS_DES_C
 	case CRYPTO_CIPHER_ALG_3DES:
 		return MBEDTLS_CIPHER_DES_EDE3_CBC;
 	case CRYPTO_CIPHER_ALG_DES:
@@ -677,7 +677,7 @@ int aes_128_ctr_encrypt(const u8 *key, const u8 *nonce,
 }
 
 
-#ifdef MBEDTLS_NIST_KW_C
+#ifdef CONFIG_WIFI6_MBEDTLS_NIST_KW_C
 int aes_wrap(const u8 *kek, size_t kek_len, int n, const u8 *plain, u8 *cipher)
 {
 	mbedtls_nist_kw_context ctx;
@@ -753,7 +753,7 @@ cleanup:
 	return ret;
 }
 
-#ifdef MBEDTLS_PKCS5_c
+#ifdef CONFIG_WIFI6_MBEDTLS_PKCS5_c
 int pbkdf2_sha1(const char *passphrase, const u8 *ssid, size_t ssid_len,
 		int iterations, u8 *buf, size_t buflen)
 {
@@ -789,7 +789,7 @@ cleanup:
 }
 #endif
 
-#ifdef MBEDTLS_DES_C
+#ifdef CONFIG_WIFI6_MBEDTLS_DES_C
 int des_encrypt(const u8 *clear, const u8 *key, u8 *cypher)
 {
 	int ret;
@@ -872,7 +872,7 @@ cleanup:
 }
 #endif
 
-#ifdef MBEDTLS_ARC4_C
+#ifdef CONFIG_WIFI6_MBEDTLS_ARC4_C
 int rc4_skip(const u8 *key, size_t keylen, size_t skip,
              u8 *data, size_t data_len)
 {
@@ -912,7 +912,7 @@ int rc4_skip(const u8 *key, size_t keylen, size_t skip,
 }
 #endif
 
-#ifdef MBEDTLS_CMAC_C
+#ifdef CONFIG_WIFI6_MBEDTLS_CMAC_C
 int omac1_aes_vector(const u8 *key, size_t key_len, size_t num_elem,
 		     const u8 *addr[], const size_t *len, u8 *mac)
 {

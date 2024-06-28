@@ -4,6 +4,12 @@
 #include <utils_list.h>
 #include <openthread/platform/radio.h>
 
+#ifdef QCC743
+#define OT_RADIO_TRX_AES_CACHE_SIZE 128
+#else
+#define OT_RADIO_TRX_AES_CACHE_SIZE 64
+#endif
+
 typedef struct _otRadio_rxFrame_t {
     utils_dlist_t       dlist;
     otRadioFrame        frame;
@@ -51,14 +57,10 @@ typedef struct _otRadio_t {
     otRadioIeInfo                   transmitIeInfo;
     otlm_t                          linkMetrics;
 
-#if defined (QCC74x_undef) || defined (QCC74x_undefL)
-    uint32_t                        aesOutput[64];
-#elif defined (QCC74x_QCC743)
-    uint32_t                        aesOutput[128];
-#endif
+    uint32_t                        aesOutput[OT_RADIO_TRX_AES_CACHE_SIZE];
 } otRadio_t;
 
-extern otRadio_t                *otRadioVar_ptr;
+extern otRadio_t                    *otRadioVar_ptr;
 
 #define OTRADIO_MAX_PSDU                    (128)
 
@@ -67,5 +69,5 @@ extern otRadio_t                *otRadioVar_ptr;
 #define MAX_ACK_FRAME_SIZE                  (FRAME_OVERHEAD_SIZE + 64)
 
 #define OTRADIO_ACK_FRAME_BUFFER_NUM        2
-#endif
 
+#endif

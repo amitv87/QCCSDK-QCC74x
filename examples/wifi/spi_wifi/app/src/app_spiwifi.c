@@ -12,6 +12,7 @@
 #include "qcc74x_irq.h"
 #include "qcc74x_uart.h"
 #include "qcc743_glb.h"
+#include "qcc74x_romfs.h"
 
 #include "rfparam_adapter.h"
 
@@ -22,6 +23,7 @@
 #define TASK_PRIORITY_FW (16)
 
 extern void app_atmoudle_init(void);
+TaskHandle_t wifi_fw_task;
 
 int app_spiwifi_init(void)
 {
@@ -47,11 +49,14 @@ int app_spiwifi_init(void)
     qcc74x_mtd_init();
     easyflash_init();
  
+    /* romsfs init mount use media factory*/
+    romfs_mount(0x378000);
+
     /* AT moudle start */
     app_atmoudle_init();
    
     /* Start Wifi_FW */
-    xTaskCreate(wifi_main, (char *)"fw", WIFI_STACK_SIZE, NULL, TASK_PRIORITY_FW, NULL);
+    xTaskCreate(wifi_main, (char *)"fw", WIFI_STACK_SIZE, NULL, TASK_PRIORITY_FW, &wifi_fw_task);
 
     return 0;
 }

@@ -15,6 +15,7 @@ extern "C" {
 #endif
 
 #define AT_CMD_BIN_VERSION "1.0.0"
+#define AT_FS_ROOT_DIR "/romfs"
 
 #define AT_CMD_MAX_NUM 128
 #define AT_CMD_MAX_LEN 256

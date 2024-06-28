@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-void *mbedtls_ssl_connect(int fd, const char *ca_cert, int ca_cert_len, 
+void *mbedtls_ssl_connect(int linkid, int fd, const char *ca_cert, int ca_cert_len, 
 					 const char *own_cert, int own_cert_len, const char *private_cert, int private_cert_len);
 
 void *mbedtls_ssl_accept(int fd, const char *ca_cert, int ca_cert_len, 

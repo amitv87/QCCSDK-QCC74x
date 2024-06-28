@@ -1218,7 +1218,6 @@ endif()
 # CONFIG_CIS := 0
 # CONFIG_BIS := 0
 # CONFIG_LE_PWR_CTRL := 0
-# CONFIG_DISABLE_CONTROLLER_BLE_PRIVACY := 1
 # ifeq ($(CONFIG_CHIP_NAME),QCC74x_undef)
 # else ifeq ($(CONFIG_CHIP_NAME),QCC74x_undef)
 # else
@@ -1237,7 +1236,6 @@ if(CONFIG_BLE_MFG)
 	set(CONFIG_CIS 0)
 	set(CONFIG_BIS 0)
 	set(CONFIG_LE_PWR_CTRL 0)
-	set(CONFIG_DISABLE_CONTROLLER_BLE_PRIVACY 1)
 	if("${CHIP}" STREQUAL "qcc74x_undef")
 
 	elseif(("${CHIP}" STREQUAL "qcc74x_undef"))

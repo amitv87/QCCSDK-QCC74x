@@ -15,8 +15,6 @@
 
 void otPlatSettingsInit(otInstance *aInstance, const uint16_t *aSensitiveKeys, uint16_t aSensitiveKeysLength) {}
 
-void otPlatSettingsSetCriticalKeys(otInstance *aInstance, const uint16_t *aKeys, uint16_t aKeysLength) {}
-
 otError otPlatSettingsGet(otInstance *aInstance, uint16_t aKey, int aIndex, uint8_t *aValue, uint16_t *aValueLength)
 {
     char            key[OT_MAX_KEY_LEN];
@@ -25,51 +23,57 @@ otError otPlatSettingsGet(otInstance *aInstance, uint16_t aKey, int aIndex, uint
     otError         ret = OT_ERROR_NONE;
     struct env_node_obj obj;
 
-    ef_port_env_lock();
+    if (aInstance) {
+        ef_port_env_lock();
 
-    do {
-        if (aIndex < 0) {
-            ret = OT_ERROR_NOT_FOUND;
-            break;
-        }
-
-        snprintf(key, OT_MAX_KEY_LEN, "ot-bm-%x", aKey);
-        ef_get_env_blob(key, bitmapArray, OT_MAX_ENTRY_BITMAP * 4, (size_t *)&valuLength);
-        if (valuLength != OT_MAX_ENTRY_BITMAP * 4) {
-            ret = OT_ERROR_NOT_FOUND;
-            break;
-        }
-
-        i = aIndex >> 5;
-        j = aIndex & 0xfffff;
-        if (0 == (bitmapArray[i] & (1 << j))) {
-            ret = OT_ERROR_NOT_FOUND;
-            break;
-        }
-
-        snprintf(key, OT_MAX_KEY_LEN, "ot-%x-%x", aKey, aIndex);
-        if (!ef_get_env_obj(key, &obj)) {
+        do {
+            if (aIndex < 0) {
+                ret = OT_ERROR_NOT_FOUND;
+                break;
+            }
 
             snprintf(key, OT_MAX_KEY_LEN, "ot-bm-%x", aKey);
-            bitmapArray[i] = bitmapArray[i] & (~(1 << j));
-
-            ef_set_env_blob(key, bitmapArray, OT_MAX_ENTRY_BITMAP * 4);
-            ret = OT_ERROR_NOT_FOUND;
-            break;
-        }
-
-        if (aValueLength) {
-            if (aValue) {
-                ef_get_env_blob(key, aValue, *aValueLength, (size_t *)&valuLength);
-                memcpy(aValueLength, &valuLength, sizeof(uint16_t));
+            ef_get_env_blob(key, bitmapArray, OT_MAX_ENTRY_BITMAP * 4, (size_t *)&valuLength);
+            if (valuLength != OT_MAX_ENTRY_BITMAP * 4) {
+                ret = OT_ERROR_NOT_FOUND;
+                break;
             }
-            else {
-                memcpy(aValueLength, &obj.value_len, sizeof(uint16_t));
-            }
-        }
-    } while (0);
 
-    ef_port_env_unlock();
+            i = aIndex >> 5;
+            j = aIndex & 0xfffff;
+            if (0 == (bitmapArray[i] & (1 << j))) {
+                ret = OT_ERROR_NOT_FOUND;
+                break;
+            }
+
+            snprintf(key, OT_MAX_KEY_LEN, "ot-%x-%x", aKey, aIndex);
+            if (!ef_get_env_obj(key, &obj)) {
+
+                snprintf(key, OT_MAX_KEY_LEN, "ot-bm-%x", aKey);
+                bitmapArray[i] = bitmapArray[i] & (~(1 << j));
+
+                ef_set_env_blob(key, bitmapArray, OT_MAX_ENTRY_BITMAP * 4);
+                ret = OT_ERROR_NOT_FOUND;
+                break;
+            }
+
+            if (aValueLength) {
+                if (aValue) {
+                    ef_get_env_blob(key, aValue, *aValueLength, (size_t *)&valuLength);
+                    memcpy(aValueLength, &valuLength, sizeof(uint16_t));
+                }
+                else {
+                    memcpy(aValueLength, &obj.value_len, sizeof(uint16_t));
+                }
+            }
+        } while (0);
+
+        ef_port_env_unlock();
+    }
+    else {
+        snprintf(key, OT_MAX_KEY_LEN, "_nl%04x", aKey);
+        ef_get_env_blob(key, aValue, *aValueLength, (size_t *)&valuLength);
+    }
 
     return ret;
 }
@@ -81,19 +85,25 @@ static bool otPlatSettingsSet_raw(otInstance *aInstance, uint16_t aKey, const ui
     uint32_t i = index >> 5;
     uint32_t j = index & 0xfffff;
 
-    bitmapArray[i] = bitmapArray[i] | (1 << j);
+    if (aInstance) {
+        bitmapArray[i] = bitmapArray[i] | (1 << j);
 
-    ef_port_env_lock();
-    do {
-        snprintf(key, OT_MAX_KEY_LEN, "ot-%x-%x", aKey, index);
+        ef_port_env_lock();
+        do {
+            snprintf(key, OT_MAX_KEY_LEN, "ot-%x-%x", aKey, index);
+            ret = ef_set_env_blob(key, aValue, aValueLength);
+
+            if (EF_NO_ERR == ret) {
+                snprintf(key, OT_MAX_KEY_LEN, "ot-bm-%x", aKey);
+                ret = ef_set_env_blob(key, bitmapArray, OT_MAX_ENTRY_BITMAP * 4);
+            }
+        } while (0);
+        ef_port_env_unlock();
+    }
+    else {
+        snprintf(key, OT_MAX_KEY_LEN, "_nl%04x", aKey);
         ret = ef_set_env_blob(key, aValue, aValueLength);
-
-        if (EF_NO_ERR == ret) {
-            snprintf(key, OT_MAX_KEY_LEN, "ot-bm-%x", aKey);
-            ret = ef_set_env_blob(key, bitmapArray, OT_MAX_ENTRY_BITMAP * 4);
-        }
-    } while (0);
-    ef_port_env_unlock();
+    }
 
     return EF_NO_ERR == ret? OT_ERROR_NONE : OT_ERROR_FAILED;
 }

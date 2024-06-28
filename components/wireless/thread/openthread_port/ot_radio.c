@@ -2,24 +2,27 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <qcc743.h>
-#include <qcc743_glb.h>
-#include <qcc74x_mtimer.h>
-#include <qcc74x_efuse.h>
 #include <lmac154.h>
-
+#ifdef CFG_OT_USE_ROM_CODE
+#include <rom_lmac154_ext.h>
+#endif
 #include <openthread_port.h>
 #include <ot_radio_trx.h>
 #include <ot_utils_ext.h>
 
 static otRadio_t                otRadioVar;
 static uint8_t                  otRadio_buffPool[MAC_FRAME_SIZE * (OTRADIO_RX_FRAME_BUFFER_NUM + 1) + MAX_ACK_FRAME_SIZE * OTRADIO_ACK_FRAME_BUFFER_NUM];
+#ifdef CFG_OT_USE_ROM_CODE
+extern otRadio_t                *otRadioVar_ptr;
+#else
 otRadio_t                       *otRadioVar_ptr = &otRadioVar;
-
+#endif
 void ot_radioInit(otRadio_opt_t opt) 
 {
     otRadio_rxFrame_t *pframe = NULL;
     otRadioVar_ptr = &otRadioVar;
+
+    lmac154_init();
 
     memset(otRadioVar_ptr, 0, sizeof(otRadio_t));
 
@@ -37,7 +40,7 @@ void ot_radioInit(otRadio_opt_t opt)
 
     otRadioVar_ptr->pTxAckFrame = (otRadioFrame *)(otRadio_buffPool + MAC_FRAME_SIZE * (OTRADIO_RX_FRAME_BUFFER_NUM + 1));
     otRadioVar_ptr->pTxAckFrame->mPsdu = ((uint8_t *)otRadioVar_ptr->pTxAckFrame) + FRAME_OVERHEAD_SIZE;
-    otRadioVar_ptr->pRxAckFrame = (otRadioFrame *)(otRadioVar_ptr->pTxAckFrame->mPsdu + MAX_ACK_FRAME_SIZE);
+    otRadioVar_ptr->pRxAckFrame = (otRadioFrame *)(((uint8_t *)otRadioVar_ptr->pTxAckFrame) + MAX_ACK_FRAME_SIZE);
     otRadioVar_ptr->pRxAckFrame->mPsdu = ((uint8_t *)otRadioVar_ptr->pRxAckFrame) + FRAME_OVERHEAD_SIZE;
 
     if (opt.bf.isLinkMetricEnable) {
@@ -175,9 +178,8 @@ otError otPlatRadioTransmit(otInstance *aInstance, otRadioFrame *aFrame)
     int iret = -1;
 
     if (otRadioVar_ptr->pTxFrame == NULL) {
-
+        
         iret = ot_radioSend(aFrame);
-
         if (iret) {
             otrNotifyEvent(OT_SYSTEM_EVENT_RADIO_TX_ERROR);
         }
@@ -197,36 +199,11 @@ otRadioCaps otPlatRadioGetCaps(otInstance *aInstance)
 }
 const char *otPlatRadioGetVersionString(otInstance *aInstance) 
 {
-    return lmac154_getLibVersion();
+    return ot_utils_getVersionString();
 }
 int8_t otPlatRadioGetReceiveSensitivity(otInstance *aInstance) 
 {
     return IEEE802_15_4_RADIO_RECEIVE_SENSITIVITY;
-}
-void otPlatRadioGetIeeeEui64(otInstance *aInstance, uint8_t *aIeeeEui64) 
-{
-    uint8_t chipid[8];
-    uint8_t mac_addr[6];
-    int i;
-
-    for (i = 2; i >= 0; i --) {
-        if (!qcc74x_efuse_is_mac_address_slot_empty(2, 0)) {
-            qcc74x_efuse_read_mac_address_opt(i, mac_addr, 0);
-            break;
-        }
-    }
-
-    qcc74x_efuse_get_chipid(chipid);
-    if (i >= 0) {
-        memcpy(aIeeeEui64, mac_addr, 6);
-        memcpy(aIeeeEui64 + 6, chipid + 4, 2);
-    }
-    else {
-        memcpy(aIeeeEui64 + 2, chipid, 6);
-        aIeeeEui64[0] = 0xC4;
-        aIeeeEui64[1] = 0xD7;
-        aIeeeEui64[2] = 0xFD;
-    }
 }
 
 void otPlatRadioSetPanId(otInstance *aInstance, otPanId aPanId) 
@@ -272,12 +249,7 @@ bool otPlatRadioGetPromiscuous(otInstance *aInstance)
 }
 void otPlatRadioSetPromiscuous(otInstance *aInstance, bool aEnable) 
 {
-    if (aEnable) {
-        lmac154_enableRxPromiscuousMode(false, false);
-    }
-    else {
-        lmac154_disableRxPromiscuousMode();
-    }
+    ot_setRxPromiscuousMode(aEnable, true);
 }
 
 void otPlatRadioSetMacKey(otInstance *            aInstance,
@@ -313,11 +285,6 @@ void otPlatRadioSetMacFrameCounter(otInstance *aInstance, uint32_t aMacFrameCoun
     uint32_t tag = otrEnterCrit();
     otRadioVar_ptr->macFrameCounter = aMacFrameCounter;
     otrExitCrit(tag);
-}
-
-uint64_t otPlatRadioGetNow(otInstance *aInstance)
-{
-    return qcc74x_mtimer_get_time_us();
 }
 
 otRadioState otPlatRadioGetState(otInstance *aInstance) 
@@ -356,22 +323,7 @@ otRadioState otPlatRadioGetState(otInstance *aInstance)
     return state;
 }
 
-otError otPlatRadioEnable(otInstance *aInstance) 
-{
-    ot_radioEnable();
 
-    qcc74x_irq_enable(M154_INT_IRQn);
-
-    return OT_ERROR_NONE;
-}
-
-otError otPlatRadioDisable(otInstance *aInstance) 
-{
-    qcc74x_irq_disable(M154_INT_IRQn);
-    lmac154_disableRx();
-
-    return OT_ERROR_NONE;
-}
 bool otPlatRadioIsEnabled(otInstance *aInstance) 
 {
     return !lmac154_isDisabled();
@@ -384,18 +336,6 @@ otError otPlatRadioSleep(otInstance *aInstance)
 #if (OPENTHREAD_FTD) || (OPENTHREAD_MTD)
     lmac154_setRxStateWhenIdle(otThreadGetLinkMode(aInstance).mRxOnWhenIdle);
 #endif
-
-    return OT_ERROR_NONE;
-}
-otError otPlatRadioReceive(otInstance *aInstance, uint8_t aChannel) 
-{
-    uint8_t ch = aChannel - OT_RADIO_2P4GHZ_OQPSK_CHANNEL_MIN;
-
-    lmac154_setChannel((lmac154_channel_t)ch);
-#if (OPENTHREAD_FTD) || (OPENTHREAD_MTD)
-    lmac154_setRxStateWhenIdle(otThreadGetLinkMode(aInstance).mRxOnWhenIdle);
-#endif
-    lmac154_enableRx();
 
     return OT_ERROR_NONE;
 }

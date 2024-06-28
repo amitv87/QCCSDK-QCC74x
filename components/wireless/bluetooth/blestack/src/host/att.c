@@ -2197,6 +2197,13 @@ static void att_timeout(struct k_work *work)
 
 	BT_ERR("ATT Timeout");
 
+#if defined(QCC74x_BLE_DO_DISCONNECT_WHEN_ATT_TIMEOUT)
+      if(bt_conn_disconnect(ch->chan.conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN)) {
+              BT_ERR("ATT Timeout disconnect fail.");
+      }else{
+              BT_ERR("ATT Timeout disconnect success.");
+      }
+#else
 	/* BLUETOOTH SPECIFICATION Version 4.2 [Vol 3, Part F] page 480:
 	 *
 	 * A transaction not completed within 30 seconds shall time out. Such a
@@ -2210,6 +2217,7 @@ static void att_timeout(struct k_work *work)
 	/* Consider the channel disconnected */
 	bt_gatt_disconnected(ch->chan.conn);
 	ch->chan.conn = NULL;
+#endif /* QCC74x_BLE_DO_DISCONNECT_WHEN_ATT_TIMEOUT */
 }
 
 static void bt_att_connected(struct bt_l2cap_chan *chan)

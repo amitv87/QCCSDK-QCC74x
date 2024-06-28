@@ -51,10 +51,10 @@ typedef struct {
     char pmk[66];
     uint16_t freq;
     uint8_t bssid[6];
-    uint8_t pci_en;
     uint8_t listen_interval;
     uint8_t scan_mode;
     uint8_t pmf;
+    uint8_t wep_en;
     uint16_t jap_timeout;
 } wifi_sta_info;
 
@@ -68,7 +68,7 @@ typedef struct {
 } wifi_ap_info;
 
 typedef struct {
-    uint8_t reserved;
+    uint8_t sort_enable;
     int8_t rssi_filter;
     uint16_t print_mask;
     uint16_t authmode_mask;
@@ -113,6 +113,7 @@ typedef struct {
     uint32_t ip;
     uint32_t gateway;
     uint32_t netmask;
+    uint32_t dns;
 } wifi_ip;
 
 typedef enum {
@@ -150,6 +151,8 @@ typedef struct {
     wifi_country_code wifi_country;
     char hostname[28];
     uint8_t  reconnect_state;
+    uint8_t  wlan_disable;
+    uint8_t  wevt_enable;
 }wifi_config;
 
 extern wifi_config *at_wifi_config;

@@ -33,9 +33,9 @@
 #include "wpa_i.h"
 #include "wpa_ie.h"
 
-#ifdef CONFIG_QCC74x_PMK_CACHE_IN_MGMR
+#ifdef CONFIG_PMK_CACHE_IN_MGMR
 #include <wifi_mgmr_pmk.h>
-#endif /* CONFIG_QCC74x_PMK_CACHE_IN_MGMR */
+#endif /* CONFIG_PMK_CACHE_IN_MGMR */
 
 static const u8 null_rsc[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
@@ -2344,9 +2344,19 @@ void wpa_sm_aborted_cached(struct wpa_sm *sm)
 		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
 			"RSN: Cancelling PMKSA caching attempt");
 		sm->cur_pmksa = NULL;
-#ifdef CONFIG_QCC74x_PMK_CACHE_IN_MGMR
+#ifdef CONFIG_PMK_CACHE_IN_MGMR
         wifi_mgmr_pmk_cache_entry_invalidate();
-#endif /* CONFIG_QCC74x_PMK_CACHE_IN_MGMR */
+#endif /* CONFIG_PMK_CACHE_IN_MGMR */
+	}
+}
+
+
+void wpa_sm_aborted_external_cached(struct wpa_sm *sm)
+{
+	if (sm && sm->cur_pmksa && sm->cur_pmksa->external) {
+		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+			"RSN: Cancelling external PMKSA caching attempt");
+		sm->cur_pmksa = NULL;
 	}
 }
 
@@ -2899,6 +2909,15 @@ static void wpa_sm_pmksa_free_cb(struct rsn_pmksa_cache_entry *entry,
 }
 
 
+static bool wpa_sm_pmksa_is_current_cb(struct rsn_pmksa_cache_entry *entry,
+				       void *ctx)
+{
+	struct wpa_sm *sm = ctx;
+
+	return sm->cur_pmksa == entry;
+}
+
+
 /**
  * wpa_sm_init - Initialize WPA state machine
  * @ctx: Context pointer for callbacks; this needs to be an allocated buffer
@@ -2922,7 +2941,8 @@ struct wpa_sm * wpa_sm_init(struct wpa_sm_ctx *ctx)
 	sm->dot11RSNAConfigPMKReauthThreshold = 70;
 	sm->dot11RSNAConfigSATimeout = 60;
 
-	sm->pmksa = pmksa_cache_init(wpa_sm_pmksa_free_cb, sm, sm);
+	sm->pmksa = pmksa_cache_init(wpa_sm_pmksa_free_cb,
+				     wpa_sm_pmksa_is_current_cb, sm, sm);
 	if (sm->pmksa == NULL) {
 		wpa_msg(sm->ctx->msg_ctx, MSG_ERROR,
 			"RSN: PMKSA cache initialization failed");
@@ -3118,7 +3138,7 @@ void wpa_sm_set_pmk(struct wpa_sm *sm, const u8 *pmk, size_t pmk_len,
 #endif /* CONFIG_IEEE80211R */
 
 	if (bssid) {
-#ifdef CONFIG_QCC74x_PMK_CACHE_IN_MGMR
+#ifdef CONFIG_PMK_CACHE_IN_MGMR
         if (sm->key_mgmt == WPA_KEY_MGMT_SAE && pmk_len == WIFI_MGMR_PMK_LEN) {
             wifi_mgmr_pmk_cache_entry entry;
             os_memcpy(entry.pmk, pmk, WIFI_MGMR_PMK_LEN);
@@ -3126,10 +3146,12 @@ void wpa_sm_set_pmk(struct wpa_sm *sm, const u8 *pmk, size_t pmk_len,
             os_memcpy(entry.aa, bssid, WIFI_MGMR_ETH_ALEN);
             wifi_mgmr_pmk_cache_entry_update(&entry);
         }
-#endif /* CONFIG_QCC74x_PMK_CACHE_IN_MGMR */
-		pmksa_cache_add(sm->pmksa, pmk, pmk_len, pmkid, NULL, 0,
-				bssid, sm->own_addr,
-				sm->network_ctx, sm->key_mgmt, NULL);
+#endif /* CONFIG_PMK_CACHE_IN_MGMR */
+		sm->cur_pmksa = pmksa_cache_add(sm->pmksa, pmk, pmk_len,
+						pmkid, NULL, 0, bssid,
+						sm->own_addr,
+						sm->network_ctx, sm->key_mgmt,
+						NULL);
 	}
 }
 
@@ -3880,7 +3902,13 @@ void wpa_sm_update_replay_ctr(struct wpa_sm *sm, const u8 *replay_ctr)
 
 void wpa_sm_pmksa_cache_flush(struct wpa_sm *sm, void *network_ctx)
 {
-	pmksa_cache_flush(sm->pmksa, network_ctx, NULL, 0);
+	pmksa_cache_flush(sm->pmksa, network_ctx, NULL, 0, false);
+}
+
+
+void wpa_sm_external_pmksa_cache_flush(struct wpa_sm *sm, void *network_ctx)
+{
+	pmksa_cache_flush(sm->pmksa, network_ctx, NULL, 0, true);
 }
 
 
@@ -5246,7 +5274,13 @@ void wpa_pasn_pmksa_cache_add(struct wpa_sm *sm, const u8 *pmk, size_t pmk_len,
 }
 #endif /* CONFIG_PASN */
 
-#ifdef CONFIG_QCC74x_PMK_CACHE_IN_MGMR
+
+void wpa_sm_pmksa_cache_reconfig(struct wpa_sm *sm)
+{
+	if (sm)
+		pmksa_cache_reconfig(sm->pmksa);
+}
+#ifdef CONFIG_PMK_CACHE_IN_MGMR
 void wpa_sm_load_pmksa_cache_from_mgmr(struct wpa_sm *sm, const u8 *bssid)
 {
     wifi_mgmr_pmk_cache_entry entry;
@@ -5261,4 +5295,4 @@ void wpa_sm_load_pmksa_cache_from_mgmr(struct wpa_sm *sm, const u8 *bssid)
         }
     }
 }
-#endif /* CONFIG_QCC74x_PMK_CACHE_IN_MGMR */
+#endif /* CONFIG_PMK_CACHE_IN_MGMR */

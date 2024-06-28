@@ -1,9 +1,11 @@
 
-#include <qcc74x_mtd.h>
-#include <easyflash.h>
+#if defined (QCC743)
+#include <rfparam_adapter.h>
+#endif
 
-#if defined(QCC743)
-#include "rfparam_adapter.h"
+#include <qcc74x_mtd.h>
+#if defined (CONFIG_EASYFLASH4)
+#include <easyflash.h>
 #endif
 
 #include <openthread_port.h>
@@ -13,13 +15,14 @@
 
 static struct qcc74x_device_s *uart0;
 
+extern void __libc_init_array(void);
 #if defined(OT_SERIAL_SHELL)
 extern void shell_init_with_task(struct qcc74x_device_s *shell);
 #endif
 
 void otrInitUser(otInstance * instance)
 {
-    otAppCliInit((otInstance * )instance);
+    otAppCliInit(instance);
 }
 
 int main(void)
@@ -29,7 +32,9 @@ int main(void)
     board_init();
 
     qcc74x_mtd_init();
+#if defined (CONFIG_EASYFLASH4)
     easyflash_init();
+#endif
 
     configASSERT((configMAX_PRIORITIES > 4));
 
@@ -40,6 +45,8 @@ int main(void)
         return 0;
     }
 #endif
+
+    __libc_init_array();
 
     uart0 = qcc74x_device_get_by_name("uart0");
 #if defined(OT_SERIAL_SHELL)
@@ -52,11 +59,7 @@ int main(void)
 
     opt.byte = 0;
 
-    opt.bf.isCoexEnable = true;
-#if OPENTHREAD_RADIO
     opt.bf.isCoexEnable = false;
-#endif
-
 #if OPENTHREAD_FTD
     opt.bf.isFtd = true;
 #endif

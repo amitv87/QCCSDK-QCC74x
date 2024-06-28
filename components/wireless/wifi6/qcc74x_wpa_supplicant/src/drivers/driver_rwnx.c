@@ -1299,7 +1299,7 @@ static int wpa_rwnx_driver_get_capa(void *priv, struct wpa_driver_capa *capa)
 
 	capa->flags = WPA_DRIVER_FLAGS_SET_KEYS_AFTER_ASSOC_DONE |
 		      WPA_DRIVER_FLAGS_HT_2040_COEX |
-		      WPA_DRIVER_FLAGS_SANE_ERROR_CODES;
+		      WPA_DRIVER_FLAGS_VALID_ERROR_CODES;
 
 #if NX_BEACONING
 	capa->flags |= WPA_DRIVER_FLAGS_AP |
@@ -1727,7 +1727,7 @@ static int wpa_rwnx_driver_send_mlme(void *priv, const u8 *data, size_t data_len
 	if (!noack) {
 		tx_frame = wpa_rwnx_driver_init_tx_frame(drv, data, data_len, NULL);
 		if (!tx_frame) {
-            wpa_qcc74x_printf("[WPA]%s No tx frame!\r\n", __func__);
+            wpa_extra_printf("[WPA]%s No tx frame!\r\n", __func__);
 			return -1;
         }
 		cb = wpa_rwnx_driver_tx_status;
@@ -1735,7 +1735,7 @@ static int wpa_rwnx_driver_send_mlme(void *priv, const u8 *data, size_t data_len
 
     ret = fhost_send_80211_frame(drv->fhost_vif_idx, data, data_len, 0, cb, tx_frame);
     if (ret < 4) {
-        wpa_qcc74x_printf("[WPA]Fhost send failed, ret is %u\r\n", ret);
+        wpa_extra_printf("[WPA]Fhost send failed, ret is %u\r\n", ret);
         return -1;
     }
 

@@ -96,7 +96,7 @@ int at_port_read_data(uint8_t*data, int len)
     int nBytes = 0;
 
     //printf("--->at_port_read_data input   :%d\r\n", len);
-    nBytes = spisync_read(at_spisync, data, len, 1000);
+    nBytes = spisync_read(at_spisync, 0, data, len, portMAX_DELAY);
 #if 0
     if (nBytes) {
         printf("<---at_port_read_data reaturn :%d\r\n", nBytes);
@@ -110,6 +110,7 @@ int at_port_read_data(uint8_t*data, int len)
 #endif
 }
 
+#define AT_PORT_WRITE_TIMEOUT      (30000)// 30s
 int at_port_write_data(uint8_t *data, int len)
 {
 #if 0
@@ -122,10 +123,12 @@ int at_port_write_data(uint8_t *data, int len)
 #else
     int msg_len;
 
-#if 1// debug assic and hexdump
-    printf("[AT_WRITE]:%d-->", len);
-    for (int i = 0; i < len; i++) {
-        printf("%c", data[i]);
+#if 1// debug assic and hexdump 
+    if (at->fakeoutput) {
+        printf("[AT_WRITE]:%d-->", len);
+        for (int i = 0; i < len; i++) {
+            printf("%c", data[i]);
+        }
     }
 #if 0
     printf(":");
@@ -141,7 +144,10 @@ int at_port_write_data(uint8_t *data, int len)
     if (at->fakeoutput) {
         return len;
     }
-    msg_len = spisync_write(at_spisync, data, len, portMAX_DELAY);//portMAX_DELAY
+    if (!data) {
+    	return 0;
+    }
+    msg_len = spisync_write(at_spisync, 0, data, len, AT_PORT_WRITE_TIMEOUT);
     if (msg_len > 0) {
         return msg_len;
     }

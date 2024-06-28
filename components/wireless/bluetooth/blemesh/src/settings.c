@@ -2302,7 +2302,7 @@ void bt_mesh_clear_rpl(void)
 /* Added by qcc74x */
 void bt_mesh_clear_node_rpl(u16_t src)
 {
-	int i, err;
+	int i;
 
 	BT_DBG("");
 
@@ -2313,7 +2313,7 @@ void bt_mesh_clear_node_rpl(u16_t src)
 			#ifdef CONFIG_BT_SETTINGS
 			char path[18];
 			snprintk(path, sizeof(path), "bt/mesh/RPL/%x", rpl->src);
-			err = settings_delete(path);
+			int err = settings_delete(path);
 			if (err) {
 				BT_ERR("Failed to clear RPL");
 			} else {

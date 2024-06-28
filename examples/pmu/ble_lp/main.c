@@ -63,6 +63,7 @@ static struct qcc74x_device_s *uart0;
 
 TaskHandle_t wifi_fw_task;
 static TaskHandle_t app_start_handle;
+struct bt_conn *bleapp_default_conn;
 
 static wifi_conf_t conf = {
     .country_code = "CN",
@@ -74,7 +75,9 @@ static void ble_connected(struct bt_conn *conn, u8_t err)
     {
         return;
     }
-    printf("%s",__func__);
+    if (!bleapp_default_conn) {
+        bleapp_default_conn = conn;
+    }
 }
 
 static void ble_disconnected(struct bt_conn *conn, u8_t reason)
@@ -84,13 +87,23 @@ static void ble_disconnected(struct bt_conn *conn, u8_t reason)
     {
         return;
     }
-
+    if (bleapp_default_conn == conn) {
+        bleapp_default_conn = NULL;
+    }
     printf("%s",__func__);
 }
-
+static void ble_conn_param_updated(struct bt_conn *conn, u16_t interval,
+			     u16_t latency, u16_t timeout)
+{
+    if(conn == bleapp_default_conn)
+    {
+        printf("%s: int 0x%04x lat %d to %d \r\n", __func__, interval, latency, timeout);
+    }
+}
 static struct bt_conn_cb ble_conn_callbacks = {
     .connected  =   ble_connected,
     .disconnected   =   ble_disconnected,
+    .le_param_updated = ble_conn_param_updated,
 };
 
 void bt_enable_cb(int err)
@@ -730,6 +743,8 @@ void tcpip_init_done(void *arg)
 
 int main(void)
 {
+    uint8_t soc_v, rt_v, aon_v;
+
     board_init();
 
     uart0 = qcc74x_device_get_by_name("uart0");
@@ -738,12 +753,9 @@ int main(void)
     tcpip_init(tcpip_init_done, NULL);
     wifi_start_firmware_task();
 
-#if PM_PDS_LDO_LEVEL_DEFAULT == 8
-    puts("PDS DCDC_1.1V mode\r\n");
-    hal_pm_ldo11_use_ext_dcdc();
-#else
-    puts("PDS LDO_1.1V mode\r\n");
-#endif
+    hal_pm_ldo11_cfg(PM_PDS_LDO_LEVEL_SOC_DEFAULT, PM_PDS_LDO_LEVEL_RT_DEFAULT, PM_PDS_LDO_LEVEL_AON_DEFAULT);
+    hal_pm_ldo11_cfg_get(&soc_v, &rt_v, &aon_v);
+    printf("SOC:%d RT:%d AON:%d\r\n", soc_v, rt_v, aon_v);
 
     HBN_Enable_RTC_Counter();
     pm_rc32k_auto_cal_init();

@@ -45,16 +45,17 @@ add_custom_target(combine
 if("${CONFIG_POST_BUILD}" STREQUAL "RELEASE_MFG")
 file(GLOB OLD_MFG_BIN "${QCC74x_SDK_BASE}/bsp/board/${BOARD}/config/mfg*.bin")
 file(GLOB DTS_FILES "${QCC74x_SDK_BASE}/bsp/board/${BOARD}/config/*.dts")
-file(GLOB BIN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/build/build_out/*.bin")
+file(GLOB BOOT2_BIN_FILES "${QCC74x_SDK_BASE}/bsp/board/${BOARD}/config/boot2*.bin")
 file(GLOB INI_FILES "${CMAKE_CURRENT_SOURCE_DIR}/*.ini")
+set(PARTITION_BIN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/build/build_out/partition.bin")
 
 add_custom_target(post_build
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMAND ${CMAKE} -E remove ${OLD_MFG_BIN}
-        COMMAND ${CMAKE} -E copy ${BIN_FILE} ${QCC74x_SDK_BASE}/bsp/board/${BOARD}/config/
+        COMMAND ${CMAKE} -E copy ${BIN_FILE} ${QCC74x_SDK_BASE}/bsp/board/${BOARD}/config/mfg_${CHIP}_tmpver.bin
         COMMAND ${CMAKE} -E remove_directory mfg_release
         COMMAND ${CMAKE} -E copy_directory ${QCC74x_SDK_BASE}/tools/qcc74x_tools mfg_release
-        COMMAND ${CMAKE} -E copy ${BIN_FILES} ${DTS_FILES} ${INI_FILES} mfg_release)
+        COMMAND ${CMAKE} -E copy ${BIN_FILE} ${PARTITION_BIN_FILES} ${BOOT2_BIN_FILES} ${DTS_FILES} ${INI_FILES} mfg_release)
 elseif("${CONFIG_POST_BUILD}" STREQUAL "CONCAT_WITH_LP_FW")
 add_custom_target(post_build
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

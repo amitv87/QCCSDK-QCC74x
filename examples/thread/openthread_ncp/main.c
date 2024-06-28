@@ -5,7 +5,9 @@
 #include "qcc74x_flash.h"
 
 #include <qcc74x_mtd.h>
+#if defined (CONFIG_EASYFLASH4)
 #include <easyflash.h>
+#endif
 
 #if defined(QCC743)
 #include "rfparam_adapter.h"
@@ -21,6 +23,7 @@ extern uint32_t __HeapBase;
 extern uint32_t __HeapLimit;
 static struct qcc74x_device_s *uart0;
 
+extern void __libc_init_array(void);
 extern void log_start(void);
 
 static void system_clock_ncp_init(void)
@@ -137,7 +140,9 @@ int main(void)
     board_ncp_init();
 
     qcc74x_mtd_init();
+#if defined (CONFIG_EASYFLASH4)
     easyflash_init();
+#endif
 
     configASSERT((configMAX_PRIORITIES > 4));
 
@@ -148,6 +153,8 @@ int main(void)
         return 0;
     }
 #endif
+
+    __libc_init_array();
 
     uart0 = qcc74x_device_get_by_name("uart0");
     ot_uart_init(uart0);

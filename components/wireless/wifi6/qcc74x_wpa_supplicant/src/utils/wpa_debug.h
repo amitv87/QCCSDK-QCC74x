@@ -23,10 +23,10 @@ enum {
 	MSG_EXCESSIVE, MSG_MSGDUMP, MSG_DEBUG, MSG_INFO, MSG_WARNING, MSG_ERROR
 };
 
-#ifdef CONFIG_WPA_QCC74x_LOG_PRINT
-#define wpa_qcc74x_printf(...) printf( __VA_ARGS__)
+#ifdef CONFIG_WPA_EXTRA_LOG_PRINT
+#define wpa_extra_printf(...) printf( __VA_ARGS__)
 #else
-#define wpa_qcc74x_printf(...) do { } while (0)
+#define wpa_extra_printf(...) do { } while (0)
 #endif
 
 #ifdef CONFIG_NO_STDOUT_DEBUG

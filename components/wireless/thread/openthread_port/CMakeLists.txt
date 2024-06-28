@@ -1,17 +1,30 @@
 sdk_generate_library()
 
 if("${CHIP}" STREQUAL "qcc743")
-  sdk_add_private_compile_definitions(-DQCC74x_QCC743)
   sdk_add_private_compile_definitions(-DQCC743)
 endif()
 
+
 sdk_add_include_directories(./include)
 
-sdk_library_add_sources(./ot_settings_easyflash.c)
+if (CONFIG_LITTLEFS)
+  sdk_library_add_sources(./ot_settings_littlefs.c)
+elseif (CONFIG_EASYFLASH4)
+  sdk_library_add_sources(./ot_settings_easyflash.c)
+  message(WARNING "Easyflash is deprecated. Better to use littlefs/CONFIG_LITTLEFS for faster storage access.")
+else ()
+  message(FATAL_ERROR "Please select one of CONFIG_LITTLEFS and CONFIG_EASYFLASH4 for OpenThread setting storage.")
+endif()
 sdk_library_add_sources(./ot_sys_qcc74x.c)
 sdk_library_add_sources(./ot_alarm_qcc743.c)
 sdk_library_add_sources(./ot_freertos.c)
 sdk_library_add_sources(./ot_radio.c)
+sdk_library_add_sources(./ot_radio_qcc74x.c)
+
+if (CONFIG_OTBR)
+  sdk_add_private_include_directories(.)
+  sdk_library_add_sources(./otbr_lwip.c)
+endif()
 
 if (NOT DEFINED OT_NCP)
   sdk_library_add_sources(./ot_logging.c)

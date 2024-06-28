@@ -1928,11 +1928,6 @@ void bt_conn_set_state(struct bt_conn *conn, bt_conn_state_t state)
 			process_unack_tx(conn);
 			tx_notify(conn);
 
-			/* Cancel Connection Update if it is pending */
-			if (conn->type == BT_CONN_TYPE_LE) {
-				k_delayed_work_cancel(&conn->update_work);
-			}
-
 			atomic_set_bit(conn->flags, BT_CONN_CLEANUP);
 			k_poll_signal_raise(&conn_change, 0);
 			/* The last ref will be dropped during cleanup */
@@ -2713,10 +2708,6 @@ int bt_conn_auth_cb_register(const struct bt_conn_auth_cb *cb)
 	if (!cb) {
 		bt_auth = NULL;
 		return 0;
-	}
-
-	if (bt_auth) {
-		return -EALREADY;
 	}
 
 	/* The cancel callback must always be provided if the app provides

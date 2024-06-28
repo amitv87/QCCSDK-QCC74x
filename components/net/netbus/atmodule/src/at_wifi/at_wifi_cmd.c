@@ -69,6 +69,24 @@ static int get_mac_from_string(char *string, uint8_t mac[6])
     return -1;
 }
 
+static int at_query_cmd_wifisp(int argc, const char **argv)
+{
+    at_response_string("+WIFISP:%d\r\n", !at_wifi_config->wlan_disable);
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_cmd_wifisp(int argc, const char **argv)
+{
+    int enable = 0;
+
+    AT_CMD_PARSE_NUMBER(0, &enable);
+    at_wifi_config->wlan_disable = !enable;
+
+    //TODO enable/disable wlan radio
+
+    return AT_RESULT_CODE_OK;
+}
+
 static int get_ip_from_string(char *string, uint32_t *ip)
 {
     uint32_t ipaddr;
@@ -126,6 +144,10 @@ static int at_query_cmd_cwstate(int argc, const char **argv)
     ip4_addr_t ipaddr = {0};
     wifi_sta_ip4_addr_get(&ipaddr.addr, NULL, NULL, NULL);
 
+    if (state == FHOST_STA_CONNECTED && !ip4_addr_isany(&ipaddr)) {
+        at_response_string("+CWSTATE:%d,\"%s\"\r\n", 2, at_wifi_config->sta_info.ssid);
+        return AT_RESULT_CODE_OK;
+    }
     if (at_wifi_config->reconnect_state ||
         state == FHOST_STA_CONNECTING ||
         state == FHOST_STA_4WAY_HANDSHAKE ||
@@ -136,8 +158,6 @@ static int at_query_cmd_cwstate(int argc, const char **argv)
 
     if (state == FHOST_STA_DISCONNECTED) {
         at_response_string("+CWSTATE:%d,\"%s\"\r\n", 0, at_wifi_config->sta_info.ssid);
-    } else if (state == FHOST_STA_CONNECTED && !ip4_addr_isany(&ipaddr)) {
-        at_response_string("+CWSTATE:%d,\"%s\"\r\n", 2, at_wifi_config->sta_info.ssid);
     } else if (state == FHOST_STA_CONNECTED) {
         at_response_string("+CWSTATE:%d,\"%s\"\r\n", 1, at_wifi_config->sta_info.ssid);
     } else {
@@ -163,7 +183,7 @@ static int at_query_cmd_cwjap(int argc, const char **argv)
             info.bssid[0], info.bssid[1], info.bssid[2], info.bssid[3], info.bssid[4], info.bssid[5],
             info.channel,
             rssi,
-            0,
+            at_wifi_config->sta_info.wep_en,
             at_wifi_config->reconn_cfg.interval_second);
     }
     return AT_RESULT_CODE_OK;
@@ -177,7 +197,7 @@ static int at_setup_cmd_cwjap(int argc, const char **argv)
     char bssidString[20];
     int bssid_valid = 0;
     uint8_t bssid[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
-    int pci_enable_valid = 0, pci_enable = 0;
+    int wep_enable_valid = 0, wep_enable = 0;
     int reconn_interval_valid = 0, reconn_interval = 1;
     int listen_interval_valid = 0, listen_interval = 3;
     int scan_mode_valid = 0, scan_mode = 1;
@@ -187,7 +207,7 @@ static int at_setup_cmd_cwjap(int argc, const char **argv)
     AT_CMD_PARSE_STRING(0, ssid, sizeof(ssid));
     AT_CMD_PARSE_STRING(1, password, sizeof(password));
     AT_CMD_PARSE_OPT_STRING(2, bssidString, sizeof(bssidString), bssid_valid);
-    AT_CMD_PARSE_OPT_NUMBER(3, &pci_enable, pci_enable_valid);
+    AT_CMD_PARSE_OPT_NUMBER(3, &wep_enable, wep_enable_valid);
     AT_CMD_PARSE_OPT_NUMBER(4, &reconn_interval, reconn_interval_valid);
     AT_CMD_PARSE_OPT_NUMBER(5, &listen_interval, listen_interval_valid);
     AT_CMD_PARSE_OPT_NUMBER(6, &scan_mode, scan_mode_valid);
@@ -198,7 +218,7 @@ static int at_setup_cmd_cwjap(int argc, const char **argv)
         printf("err bssid_valid\r\n");
         return AT_RESULT_CODE_ERROR;
     }
-    if (pci_enable_valid && (pci_enable != 0 && pci_enable != 1)) {
+    if (wep_enable_valid && (wep_enable != 0 && wep_enable != 1)) {
         printf("err pci_enable_valid\r\n");
         return AT_RESULT_CODE_ERROR;
     }
@@ -235,7 +255,7 @@ static int at_setup_cmd_cwjap(int argc, const char **argv)
     } else {
         memset(at_wifi_config->sta_info.bssid, 0, sizeof(at_wifi_config->sta_info.bssid));
     }
-    at_wifi_config->sta_info.pci_en = (uint8_t)pci_enable;
+    at_wifi_config->sta_info.wep_en = (uint8_t)wep_enable;
     at_wifi_config->sta_info.listen_interval = listen_interval;
     at_wifi_config->sta_info.scan_mode = scan_mode;
     at_wifi_config->sta_info.jap_timeout = jap_timeout;
@@ -307,16 +327,16 @@ static int at_setup_cmd_cwreconncfg(int argc, const char **argv)
 
 static int at_setup_cmd_cwlapopt(int argc, const char **argv)
 {
-    int reserved, print_mask;
+    int sort_enable, print_mask;
     int rssi_filter_valid = 0, rssi_filter;
     int authmode_mask_valid = 0, authmode_mask;
 
-    AT_CMD_PARSE_NUMBER(0, &reserved);
+    AT_CMD_PARSE_NUMBER(0, &sort_enable);
     AT_CMD_PARSE_NUMBER(1, &print_mask);
     AT_CMD_PARSE_OPT_NUMBER(2, &rssi_filter, rssi_filter_valid);
     AT_CMD_PARSE_OPT_NUMBER(3, &authmode_mask, authmode_mask_valid);
 
-    if (reserved != 0 && reserved != 1) {
+    if (sort_enable != 0 && sort_enable != 1) {
         return AT_RESULT_CODE_ERROR;
     }
     if (print_mask < 0 || print_mask > 0x7FF) {
@@ -329,7 +349,7 @@ static int at_setup_cmd_cwlapopt(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
 
-    at_wifi_config->scan_option.reserved = reserved;
+    at_wifi_config->scan_option.sort_enable = sort_enable;
     at_wifi_config->scan_option.print_mask = print_mask;
     if (rssi_filter_valid) {
         at_wifi_config->scan_option.rssi_filter = rssi_filter;
@@ -350,30 +370,27 @@ void at_scan_done_event_tigger(void)
 
 static int at_scan_wifi(uint16_t *channels, uint16_t channel_num, const char *ssid, uint8_t scan_mode, uint32_t scan_time)
 {
+    int ret = 0;
     wifi_mgmr_scan_params_t scan_cfg;
 
     memset(&scan_cfg, 0, sizeof(scan_cfg));
-
-    wifi_mgmr_sta_scan(&scan_cfg);
 
     if (NULL == at_scan_sem) {
         at_scan_sem = xSemaphoreCreateBinary();
     }
 
-    if (scan_mode == 0) {
-        scan_mode = 1; // 1 is active scan in WiFi firmware
-    } else {
-        scan_mode = 0;
-    }
     if (scan_time == 0) {
         scan_time = 220;
     }
+    scan_cfg.passive = scan_mode;
     wifi_mgmr_sta_scan(&scan_cfg);
 
-    xSemaphoreTake(at_scan_sem, portMAX_DELAY);
+    if (xSemaphoreTake(at_scan_sem,  pdMS_TO_TICKS(8*1000)) != pdTRUE) {
+        ret = -1;
+    }
     vSemaphoreDelete(at_scan_sem);
     at_scan_sem = NULL;
-    return 0;
+    return ret;
 }
 
 static void at_scan_sort(int num, int8_t *rssi, uint8_t *index)
@@ -484,7 +501,9 @@ void at_scan_dump(void)
             }
         }
     }
-    at_scan_sort(array_num, rssi_array, index_array);
+    if (at_wifi_config->scan_option.sort_enable) {
+        at_scan_sort(array_num, rssi_array, index_array);
+    }
 
     for (i = 0; i < array_num; i++) {
         scan = &wifiMgmr.scan_items[index_array[i]];
@@ -567,10 +586,10 @@ static int at_setup_cmd_cwlap(int argc, const char **argv)
     uint8_t scan_mode = 0;
     uint32_t scan_time = 0;
 
-    AT_CMD_PARSE_OPT_STRING(0, ssid, sizeof(ssid), ssid_valid);
-    AT_CMD_PARSE_OPT_STRING(1, mac, sizeof(mac), mac_valid);
-    AT_CMD_PARSE_OPT_NUMBER(2, &channel, channel_valid);
-    AT_CMD_PARSE_OPT_NUMBER(3, &scan_type, scan_type_valid);
+    AT_CMD_PARSE_OPT_NUMBER(0, &scan_type, scan_type_valid);
+    AT_CMD_PARSE_OPT_STRING(1, ssid, sizeof(ssid), ssid_valid);
+    AT_CMD_PARSE_OPT_STRING(2, mac, sizeof(mac), mac_valid);
+    AT_CMD_PARSE_OPT_NUMBER(3, &channel, channel_valid);
     AT_CMD_PARSE_OPT_NUMBER(4, &scan_time_min, scan_time_min_valid);
     AT_CMD_PARSE_OPT_NUMBER(5, &scan_time_max, scan_time_max_valid);
 
@@ -1043,6 +1062,7 @@ static int at_query_cmd_cipsta(int argc, const char **argv)
     at_response_string("+CIPSTA:%s:\"%s\"\r\n", "ip", ip4addr_ntoa(&ipaddr));
     at_response_string("+CIPSTA:%s:\"%s\"\r\n", "gateway", ip4addr_ntoa(&gwaddr));
     at_response_string("+CIPSTA:%s:\"%s\"\r\n", "netmask", ip4addr_ntoa(&maskaddr));
+    at_response_string("+CIPSTA:%s:\"%s\"\r\n", "dns", ip4addr_ntoa(&dns));
     return AT_RESULT_CODE_OK;
 }
 
@@ -1051,14 +1071,17 @@ static int at_setup_cmd_cipsta(int argc, const char **argv)
     char ip[16];
     char gateway[16];
     char netmask[16];
+    char dns[16];
     int gateway_valid = 0;
     int netmask_valid = 0;
-    uint32_t ipaddr, gwaddr, maskaddr = IP_SET_ADDR(255, 255, 255, 0);
+    int dns_valid = 0;
+    uint32_t ipaddr, dnsaddr, gwaddr, maskaddr = IP_SET_ADDR(255, 255, 255, 0);
     int state;
 
     AT_CMD_PARSE_STRING(0, ip, sizeof(ip));
     AT_CMD_PARSE_OPT_STRING(1, gateway, sizeof(gateway), gateway_valid);
     AT_CMD_PARSE_OPT_STRING(2, netmask, sizeof(netmask), netmask_valid);
+    AT_CMD_PARSE_OPT_STRING(3, dns, sizeof(dns), dns_valid);
 
     if (get_ip_from_string(ip, &ipaddr) != 0) {
         return AT_RESULT_CODE_ERROR;
@@ -1075,10 +1098,16 @@ static int at_setup_cmd_cipsta(int argc, const char **argv)
             return AT_RESULT_CODE_ERROR;
         }
     }
+    if (dns_valid) {
+        if (get_ip_from_string(dns, &dnsaddr) != 0) {
+            return AT_RESULT_CODE_ERROR;
+        }
+    }
 
     at_wifi_config->sta_ip.ip = ipaddr;
     at_wifi_config->sta_ip.gateway = gwaddr;
     at_wifi_config->sta_ip.netmask = maskaddr;
+    at_wifi_config->sta_ip.dns = dnsaddr;
     at_wifi_config->dhcp_state.bit.sta_dhcp = 0;
     if (at->store) {
         at_wifi_config_save(AT_CONFIG_KEY_WIFI_STA_IP);
@@ -1088,7 +1117,7 @@ static int at_setup_cmd_cipsta(int argc, const char **argv)
     //wifi_mgmr_state_get(&state);
     //if (state == WIFI_STATE_CONNECTED_IP_GETTING || state == WIFI_STATE_WITH_AP_CONNECTED_IP_GOT
     //    || state == WIFI_STATE_WITH_AP_CONNECTED_IP_GETTING || state == WIFI_STATE_WITH_AP_CONNECTED_IP_GOT) {
-        wifi_mgmr_sta_ip_set(at_wifi_config->sta_ip.ip, at_wifi_config->sta_ip.netmask, at_wifi_config->sta_ip.gateway, 0);
+        wifi_mgmr_sta_ip_set(at_wifi_config->sta_ip.ip, at_wifi_config->sta_ip.netmask, at_wifi_config->sta_ip.gateway, at_wifi_config->sta_ip.dns);
     //    aos_post_event(EV_WIFI, CODE_WIFI_ON_GOT_IP, 0);
     //}
     return AT_RESULT_CODE_OK;
@@ -1096,11 +1125,12 @@ static int at_setup_cmd_cipsta(int argc, const char **argv)
 
 static int at_query_cmd_cipap(int argc, const char **argv)
 {
-    ip4_addr_t ipaddr, gwaddr, maskaddr;
+    ip4_addr_t ipaddr, gwaddr, maskaddr, dnsaddr;
 
     ipaddr.addr = at_wifi_config->ap_ip.ip;
     gwaddr.addr = at_wifi_config->ap_ip.gateway;
     maskaddr.addr = at_wifi_config->ap_ip.netmask;
+    dnsaddr.addr = at_wifi_config->ap_ip.dns;
 
     at_response_string("+CIPAP:%s:\"%s\"\r\n", "ip", ip4addr_ntoa(&ipaddr));
     at_response_string("+CIPAP:%s:\"%s\"\r\n", "gateway", ip4addr_ntoa(&gwaddr));
@@ -1138,7 +1168,7 @@ static int at_setup_cmd_cipap(int argc, const char **argv)
     } else {
         maskaddr = IP_SET_ADDR(255, 255, 255, 0);
     }
-
+    
     at_wifi_config->ap_ip.ip = ipaddr;
     at_wifi_config->ap_ip.gateway = gwaddr;
     at_wifi_config->ap_ip.netmask = maskaddr;
@@ -1315,7 +1345,23 @@ static int at_setup_cmd_cwcountry(int argc, const char **argv)
 }
 #endif
 
+static int at_setup_cmd_wevt(int argc, const char **argv)
+{
+    int enable;
+    AT_CMD_PARSE_NUMBER(0, &enable);
+    at_wifi_config->wevt_enable = enable;
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_query_cmd_wevt(int argc, const char **argv)
+{
+    int enable;
+    at_response_string("+WEVT:%d\r\n", at_wifi_config->wevt_enable);
+    return AT_RESULT_CODE_OK;
+}
+
 static const at_cmd_struct at_wifi_cmd[] = {
+    {"+WIFISP",       NULL, at_query_cmd_wifisp,      at_setup_cmd_wifisp,       NULL,                    1, 1},
     {"+CWMODE",       NULL, at_query_cmd_cwmode,      at_setup_cmd_cwmode,       NULL,                    1, 2},
     {"+CWSTATE",      NULL, at_query_cmd_cwstate,     NULL,                      NULL,                    0, 0},
     {"+CWJAP",        NULL, at_query_cmd_cwjap,       at_setup_cmd_cwjap,        at_exe_cmd_cwjap,        2, 9},
@@ -1333,7 +1379,7 @@ static const at_cmd_struct at_wifi_cmd[] = {
     {"+CWSTAPROTO",   NULL, at_query_cmd_cwstaproto,  at_setup_cmd_cwstaproto,   NULL,                    1, 1},
     {"+CIPSTAMAC",    NULL, at_query_cmd_cipstamac,   at_setup_cmd_cipstamac,    NULL,                    1, 1},
     {"+CIPAPMAC",     NULL, at_query_cmd_cipapmac,    at_setup_cmd_cipapmac,     NULL,                    1, 1},
-    {"+CIPSTA",       NULL, at_query_cmd_cipsta,      at_setup_cmd_cipsta,       NULL,                    1, 3},
+    {"+CIPSTA",       NULL, at_query_cmd_cipsta,      at_setup_cmd_cipsta,       NULL,                    1, 4},
     {"+CIPAP",        NULL, at_query_cmd_cipap,       at_setup_cmd_cipap,        NULL,                    1, 3},
     {"+CWSTARTSMART", NULL, NULL,                     at_setup_cmd_cwstartsmart, at_exe_cmd_cwstartsmart, 1, 3},
     {"+CWSTOPSMART",  NULL, NULL,                     NULL,                      at_exe_cmd_cwstopsmart,  0, 0},
@@ -1341,6 +1387,7 @@ static const at_cmd_struct at_wifi_cmd[] = {
     {"+MDNS",         NULL, NULL,                     at_setup_cmd_mdns,         NULL,                    1, 4},
     {"+CWHOSTNAME",   NULL, at_query_cmd_cwhostname,  at_setup_cmd_cwhostname,   NULL,                    1, 1},
     {"+CWCOUNTRY",    NULL, at_query_cmd_cwcountry,   at_setup_cmd_cwcountry,    NULL,                    4, 4},
+    {"+WEVT",         NULL, at_query_cmd_wevt,        at_setup_cmd_wevt,         NULL,                    1, 1},
 };
 
 bool at_wifi_cmd_regist(void)

@@ -24,7 +24,6 @@
  *                           MAGIC SHIT WARNING
  *
  *     !! DO NOT modify the code! Unless you know what you are doing !!
- *     If you have any questions, please contact zrrong@bouffalolab.com.
  *****************************************************************************/
 
 #define tickless_println(fmt, ...) printf("[LP]: "  fmt "\r\n", ##__VA_ARGS__)

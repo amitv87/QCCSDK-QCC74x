@@ -1,3 +1,6 @@
+#ifndef __RAMSYNC_LOW_H__
+#define __RAMSYNC_LOW_H__
+
 #include <stdio.h>
 #include <stdint.h>
 #include <FreeRTOS.h>
@@ -5,8 +8,7 @@
 #include <semphr.h>
 #include <stdint.h>
 
-#ifndef __RAMSYNC_LOW_H__
-#define __RAMSYNC_LOW_H__
+#include <spisync_config.h>
 
 typedef void (*lramsync_cb_func_t)(void *arg);
 
@@ -47,6 +49,7 @@ typedef struct lramsync_ctx {
 } lramsync_ctx_t;
 
 int lramsync_init(
+	const spisync_config_t *config,
     lramsync_ctx_t *ctx,
     node_mem_t *node_tx, uint32_t items_tx,
     lramsync_cb_func_t tx_cb, void *tx_arg,
@@ -59,6 +62,8 @@ int lramsync_start(lramsync_ctx_t *ctx);
 
 int lramsync_reset(lramsync_ctx_t *ctx);
 int lramsync_deinit(lramsync_ctx_t *ctx);
+int lramsync_suspend(lramsync_ctx_t *ctx);
+int lramsync_resume(lramsync_ctx_t *ctx);
 
 #endif
 

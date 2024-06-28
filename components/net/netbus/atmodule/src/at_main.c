@@ -29,7 +29,7 @@
 #include "at_through.h"
 #include "at_ble_cmd.h"
 
-#define ATCMD_TASK_STACK_SIZE 1024
+#define ATCMD_TASK_STACK_SIZE 2048
 #define ATCMD_TASK_PRIORITY 15
 #define AT_CMD_PRINTF printf
 
@@ -143,11 +143,13 @@ static void at_main_task(void *pvParameters)
                 len = 0;
 
                 if (ret == -1) {
+                	printf("at_through_input fail, exit throughput mode %d\r\n", ret);
                     at_set_work_mode(AT_WORK_MODE_CMD);
                     if (at_base_config->sysmsg_cfg.bit.quit_throughput_msg)
                         at->device_ops.write_data((uint8_t *)AT_CMD_MSG_QUIT_THROUGHPUT, strlen(AT_CMD_MSG_QUIT_THROUGHPUT));
                 }
                 else if (ret == -2) {
+                	printf("at_through_input fail, exit throughput mode %d\r\n", ret);
                     at->device_ops.write_data((uint8_t *)AT_CMD_MSG_SEND_CANCELLED, strlen(AT_CMD_MSG_SEND_CANCELLED));
                     at_set_work_mode(AT_WORK_MODE_CMD);
                 }
@@ -175,7 +177,7 @@ int at_module_init(void)
 
     memset((void *)at, 0, sizeof(struct at_struct));
     at->initialized = 0;
-    at->echo = 1;
+    at->echo = 0;
     at->syslog = 0;
     at->store = 1;
     at->exit = 0;
@@ -195,12 +197,6 @@ int at_module_init(void)
     /* register base AT command */
     at_base_cmd_regist();
 
-    ret = xTaskCreate(at_main_task, (char*)"at_main_task", ATCMD_TASK_STACK_SIZE, NULL, ATCMD_TASK_PRIORITY, NULL);
-    if (ret != pdPASS) {
-        AT_CMD_PRINTF( "ERROR: create at_main_task failed, ret = %d\r\n", ret);
-        goto INIT_ERROR;
-    }
-
     /* register user AT command */
     at_user_cmd_regist();
     /* register wifi AT command */
@@ -213,6 +209,16 @@ int at_module_init(void)
     at_http_cmd_regist();
     /* register ble AT command */
     at_ble_cmd_regist();
+#ifdef LP_APP
+    /* register pwr AT command */
+    at_pwr_cmd_regist();
+#endif
+
+    ret = xTaskCreate(at_main_task, (char*)"at_main_task", ATCMD_TASK_STACK_SIZE, NULL, ATCMD_TASK_PRIORITY, NULL);
+    if (ret != pdPASS) {
+        AT_CMD_PRINTF( "ERROR: create at_main_task failed, ret = %d\r\n", ret);
+        goto INIT_ERROR;
+    }
 
     at->initialized = 1;
     return 0;

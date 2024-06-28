@@ -11,7 +11,6 @@
 #include "qcc74x_efuse.h"
 #include "board.h"
 #include "qcc743_tzc_sec.h"
-#include "qcc743_psram.h"
 #include "qcc743_glb.h"
 
 #include "mem.h"
@@ -24,8 +23,6 @@ extern void log_start(void);
 
 extern uint32_t __HeapBase;
 extern uint32_t __HeapLimit;
-extern uint32_t __psram_heap_base;
-extern uint32_t __psram_limit;
 
 #ifdef CONFIG_CONSOLE_WO
 static struct qcc74x_device_s *wo;
@@ -53,6 +50,7 @@ static void system_clock_init(void)
     CPU_Set_MTimer_CLK(ENABLE, QCC74x_MTIMER_SOURCE_CLOCK_MCU_XCLK, Clock_System_Clock_Get(QCC74x_SYSTEM_CLOCK_XCLK) / 1000000 - 1);
 }
 
+#ifndef LP_APP
 static void peripheral_clock_init(void)
 {
     PERIPHERAL_CLOCK_ADC_DAC_ENABLE();
@@ -91,60 +89,80 @@ static void peripheral_clock_init(void)
     GLB_Set_USB_CLK_From_WIFIPLL(1);
     GLB_Swap_MCU_SPI_0_MOSI_With_MISO(0);
 }
-
-static void qcc74x_init_psram_gpio(void)
+#else
+static void peripheral_clock_init_lp(void)
 {
-    struct qcc74x_device_s *gpio;
+    uint32_t tmpVal = 0;
 
-    gpio = qcc74x_device_get_by_name("gpio");
-    for (uint8_t i = 0; i < 12; i++) {
-        qcc74x_gpio_init(gpio, (41 + i), GPIO_INPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_0);
-    }
+    /* clk gate,except DMA&CPU&UART0&SF&EMI&WIFI&EFUSE */
+    tmpVal = 0;
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_M_CPU, 1); // ungate cpu
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_M_DMA, 1); // ungate dma
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_M_SEC, 1); // ungate sec
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_M_SDU, 1); // ungate sdu
+    QCC74x_WR_REG(GLB_BASE, GLB_CGEN_CFG0, tmpVal);
+
+    tmpVal = 0;
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_RSVD0, 1); // ungate dma and gpio set&clr register's bclk
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EF_CTRL, 1); // ungate ef_ctrl
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_SF_CTRL, 1); // ungate sf_ctrl
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_DMA, 1); // ungate dma
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_UART0, 1); // ungate uart0
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_UART1, 1); // ungate uart1
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_SEC_ENG, 1); // ungate sev_eng
+
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_UART2, 1); // ungate uart2
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_I2C1, 1); // ungate i2c1
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_DBI, 1); // ungate dbi
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_CKS, 1); // ungate cks
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_IR, 1); // ungate ir
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_TIMER, 1); // ungate timer
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_PWM, 1); // ungate pwm
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_I2C, 1); // ungate i2c
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_SPI, 1); // ungate spi
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_TZ, 1); // ungate tz
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_SEC_DBG, 1); // ungate sec_dbg
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_GPIP, 1); // ungate gpip
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_RF_TOP, 1); // ungate rf_top
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_RSVD12, 1); // ungate audio
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1A_RSVD11, 1); // ungate i2s
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_RSVD13, 1); // ungate sdu&usb
+
+    QCC74x_WR_REG(GLB_BASE, GLB_CGEN_CFG1, tmpVal);
+
+    tmpVal = 0;
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S2_WIFI, 1); // ungate wifi
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_EMI_MISC, 1); // ungate emi_misc
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_PIO, 1); // ungate pec
+
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_DMA2, 1); // ungate dma2
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_EMAC, 1); // ungate emac
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_SDH, 1); // ungate sdh
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_AUDIO, 1); // ungate audio
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_MIX2, 1); // ungate mix2
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_USB, 1); // ungate usb
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_PSRAM_CTRL, 1); // ungate psram_ctrl
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S1_EXT_PSRAM0_CTRL, 1); // ungate psram0_ctrl
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S3_M1542, 1); // ungate m1542
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S3_M154, 1); // ungate m154
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S3_BT_BLE2, 1); // ungate bt_ble2
+    // tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_CGEN_S3_BT_BLE, 1); // ungate bt_ble
+
+    QCC74x_WR_REG(GLB_BASE, GLB_CGEN_CFG2, tmpVal);
+
+    GLB_Set_UART_CLK(ENABLE, HBN_UART_CLK_XCLK, 0);
+
+#ifdef CONFIG_BSP_SDH_SDCARD
+    PERIPHERAL_CLOCK_SDH_ENABLE();
+    GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
+#endif
+
+#ifdef CONFIG_BSP_USB
+    PERIPHERAL_CLOCK_USB_ENABLE();
+    GLB_Set_USB_CLK_From_WIFIPLL(1);
+#endif
 }
-
-static void psram_winbond_default_init(void)
-{
-    PSRAM_Ctrl_Cfg_Type default_psram_ctrl_cfg = {
-        .vendor = PSRAM_CTRL_VENDOR_WINBOND,
-        .ioMode = PSRAM_CTRL_X8_MODE,
-        .size = PSRAM_SIZE_4MB,
-        .dqs_delay = 0xfff0,
-    };
-
-    PSRAM_Winbond_Cfg_Type default_winbond_cfg = {
-        .rst = DISABLE,
-        .clockType = PSRAM_CLOCK_DIFF,
-        .inputPowerDownMode = DISABLE,
-        .hybridSleepMode = DISABLE,
-        .linear_dis = ENABLE,
-        .PASR = PSRAM_PARTIAL_REFRESH_FULL,
-        .disDeepPowerDownMode = ENABLE,
-        .fixedLatency = DISABLE,
-        .brustLen = PSRAM_WINBOND_BURST_LENGTH_64_BYTES,
-        .brustType = PSRAM_WRAPPED_BURST,
-        .latency = PSRAM_WINBOND_6_CLOCKS_LATENCY,
-        .driveStrength = PSRAM_WINBOND_DRIVE_STRENGTH_35_OHMS_FOR_4M_115_OHMS_FOR_8M,
-    };
-
-    PSram_Ctrl_Init(PSRAM0_ID, &default_psram_ctrl_cfg);
-    // PSram_Ctrl_Winbond_Reset(PSRAM0_ID);
-    PSram_Ctrl_Winbond_Write_Reg(PSRAM0_ID, PSRAM_WINBOND_REG_CR0, &default_winbond_cfg);
-}
-
-uint32_t board_psram_x8_init(void)
-{
-    uint16_t reg_read = 0;
-
-    GLB_Set_PSRAMB_CLK_Sel(ENABLE, GLB_PSRAMB_EMI_WIFIPLL_320M, 0);
-
-    qcc74x_init_psram_gpio();
-
-    /* psram init*/
-    psram_winbond_default_init();
-    /* check psram work or not */
-    PSram_Ctrl_Winbond_Read_Reg(PSRAM0_ID, PSRAM_WINBOND_REG_ID0, &reg_read);
-    return reg_read;
-}
+#endif
 
 void qcc74x_show_log(void)
 {
@@ -253,6 +271,21 @@ static void console_init()
 #endif
 }
 
+#ifdef LP_APP
+void board_recovery(void)
+{
+    system_clock_init();
+    peripheral_clock_init_lp();
+    console_init();
+}
+#endif
+
+static qcc74x_efuse_device_info_type device_info;
+int board_device_info_version()
+{
+    return device_info.version;
+}
+
 void board_init(void)
 {
     int ret = -1;
@@ -264,31 +297,19 @@ void board_init(void)
     ret = qcc74x_flash_init();
 #endif
     system_clock_init();
+#ifndef LP_APP
     peripheral_clock_init();
+#else
+    peripheral_clock_init_lp();
+#endif
     qcc74x_irq_initialize();
 
     console_init();
 
     qcc74x_show_log();
     qcc74x_show_component_version();
-
-#ifdef CONFIG_PSRAM
-    static qcc74x_efuse_device_info_type device_info;
-
     qcc74x_efuse_get_device_info(&device_info);
-    if (device_info.psram_info == 0) {
-        printf("This chip has no psram, please disable CONFIG_PSRAM\r\n");
-        while (1) {}
-    }
-
-    if (QCC743_PSRAM_INIT_DONE == 0) {
-        board_psram_x8_init();
-        Tzc_Sec_PSRAMB_Access_Release();
-    }
-
-    heap_len = ((size_t)&__psram_limit - (size_t)&__psram_heap_base);
-    pmem_init((void *)&__psram_heap_base, heap_len);
-#endif
+    printf("Current chip device version: %d \r\n", device_info.version);
 
     heap_len = ((size_t)&__HeapLimit - (size_t)&__HeapBase);
     kmem_init((void *)&__HeapBase, heap_len);
@@ -297,13 +318,7 @@ void board_init(void)
         printf("flash init fail!!!\r\n");
     }
     qcc74x_show_flashinfo();
-#ifdef CONFIG_PSRAM
-    printf("dynamic memory init success, ocram heap size = %d Kbyte, psram heap size = %d Kbyte\r\n",
-           ((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024,
-           ((size_t)&__psram_limit - (size_t)&__psram_heap_base) / 1024);
-#else
     printf("dynamic memory init success, ocram heap size = %d Kbyte \r\n", ((size_t)&__HeapLimit - (size_t)&__HeapBase) / 1024);
-#endif
 
     printf("sig1:%08x\r\n", QCC74x_RD_REG(GLB_BASE, GLB_UART_CFG1));
     printf("sig2:%08x\r\n", QCC74x_RD_REG(GLB_BASE, GLB_UART_CFG2));
@@ -327,10 +342,10 @@ void board_uartx_gpio_init()
 
     gpio = qcc74x_device_get_by_name("gpio");
 
-    qcc74x_gpio_uart_init(gpio, GPIO_PIN_23, GPIO_UART_FUNC_UART1_TX);
-    qcc74x_gpio_uart_init(gpio, GPIO_PIN_24, GPIO_UART_FUNC_UART1_RX);
-    qcc74x_gpio_uart_init(gpio, GPIO_PIN_25, GPIO_UART_FUNC_UART1_CTS);
-    qcc74x_gpio_uart_init(gpio, GPIO_PIN_26, GPIO_UART_FUNC_UART1_RTS);
+    qcc74x_gpio_uart_init(gpio, GPIO_PIN_27, GPIO_UART_FUNC_UART1_TX);
+    qcc74x_gpio_uart_init(gpio, GPIO_PIN_28, GPIO_UART_FUNC_UART1_RX);
+    qcc74x_gpio_uart_init(gpio, GPIO_PIN_29, GPIO_UART_FUNC_UART1_CTS);
+    qcc74x_gpio_uart_init(gpio, GPIO_PIN_30, GPIO_UART_FUNC_UART1_RTS);
 }
 
 void board_i2c0_gpio_init()
@@ -354,9 +369,9 @@ void board_spi0_gpio_init()
     /* spi clk */
     qcc74x_gpio_init(gpio, GPIO_PIN_13, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi miso */
-    qcc74x_gpio_init(gpio, GPIO_PIN_18, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
+    qcc74x_gpio_init(gpio, GPIO_PIN_14, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi mosi */
-    qcc74x_gpio_init(gpio, GPIO_PIN_19, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
+    qcc74x_gpio_init(gpio, GPIO_PIN_15, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
 }
 
 void board_pwm_gpio_init()
@@ -657,4 +672,146 @@ static void mfg_cmd(int argc, char **argv)
 }
 SHELL_CMD_EXPORT_ALIAS(mfg_cmd, mfg, mfg);
 
+#ifdef LP_APP
+#include "qcc74x_lp.h"
+
+static void test_io_wakeup_status(uint8_t io_num)
+{
+    int wakeup_mode;
+
+    wakeup_mode = qcc74x_lp_wakeup_io_get_mode(io_num);
+
+    if (wakeup_mode) {
+        /* user can add app process logic */
+#if 0
+        if(io_num == WAKEUP_BUTTON){
+            /* deal a button wakeup event */
+        }else if(io_num == WAKEUP_FINGER_INPUT){
+            /* deal fingerprint input wake up event */
+        }else if(io_num == WAKEUP_USB_INPUT){
+            /* deal USB plug in wake up event */
+        }
 #endif
+        printf("GPIO %d wakeup: ", io_num);
+        if (wakeup_mode == QCC74x_LP_IO_WAKEUP_MODE_LOW) {
+            printf("level low\r\n");
+        } else if (wakeup_mode == QCC74x_LP_IO_WAKEUP_MODE_HIGH) {
+            printf("level high\r\n");
+        } else if (wakeup_mode == QCC74x_LP_IO_WAKEUP_MODE_FALLING) {
+            printf("edge falling\r\n");
+        } else if (wakeup_mode == QCC74x_LP_IO_WAKEUP_MODE_RISING) {
+            printf("edge rising\r\n");
+        } else {
+            printf("unkown error: %d\r\n", wakeup_mode);
+        }
+    }
+}
+
+static void test_wakeup_io_callback(uint64_t wake_up_io_bits)
+{
+    printf("io wakeup bits 0x%llX\r\n", wake_up_io_bits);
+
+    /* wakeup io status dump */
+    for (uint8_t i = 0; i < QCC74x_LP_WAKEUP_IO_MAX_NUM; i++) {
+        test_io_wakeup_status(i);
+    }
+}
+
+void cmd_io_test(char *buf, int len, int argc, char **argv)
+{
+    static qcc74x_lp_io_cfg_t lp_wake_io_cfg = {
+        /* input enable, use @ref QCC74x_LP_IO_INPUT_EN */
+        .io_0_15_ie = QCC74x_LP_IO_INPUT_ENABLE,
+        .io_16_ie = QCC74x_LP_IO_INPUT_ENABLE,
+        .io_17_ie = QCC74x_LP_IO_INPUT_ENABLE,
+        .io_18_ie = QCC74x_LP_IO_INPUT_ENABLE,
+        .io_19_ie = QCC74x_LP_IO_INPUT_ENABLE,
+        .io_20_34_ie = QCC74x_LP_IO_INPUT_ENABLE,
+        /* trigger mode */
+        .io_0_7_pds_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_FALLING_EDGE,          /* use @ref QCC74x_LP_PDS_IO_TRIG */
+        .io_8_15_pds_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_HIGH_LEVEL,           /* use @ref QCC74x_LP_PDS_IO_TRIG */
+        .io_16_19_aon_trig_mode = QCC74x_LP_AON_IO_TRIG_SYNC_RISING_FALLING_EDGE, /* aon io, use @ref QCC74x_LP_AON_IO_TRIG, full mode support */
+        .io_20_27_pds_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_FALLING_EDGE,        /* use @ref QCC74x_LP_PDS_IO_TRIG */
+        .io_28_34_pds_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_FALLING_EDGE,        /* use @ref QCC74x_LP_PDS_IO_TRIG */
+        /* resistors */
+        .io_0_15_res = QCC74x_LP_IO_RES_PULL_UP,
+        .io_16_res = QCC74x_LP_IO_RES_NONE,
+        .io_17_res = QCC74x_LP_IO_RES_NONE,
+        .io_18_res = QCC74x_LP_IO_RES_PULL_UP,
+        .io_19_res = QCC74x_LP_IO_RES_PULL_UP,
+        .io_20_34_res = QCC74x_LP_IO_RES_PULL_DOWN,
+        /* wake up unmask */
+        .io_wakeup_unmask = 0,
+    };
+
+    /* wake up unmask */
+    lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 0); /* gpio 0 */
+    // lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 10); /* gpio 10 */
+    lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 18); /* gpio 18 */
+    // lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 19); /* gpio 19 */
+    // lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 20); /* gpio 20 */
+
+    lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 31); /* gpio 31 */
+    // lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 32); /* gpio 32 */
+    // lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 33);     /* gpio 33 */
+    // lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << 34);     /* gpio 34 */
+
+    qcc74x_lp_io_wakeup_cfg(&lp_wake_io_cfg);
+
+    /* register io wakeup callback */
+    qcc74x_lp_wakeup_io_int_register(test_wakeup_io_callback);
+}
+
+static void test_acomp_wakeup_status(uint8_t acomp_num)
+{
+    int wakeup_mode;
+
+    wakeup_mode = qcc74x_lp_wakeup_acomp_get_mode(acomp_num);
+
+    if (wakeup_mode) {
+        printf("ACOMP %d wakeup: ", acomp_num);
+        if (wakeup_mode == QCC74x_LP_ACOMP_WAKEUP_MODE_FALLING) {
+            printf("edge falling\r\n");
+        } else if (wakeup_mode == QCC74x_LP_ACOMP_WAKEUP_MODE_RISING) {
+            printf("edge rising\r\n");
+        } else {
+            printf("unkown error: %d\r\n", wakeup_mode);
+        }
+    }
+}
+
+static void test_wakeup_acomp_callback(uint32_t wake_up_acomp_bits)
+{
+    printf("acomp wakeup bits 0x%02X\r\n", wake_up_acomp_bits);
+
+    for (uint8_t i = 0; i < QCC74x_LP_WAKEUP_ACOMP_MAX_NUM; i++) {
+        test_acomp_wakeup_status(i);
+    }
+}
+
+void cmd_acomp_test(char *buf, int len, int argc, char **argv)
+{
+    static qcc74x_lp_acomp_cfg_t lp_wake_acomp_cfg = {
+        /* input enable, use @ref QCC74x_LP_ACOMP_EN */
+        .acomp0_en = QCC74x_LP_ACOMP_ENABLE,
+        .acomp1_en = QCC74x_LP_ACOMP_ENABLE,
+
+        /* Map to pins num, range: 2, 3, 10, 12, 13, 14, 19 */
+        .acomp0_io_num = 13,
+        .acomp1_io_num = 14,
+
+        /* trigger mode, use @ref QCC74x_LP_ACOMP_TRIG  */
+        .acomp0_trig_mode = QCC74x_LP_ACOMP_TRIG_EDGE_FALLING,
+        .acomp1_trig_mode = QCC74x_LP_ACOMP_TRIG_EDGE_FALLING_RISING,
+    };
+
+    qcc74x_lp_acomp_wakeup_cfg(&lp_wake_acomp_cfg);
+
+    /* register acomp wakeup callback */
+    qcc74x_lp_wakeup_acomp_int_register(test_wakeup_acomp_callback);
+}
+SHELL_CMD_EXPORT_ALIAS(cmd_io_test, io_test, cmd io_test);
+SHELL_CMD_EXPORT_ALIAS(cmd_acomp_test, acomp_test, cmd acomp_test);
+#endif /* LP_APP */
+
+#endif /* CONFIG_SHELL */

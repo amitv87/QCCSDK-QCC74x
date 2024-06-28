@@ -45,6 +45,7 @@ int at_net_config_init(void)
     memset(&at_net_config->sntp_cfg, 0, sizeof(net_sntp_cfg));
     at_net_config->sntp_intv.interval = 300;
     at_net_config->ipd_info = NET_IPDINFO_DISABLE_IPPORT;
+    at_net_config->wips_enable = 1;
     if (!at_config_read(AT_CONFIG_KEY_NET_RECONN_INTV, &at_net_config->reconn_intv, sizeof(at_net_config->reconn_intv)))
         at_net_config->reconn_intv = 1;
     at_net_config->recv_mode = NET_RECV_MODE_ACTIVE;
@@ -54,6 +55,8 @@ int at_net_config_init(void)
     at_net_config->sendl_cfg.report_size = 1024;
     at_net_config->sendl_cfg.transmit_size = 2920;
 
+    at_config_read(AT_CONFIG_KEY_NET_SSLCONF, &at_net_config->sslconf, sizeof(at_net_config->sslconf));
+    
     return 0;
 }
 
@@ -65,6 +68,8 @@ int at_net_config_save(const char *key)
         return at_config_write(key, &at_net_config->reconn_intv, sizeof(at_net_config->reconn_intv));
     else if (strcmp(key, AT_CONFIG_KEY_NET_TRANS_LINK) == 0)
         return at_config_write(key, &at_net_config->trans_link, sizeof(at_net_config->trans_link));
+    else if (strcmp(key, AT_CONFIG_KEY_NET_SSLCONF) == 0)
+        return at_config_write(key, &at_net_config->sslconf, sizeof(at_net_config->sslconf));
     else
         return -1;
 }

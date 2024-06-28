@@ -2,13 +2,24 @@ sdk_generate_library()
 
 add_subdirectory(openthread_port)
 add_subdirectory(openthread_utils)
+if (DEFINED OT_NCP)
+  add_subdirectory(openthread_ncp)
+endif()
+sdk_add_subdirectory_ifdef(CONFIG_OTBR openthread_br)
+
+get_target_property(SDK_INTF_LIB_LINK_OPTIONS sdk_intf_lib INTERFACE_LINK_OPTIONS)
+list(REMOVE_ITEM SDK_INTF_LIB_LINK_OPTIONS -nostartfiles)
+if(CONFIG_NEWLIB_STANDARD)
+    list(REMOVE_ITEM SDK_INTF_LIB_LINK_OPTIONS --specs=nano.specs)
+endif()
+
+set_target_properties(sdk_intf_lib PROPERTIES INTERFACE_LINK_OPTIONS "")
+foreach(item ${SDK_INTF_LIB_LINK_OPTIONS})
+    sdk_add_link_options(${item})
+endforeach()
 
 if (DEFINED OT_NCP AND OT_CLI)
   message(FATAL_ERROR "OT_NCP can't be defined with OT_CLI set true.")
-endif()
-
-if (NOT DEFINED OT_FTD)
-  message(FATAL_ERROR "OT_FTD is NOT defined.")
 endif()
 
 if (DEFINED OT_NCP AND NOT OT_NCP)
@@ -319,30 +330,8 @@ set(RADIO_CORE_SOURCES
     utils/power_calibration.cpp
 )
 
-set(HDLC_SOURCES
-    hdlc.cpp
-)
-
 set(PLATFORM_SOURCES
   exit_code.c
-)
-
-set(SPINEL_SOURCES
-    spinel.c
-    spinel_buffer.cpp
-    spinel_decoder.cpp
-    spinel_encoder.cpp
-)
-
-set(NCP_SOURCES
-    changed_props_set.cpp
-    ncp_base.cpp
-    ncp_base_dispatcher.cpp
-    ncp_base_radio.cpp
-    ncp_spi.cpp
-    ncp_hdlc.cpp
-    ncp_base_ftd.cpp
-    ncp_base_mtd.cpp
 )
 
 set(TCPLP_SOURCES
@@ -362,10 +351,6 @@ set(TCPLP_SOURCES
 
 set(EXAMPLE_CLI_SOURCES
     cli_uart.cpp
-)
-
-set(EXAMPLE_NCP_SOURCES
-    ncp.c
 )
 
 sdk_add_include_directories(${PROJECT_SOURCE_DIR}/include)
@@ -397,41 +382,15 @@ else()
   endforeach()
 endif()
 
-if (DEFINED OT_NCP)
-  sdk_add_include_directories(${PROJECT_SOURCE_DIR}/src/lib/spinel)
-  foreach(source_file ${SPINEL_SOURCES})
-    sdk_library_add_sources(${PROJECT_SOURCE_DIR}/src/lib/spinel/${source_file})
-  endforeach()
-
-  sdk_add_include_directories(${PROJECT_SOURCE_DIR}/src/ncp)
-  foreach(source_file ${NCP_SOURCES})
-    sdk_library_add_sources(${PROJECT_SOURCE_DIR}/src/ncp/${source_file})
-  endforeach()
-endif()
-
-sdk_add_include_directories(${PROJECT_SOURCE_DIR}/src/lib/hdlc)
-foreach(source_file ${HDLC_SOURCES})
-  sdk_library_add_sources(${PROJECT_SOURCE_DIR}/src/lib/hdlc/${source_file})
-endforeach()
-
 sdk_add_include_directories(${PROJECT_SOURCE_DIR}/src/lib/platform)
 foreach(source_file ${PLATFORM_SOURCES})
   sdk_library_add_sources(${PROJECT_SOURCE_DIR}/src/lib/platform/${source_file})
 endforeach()
 
-if (DEFINED OT_NCP OR OT_CLI)
-
+if (OT_CLI)
   sdk_add_include_directories(${PROJECT_SOURCE_DIR}/examples/platforms)
-  if (DEFINED OT_NCP)
-    foreach(source_file ${EXAMPLE_NCP_SOURCES})
-      sdk_library_add_sources(${PROJECT_SOURCE_DIR}/examples/apps/ncp/${source_file})
-    endforeach()
-  endif()
-
-  if (OT_CLI)
-    foreach(source_file ${EXAMPLE_CLI_SOURCES})
-      sdk_library_add_sources(${PROJECT_SOURCE_DIR}/examples/apps/cli/${source_file})
-    endforeach()
-  endif()
+  foreach(source_file ${EXAMPLE_CLI_SOURCES})
+    sdk_library_add_sources(${PROJECT_SOURCE_DIR}/examples/apps/cli/${source_file})
+  endforeach()
 endif()
 

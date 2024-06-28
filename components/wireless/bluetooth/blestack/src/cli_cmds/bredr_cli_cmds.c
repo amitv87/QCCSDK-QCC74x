@@ -39,6 +39,8 @@
 
 #include "bt_log.h"
 
+#include "a2dp_source_audio.h"
+
 #if defined(CONFIG_SHELL)
 #define BT_CLI(func) static void bredr_##func(int argc, char **argv)
 #define BT_A2DP_CLI(func) static void a2dp_##func(int argc, char **argv)
@@ -68,13 +70,17 @@ static struct bt_conn_cb conn_callbacks = {
 };
 
 #if CONFIG_BT_A2DP
+struct k_thread media_transport;
 static void a2dp_chain(struct bt_conn *conn, uint8_t state);
 static void a2dp_stream(uint8_t state);
+static void a2dp_start_cfm(void);
+static bool media_task_create = false;
 
 static struct a2dp_callback a2dp_callbacks =
 {
     .chain = a2dp_chain,
     .stream = a2dp_stream,
+    .start_cfm = a2dp_start_cfm,
 };
 #endif
 
@@ -146,6 +152,9 @@ BT_AVRCP_CLI(get_play_status);
 #endif
 
 #if CONFIG_BT_HFP
+#if BR_EDR_PTS_TEST
+BT_CLI(rfcomm_test_mode);
+#endif
 BT_HFP_CLI(connect);
 BT_HFP_CLI(hf_disconnect);
 BT_HFP_CLI(sco_connect);
@@ -182,6 +191,7 @@ BT_HFP_CLI(hf_update_indicator);
     SHELL_CMD_EXPORT_ALIAS(bredr_remote_name,bredr_remote_name,
                             bredr_remote_name Parameter:[Null]);
     SHELL_CMD_EXPORT_ALIAS(bredr_l2cap_send_test_data,bredr_l2cap_send_test_data,"");
+    SHELL_CMD_EXPORT_ALIAS(bredr_l2cap_echo_req,bredr_l2cap_echo_req,"");
     SHELL_CMD_EXPORT_ALIAS(bredr_l2cap_disconnect,bredr_l2cap_disconnect_req,"");
     SHELL_CMD_EXPORT_ALIAS(bredr_security,bredr_security,"");
     SHELL_CMD_EXPORT_ALIAS(bredr_start_inquiry,bredr_start_inquiry,"");
@@ -223,6 +233,9 @@ BT_HFP_CLI(hf_update_indicator);
     #endif
 
     #if CONFIG_BT_HFP
+    #if BR_EDR_PTS_TEST
+    SHELL_CMD_EXPORT_ALIAS(bredr_rfcomm_test_mode,bredr_rfcomm_test_mode,"");
+    #endif
     SHELL_CMD_EXPORT_ALIAS(hfp_connect,hfp_connect,"");
     SHELL_CMD_EXPORT_ALIAS(hfp_hf_disconnect,hfp_hf_disconnect,"");
     SHELL_CMD_EXPORT_ALIAS(hfp_sco_connect,hfp_sco_connect,"");
@@ -708,6 +721,43 @@ static void a2dp_stream(uint8_t state)
     }
 }
 
+static void media_thread(void *args)
+{
+   while (1) 
+   {
+      int err;
+      err = bt_a2dp_send_media(audio_buf, audio_buf_size);
+      if (err) 
+      {
+          printf("send media fail %d\r\n", err);
+      }
+      else 
+      {
+         vTaskDelay(3000);
+      }
+        
+    }
+}
+
+static void a2dp_start_cfm()
+{
+   printf("%s \n", __func__);
+   if (!media_task_create)
+   {
+      k_thread_create(&media_transport,
+          "media_transport",
+           4096,
+           (k_thread_entry_t)media_thread,
+            #if 0
+            K_PRIO_COOP(36)
+            #else
+            K_PRIO_COOP(configMAX_PRIORITIES - 1)
+            #endif
+            );
+      media_task_create = true;  
+   }
+}
+
 BT_A2DP_CLI(connect)
 {
     struct bt_a2dp *a2dp;
@@ -1105,6 +1155,14 @@ static struct bt_rfcomm_dlc rfcomm_dlc = {
 };
 #endif
 
+#if BR_EDR_PTS_TEST
+extern uint8_t rfcomm_test_enable;
+BT_CLI(rfcomm_test_mode)
+{
+    get_uint8_from_string(&argv[1], &rfcomm_test_enable);
+}
+#endif
+
 BT_HFP_CLI(connect)
 {
     int err;
@@ -1200,7 +1258,7 @@ BT_HFP_CLI(outgoint_call)
             return;
     }
 
-    err = bt_hfp_hf_send_cmd(default_conn, BT_HFP_HF_AT_DDD, "D1234567;");
+    err = bt_hfp_hf_send_cmd(default_conn, BT_HFP_HF_AT_DDD, "ATD1234567;");
     if(err)
         printf("Fail to send outgoing call AT command with err:%d\r\n", err);
     else
@@ -1212,7 +1270,7 @@ BT_HFP_CLI(outgoint_call_with_mem_loc)
 {
     int err = 0;
     uint8_t phone_mem_loc = 0;
-    char str[5] = "D>";
+    char str[7] = "ATD";
     
     if(!default_conn){
             printf("Not connected.\n");
@@ -1220,7 +1278,7 @@ BT_HFP_CLI(outgoint_call_with_mem_loc)
     }
 
     get_uint8_from_string(&argv[1], &phone_mem_loc);
-    snprintf(str, sizeof(str), ">%d;", phone_mem_loc);
+    snprintf(&str[3], 4, ">%d;", phone_mem_loc);
     err = bt_hfp_hf_send_cmd(default_conn, BT_HFP_HF_AT_DDD, str);
     
     if(err)
@@ -1233,7 +1291,7 @@ BT_HFP_CLI(outgoint_call_with_mem_loc)
 BT_HFP_CLI(outgoint_call_last_number_dialed)
 {
     int err = 0;
-    char *str = "+BLDN";
+    char *str = "AT+BLDN";
     
     if(!default_conn){
             printf("Not connected.\n");

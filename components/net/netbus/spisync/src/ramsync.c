@@ -6,6 +6,8 @@
 #include "ramsync.h"
 #include "spisync_port.h"
 
+#include "qcc743_glb.h"
+#include "qcc74x_clock.h"
 #include <qcc74x_gpio.h>
 #include <qcc74x_core.h>
 #include <qcc74x_dma.h>
@@ -99,6 +101,7 @@ static void _spi_dma_init(lramsync_ctx_t *ctx)
     qcc74x_dma_channel_init(ctx->dma_rx_chan, &rx_config);
 
     qcc74x_dma_channel_irq_attach(ctx->dma_tx_chan, _spi_dma_tx_irq, (void *)ctx);
+    qcc74x_irq_enable(((struct qcc74x_device_s *)(ctx->dma_tx_chan))->irq_num);
     //qcc74x_dma_channel_irq_attach(ctx->dma_rx_chan, _spi_dma_rx_irq, (void *)ctx);
 
     tx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_tx / 2);
@@ -163,6 +166,18 @@ int lramsync_start(lramsync_ctx_t *ctx)
     return 0;
 }
 
+int lramsync_clock_init(void)
+{
+    PERIPHERAL_CLOCK_SPI0_ENABLE();
+    PERIPHERAL_CLOCK_DMA0_ENABLE();
+
+    GLB_Set_SPI_CLK(ENABLE, GLB_SPI_CLK_MCU_MUXPLL_160M, 0);
+    GLB_Set_DBI_CLK(ENABLE, GLB_SPI_CLK_MCU_MUXPLL_160M, 0);
+
+    board_spi0_gpio_init();
+    GLB_Swap_MCU_SPI_0_MOSI_With_MISO(0);
+}
+
 int lramsync_reset(lramsync_ctx_t *ctx)
 {
     struct qcc74x_device_s *spi_dev;
@@ -172,6 +187,7 @@ int lramsync_reset(lramsync_ctx_t *ctx)
     }
 
     spisync_log("lramsync_reset\r\n");
+    lramsync_clock_init();
 
     qcc74x_dma_channel_stop(ctx->dma_tx_chan);
     qcc74x_dma_channel_stop(ctx->dma_rx_chan);
@@ -234,6 +250,8 @@ int lramsync_init(
     if (ctx == NULL) {
         goto rsl_init_err;
     }
+
+    lramsync_clock_init();
 
     memset(ctx, 0, sizeof(lramsync_ctx_t));
 

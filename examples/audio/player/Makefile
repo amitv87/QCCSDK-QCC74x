@@ -6,7 +6,7 @@ export QCC74x_SDK_BASE
 export CONFIG_BOARD_CONFIG_8M
 
 CHIP ?= qcc743
-BOARD ?= qcc743dk
+BOARD ?= qcc744dk
 CROSS_COMPILE ?= riscv64-unknown-elf-
 
 # add custom cmake definition

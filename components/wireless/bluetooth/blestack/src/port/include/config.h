@@ -121,6 +121,11 @@
 #endif //CONFIG_BT_MESH
 #endif
 
+#if defined(CONFIG_BT_MESH_PTS)
+//#define MESH_LCTL_BIND_WITH_GENLVL   //Lighting CTL Temperature state bind with Genneric Level
+//#define MESH_LHSLH_BIND_WITH_GENLVL  //Lighting HSL Hue state bind with Genneric Level
+//#define MESH_LHSLSA_BIND_WITH_GENLVL //Lighting HSL Saturation state bind with Genneric Level
+#endif
 /**
 * CONFIG_BT_RX_BUF_RSV_COUNT: number of buffer that HCI_LE_EVENT reserved
 * events,range 1 to CONFIG_BT_RX_BUF_COUNT
@@ -771,4 +776,5 @@ then it does disconnected flow once more. This will cause hardfault issue becaus
 #if defined (CONFIG_BT_GAP_PERIPHERAL_PREF_PARAMS)
 #define QCC74x_BLE_ENABLE_OR_DISABLE_SLAVE_PREF_CONN_PARAM_UDPATE
 #endif
+#define QCC74x_BLE_DO_DISCONNECT_WHEN_ATT_TIMEOUT
 #endif /* BLE_CONFIG_H */

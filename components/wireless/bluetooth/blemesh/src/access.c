@@ -475,7 +475,7 @@ bool bt_mesh_has_addr(uint16_t addr)
 	}
 
 	for (index = 0; index < dev_comp->elem_count; index++) {
-		const struct bt_mesh_elem *elem = &dev_comp->elem[index];
+		struct bt_mesh_elem *elem = &dev_comp->elem[index];
 
 		if (bt_mesh_elem_find_group(elem, addr)) {
 			return true;

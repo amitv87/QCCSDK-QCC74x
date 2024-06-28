@@ -70,3 +70,9 @@ sdk_add_compile_definitions(-D__FILENAME__=__FILE__)
 sdk_add_compile_definitions_ifdef(CONFIG_CSIDMA_CLI -DCFG_CSIDMA_CLI=1)
 
 sdk_add_compile_definitions_ifdef(CONFIG_IPV6 -DCFG_IPV6)
+
+if(CONFIG_COEX_WIFI_MODE)
+sdk_add_compile_definitions(-DCONFIG_COEX_WIFI_MODE=${CONFIG_COEX_WIFI_MODE})
+else()
+sdk_add_compile_definitions(-DCONFIG_COEX_WIFI_MODE=0)
+endif()

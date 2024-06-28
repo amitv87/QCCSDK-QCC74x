@@ -30,7 +30,7 @@ This is an example for OpenThread NCP and RCP example.
         make CHIP=qcc743 BOARD=qcc743dk OT_NCP=1 OT_FTD=1
         ```
     
-    - Build for OpenThread NCP example with FTD
+    - Build for OpenThread NCP example with MTD
         ```shell
         make CHIP=qcc743 BOARD=qcc743dk OT_NCP=1 OT_FTD=0
         ```

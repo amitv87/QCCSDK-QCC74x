@@ -151,6 +151,24 @@ static int at_query_cmd_cipstate(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int at_query_cmd_cipstart(int argc, const char **argv)
+{
+    char type[8];
+    uint32_t remote_ip;
+    uint16_t remote_port, local_port;
+    uint8_t tetype;
+    ip4_addr_t ipaddr;
+    int i;
+
+    for (i = 0; i < AT_NET_CLIENT_HANDLE_MAX; i++) {
+        if (at_net_client_get_info(i, type, &remote_ip, &remote_port, &local_port, &tetype) == 0) {
+            ipaddr.addr = remote_ip;
+            at_response_string("+CIPSTART:%d,\"%s\",\"%s\",%d,%d,%d\r\n", i, type, ip4addr_ntoa(&ipaddr), remote_port, local_port, tetype);
+        }
+    }
+    return AT_RESULT_CODE_OK;
+}
+
 static int at_setup_cmd_cipstart(int argc, const char **argv)
 {
     int linkid = 0;
@@ -490,14 +508,15 @@ static int at_exe_cmd_cipsend(int argc, const char **argv)
     //if (at_net_config->work_mode != NET_MODE_TRANS) {
     //    return AT_RESULT_CODE_ERROR;
     //}
-    if (at_net_config->mux_mode != NET_LINK_SINGLE) {
-        return AT_RESULT_CODE_ERROR;
-    }
+    //if (at_net_config->mux_mode != NET_LINK_SINGLE) {
+    //    return AT_RESULT_CODE_ERROR;
+    //}
 
-    if (!at_net_client_is_connected(linkid)) {
-        return AT_RESULT_CODE_ERROR;
-    }
+    //if (!at_net_client_is_connected(linkid)) {
+    //    return AT_RESULT_CODE_ERROR;
+    //}
 
+    printf("at_set_work_mode AT_WORK_MODE_THROUGHPUT\r\n");
     at_set_work_mode(AT_WORK_MODE_THROUGHPUT);
     return AT_RESULT_CODE_OK;
 }
@@ -709,6 +728,22 @@ static int at_setup_cmd_cipdinfo(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int at_setup_cmd_wips(int argc, const char **argv)
+{
+    int enable;
+
+    AT_CMD_PARSE_NUMBER(0, &enable);
+
+    at_net_config->wips_enable = (uint8_t)enable;
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_query_cmd_wips(int argc, const char **argv)
+{
+    at_response_string("+WIPS:%d\r\n", at_net_config->wips_enable);
+    return AT_RESULT_CODE_OK;
+}
+
 static int at_query_cmd_cipmux(int argc, const char **argv)
 {
     at_response_string("+CIPMUX:%d\r\n", at_net_config->mux_mode);
@@ -757,6 +792,51 @@ static int at_setup_cmd_ciprecvdata(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int at_setup_cmd_ciprecvbuf(int argc, const char **argv)
+{
+    int linkid = 0, size;
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+        AT_CMD_PARSE_NUMBER(0, &size);
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        AT_CMD_PARSE_NUMBER(1, &size);
+    }
+
+    if (!at_net_client_id_is_valid(linkid)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    if (at_net_client_is_connected(linkid)) {
+        return AT_RESULT_CODE_FAIL;
+    }
+    at_net_recvbuf_size_set(linkid, size);
+    return AT_RESULT_CODE_OK;
+}
+
+
+static int at_query_cmd_ciprecvbuf(int argc, const char **argv)
+{
+    int linkid = 0, linkid_valid = 0;
+    
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+        AT_CMD_PARSE_OPT_NUMBER(0, &linkid, linkid_valid);
+        if (linkid_valid) {
+            return AT_RESULT_CODE_ERROR;
+        }
+    } else {
+    	if (argc <= 0) {
+    		return AT_RESULT_CODE_ERROR;
+    	}
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+    }
+
+    if (!at_net_client_id_is_valid(linkid)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    at_response_string("+CIPRECVBUF:%d\r\n", at_net_recvbuf_size_get(linkid));
+    return AT_RESULT_CODE_OK;
+}
 static int at_query_cmd_ciprecvlen(int argc, const char **argv)
 {
     int id = 0;
@@ -838,6 +918,8 @@ static int at_setup_cmd_cipserver(int argc, const char **argv)
 
         if (strcasecmp(type, "TCP") == 0) {
             ret = at_net_server_tcp_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout);
+        } else if (strcasecmp(type, "UDP") == 0) {
+            ret = at_net_server_udp_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout);
         }
         else  if (strcasecmp(type, "SSL") == 0) {
             ret = at_net_server_ssl_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout, ca_enable);
@@ -876,53 +958,231 @@ static int at_setup_cmd_cipservermaxconn(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
-static int at_query_cmd_cipsslcconf(int argc, const char **argv)
-{
-    return AT_RESULT_CODE_OK;
-}
-
-static int at_setup_cmd_cipsslcconf(int argc, const char **argv)
-{
-    return AT_RESULT_CODE_OK;
-}
-
-static int at_query_cmd_cipsslccn(int argc, const char **argv)
-{
-    return AT_RESULT_CODE_OK;
-}
-
-static int at_setup_cmd_cipsslccn(int argc, const char **argv)
-{
-    return AT_RESULT_CODE_OK;
-}
-
 static int at_query_cmd_cipsslcsni(int argc, const char **argv)
 {
+    int linkid = 0;
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        if (!at_net_client_id_is_valid(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+    }
+    at_response_string("+CIPSSLCSNI:%d,%s\r\n", linkid, at_net_ssl_sni_get(linkid));
     return AT_RESULT_CODE_OK;
 }
 
 static int at_setup_cmd_cipsslcsni(int argc, const char **argv)
 {
+    int linkid = 0;
+    char hostname[255] = {0};
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+        AT_CMD_PARSE_STRING(0, hostname, sizeof(hostname));
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        if (!at_net_client_id_is_valid(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        AT_CMD_PARSE_STRING(1, hostname, sizeof(hostname));
+    }
+    
+    at_net_ssl_sni_set(linkid, hostname);
+
     return AT_RESULT_CODE_OK;
 }
 
 static int at_query_cmd_cipsslcalpn(int argc, const char **argv)
 {
+    int i, n, offset = 0;
+    int linkid = 0, count = 0;
+    char **alpn;
+    char output[255] = {0};
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        if (!at_net_client_id_is_valid(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+    }
+    alpn = at_net_ssl_alpn_get(linkid, &count);
+
+
+    n = snprintf(output + offset, sizeof(output) - offset, "+CIPSSLCALPN:%d", linkid);
+    if (n > 0) {
+        offset += n;
+    }
+
+    for (i = 0; i < count; i++) {
+        n = snprintf(output + offset, sizeof(output) - offset, ",\"%s\"", alpn[i]);
+        if (n > 0) {
+            offset += n;
+        }
+    }
+    
+    n = snprintf(output + offset, sizeof(output) - offset, "%s", "\r\n");
+    if (n > 0) {
+        offset += n;
+    }
+    at_response_string(output);
     return AT_RESULT_CODE_OK;
 }
 
 static int at_setup_cmd_cipsslcalpn(int argc, const char **argv)
 {
+    int i, offset;
+    int linkid = 0, count = 0;
+    char alpn[255] = {0};
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+        AT_CMD_PARSE_NUMBER(0, &count);
+        if (count != argc - 1) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        offset = 1;
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        if (!at_net_client_id_is_valid(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        AT_CMD_PARSE_NUMBER(1, &count);
+        if (count != argc - 2) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        offset = 2;
+    }
+
+    for (i = 0; i < count; i++) {
+        AT_CMD_PARSE_STRING(i + offset, alpn, sizeof(alpn));
+        at_net_ssl_alpn_set(linkid, i, alpn);
+    }
+    for (; i < 6; i++) {
+        at_net_ssl_alpn_set(linkid, i, NULL);
+    }
     return AT_RESULT_CODE_OK;
 }
 
 static int at_query_cmd_cipsslcpsk(int argc, const char **argv)
 {
+    int linkid = 0;
+    char *psk, *hint;
+    int psk_len, hint_len;
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        if (!at_net_client_id_is_valid(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+    }
+
+    at_net_ssl_psk_get(linkid, &psk, &psk_len, &hint, &hint_len);
+    at_response_string("+CIPSSLCPSK:%d,\"%s\",\"%s\"\r\n", linkid, psk, hint);
+
     return AT_RESULT_CODE_OK;
 }
 
 static int at_setup_cmd_cipsslcpsk(int argc, const char **argv)
 {
+    int linkid = 0;
+    char psk[32] = {0};
+    char hint[32] = {0};
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+        AT_CMD_PARSE_STRING(0, psk, sizeof(psk));
+        AT_CMD_PARSE_STRING(1, hint, sizeof(hint));
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        if (!at_net_client_id_is_valid(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        AT_CMD_PARSE_STRING(1, psk, sizeof(psk));
+        AT_CMD_PARSE_STRING(2, hint, sizeof(hint));
+    }
+    at_net_ssl_psk_set(linkid, psk, strlen(psk), hint, strlen(hint));
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_query_cmd_cipsslcpskhex(int argc, const char **argv)
+{
+    int linkid = 0;
+    char *psk, *hint;
+    int psk_len, hint_len;
+    char output[128];
+    int offset = 0, n;
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        if (!at_net_client_id_is_valid(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+    }
+
+    at_net_ssl_psk_get(linkid, &psk, &psk_len, &hint, &hint_len);
+
+    n = snprintf(output + offset, sizeof(output) - offset, "+CIPSSLCPSKHEX:%d,\"", linkid);
+    if (n > 0) {
+        offset += n;
+    }
+
+    for (int i = 0; i < psk_len; i++) {
+        n = snprintf(output + offset, sizeof(output) - offset, "%02x", psk[i]);
+        if (n > 0) {
+            offset += n;
+        }
+    }
+
+    n = snprintf(output + offset, sizeof(output) - offset, "\",\"%s\"\r\n", hint);
+    if (n > 0) {
+        offset += n;
+    }
+
+    at_response_string(output);
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int _str_to_hex(const char *str, uint8_t *hex)
+{
+    int i;
+    int len = 0;
+
+    len = strlen(str) / 2;
+
+    for (i = 0; i < len; i++) {
+        sscanf(str, "%02x", &hex[i]);
+        str += 2;
+    }
+    
+    return len;
+}
+
+static int at_setup_cmd_cipsslcpskhex(int argc, const char **argv)
+{
+    int linkid = 0, psk_len;
+    char psk[64] = {0};
+    char psk_hex[32] = {0};
+    char hint[32] = {0};
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+        AT_CMD_PARSE_STRING(0, psk, sizeof(psk));
+        AT_CMD_PARSE_STRING(1, hint, sizeof(hint));
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        if (!at_net_client_id_is_valid(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        AT_CMD_PARSE_STRING(1, psk, sizeof(psk));
+        AT_CMD_PARSE_STRING(2, hint, sizeof(hint));
+    }
+
+    psk_len = _str_to_hex(psk, psk_hex);
+
+    at_net_ssl_psk_set(linkid, psk_hex, psk_len, hint, strlen(hint));
+
     return AT_RESULT_CODE_OK;
 }
 
@@ -1203,12 +1463,27 @@ static int at_setup_cmd_ping(int argc, const char **argv)
     struct hostent *hostinfo;
     struct ping_var *env;
     int ping_response_time = 0;
+    int len, count, interval;
+    int len_valid = 0, count_valid = 0, interval_valid = 0;
 
     AT_CMD_PARSE_STRING(0, hostname, sizeof(hostname));
+    AT_CMD_PARSE_OPT_NUMBER(1, &len, len_valid);
+    AT_CMD_PARSE_OPT_NUMBER(2, &count, count_valid);
+    AT_CMD_PARSE_OPT_NUMBER(3, &interval, interval_valid);
+
+    if (!len_valid) {
+        len = 64;
+    }
+    if (!count_valid) {
+        count = 4;
+    }
+    if (!interval_valid) {
+        interval = 1000;
+    }
 
     hostinfo = gethostbyname(hostname);
     if (hostinfo) {
-        env = ping_api_init(1000, 64, 1, 1000, (ip_addr_t *)hostinfo->h_addr);
+        env = ping_api_init(interval, len, count, 1000, (ip_addr_t *)hostinfo->h_addr);
         if (env) {
             while (env->requests_count <= 0) //wait start
                 vTaskDelay(1);
@@ -1245,13 +1520,170 @@ static int at_exe_cmd_ciupdate(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int at_setup_cmd_iperf(int argc, const char **argv)
+{
+    int is_server = 0;
+    int is_udp = 0;
+    int t, t_valid = 0;
+    int p, p_valid = 0;
+    int ip_valid = 0;
+    char ipaddr[32] = {0};
+    char type[4] = {0};
+    char direct[3] = {0};
+    char buffer[128];
+    
+    AT_CMD_PARSE_STRING(0, direct, sizeof(direct));
+    AT_CMD_PARSE_STRING(1, type, sizeof(&type));
+    AT_CMD_PARSE_OPT_STRING(2, ipaddr, sizeof(ipaddr), ip_valid);
+    AT_CMD_PARSE_OPT_NUMBER(3, &t, t_valid);
+    AT_CMD_PARSE_OPT_NUMBER(4, &p, p_valid);
+    
+    if (strcmp(direct, "TX") == 0) {
+        is_server = 0;
+    } else if (strcmp(direct, "RX") == 0) {
+        is_server = 1;
+    } else {
+        return AT_RESULT_CODE_ERROR;
+    }
+     
+    if (strcmp(type, "TCP") == 0) {
+        is_udp = 0;
+    } else if (strcmp(type, "UDP") == 0) {
+        is_udp = 1;
+    } else {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    if (!t_valid) {
+        t = 10;
+    }
+    
+    if (!p_valid) {
+        p = 5001;
+    }
+
+    if (!is_server && !ip_valid) {
+        return AT_RESULT_CODE_ERROR;
+    }
+ 
+    snprintf(buffer, sizeof(buffer), 
+             "iperf "\
+             "%s "\
+             "%s "\
+             "%s "\
+             "%s "\
+             "-i 1 "\
+             "-t %d "\
+             "-p %d\r\n", 
+             is_udp?"-u":"", 
+             is_server?"-s":"-c", 
+             is_server?"":ipaddr, 
+             (is_udp && !is_server)?"-b 100M":"", 
+             t, 
+             p);
+
+    printf(buffer);
+    shell_exe_cmd(buffer, strlen(buffer));
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_cmd_iperf_stop(int argc, const char **argv)
+{
+    shell_exe_cmd("iperf stop\r\n", strlen("iperf stop\r\n"));
+    
+    return AT_RESULT_CODE_OK;
+}
+
+#define AT_NET_SSL_NOT_AUTH         0
+#define AT_NET_SSL_CLIENT_AUTH      1
+#define AT_NET_SSL_SERVER_AUTH      2
+#define AT_NET_SSL_BOTH_AUTH        3
+
+static int at_setup_cmd_cipsslcconf(int argc, const char **argv)
+{
+    int linkid = 0, auth_mode;
+    char cert_file[32] = {0};
+    char key_file[32] = {0};
+    char ca_file[32] = {0};
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+        AT_CMD_PARSE_NUMBER(0, &auth_mode);
+        AT_CMD_PARSE_STRING(1, cert_file, sizeof(cert_file));
+        AT_CMD_PARSE_STRING(2, key_file, sizeof(key_file));
+        AT_CMD_PARSE_STRING(3, ca_file, sizeof(ca_file));
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        AT_CMD_PARSE_NUMBER(1, &auth_mode);
+        AT_CMD_PARSE_STRING(2, cert_file, sizeof(cert_file));
+        AT_CMD_PARSE_STRING(3, key_file, sizeof(key_file));
+        AT_CMD_PARSE_STRING(4, ca_file, sizeof(ca_file));
+    }
+
+    if (!at_net_client_id_is_valid(linkid)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    if (auth_mode < AT_NET_SSL_NOT_AUTH || auth_mode > AT_NET_SSL_BOTH_AUTH) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    if (auth_mode == AT_NET_SSL_NOT_AUTH) {
+        at_net_ssl_path_set(linkid, NULL, NULL, NULL);
+    } else if (auth_mode == AT_NET_SSL_CLIENT_AUTH) {
+        at_net_ssl_path_set(linkid, ca_file, NULL, NULL);
+    } else if (auth_mode == AT_NET_SSL_SERVER_AUTH) {
+        at_net_ssl_path_set(linkid, NULL, cert_file, key_file);
+    } else if (auth_mode == AT_NET_SSL_BOTH_AUTH) {
+        at_net_ssl_path_set(linkid, ca_file, cert_file, key_file);
+    }
+
+    strlcpy(at_net_config->sslconf[linkid].ca_file, ca_file, sizeof(at_net_config->sslconf[linkid].ca_file));
+    strlcpy(at_net_config->sslconf[linkid].cert_file, cert_file, sizeof(at_net_config->sslconf[linkid].cert_file));
+    strlcpy(at_net_config->sslconf[linkid].key_file, key_file, sizeof(at_net_config->sslconf[linkid].key_file));
+
+    if (at->store) {
+        at_net_config_save(AT_CONFIG_KEY_NET_SSLCONF);
+    }
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_query_cmd_cipsslcconf(int argc, const char **argv)
+{
+    int linkid = 0, auth_mode = 0;
+    char *ca, *cert, *key;
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+    } else {
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+    }
+
+    if (!at_net_client_id_is_valid(linkid)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    at_net_ssl_path_get(linkid, &ca, &cert, &key);
+
+    if (strlen(ca)) {
+        auth_mode |= 1;
+    }
+
+    if (strlen(cert) && strlen(key)) {
+        auth_mode |= 2;
+    }
+
+    at_response_string("+CIPSSLCCONF:%d,%d,\"%s\",\"%s\",\"%s\"\r\n", linkid, auth_mode, cert, key, ca);
+
+    return AT_RESULT_CODE_OK;
+}
+
 static const at_cmd_struct at_net_cmd[] = {
     {"+CIFSR", NULL, NULL, NULL, at_exe_cmd_cifsr, 0, 0},
     {"+CIPV6", NULL, at_query_cmd_cipv6, at_setup_cmd_cipv6, NULL, 0, 0},
     {"+CIPDNS", NULL, at_query_cmd_cipdns, at_setup_cmd_cipdns, NULL, 0, 0},
     {"+CIPDOMAIN", NULL, NULL, at_setup_cmd_cipdomain, NULL, 1, 2},
     {"+CIPSTATE", NULL, at_query_cmd_cipstate, NULL, NULL, 0, 0},
-    {"+CIPSTART", NULL, NULL, at_setup_cmd_cipstart, NULL, 3, 7},
+    {"+CIPSTART", NULL, at_query_cmd_cipstart, at_setup_cmd_cipstart, NULL, 3, 7},
     {"+CIPSTARTEX", NULL, NULL, at_setup_cmd_cipstartex, NULL, 3, 6},
     {"+CIPTCPOPT", NULL, at_query_cmd_ciptcport, at_setup_cmd_ciptcport, NULL, 1, 5},
     {"+CIPCLOSE", NULL, NULL, at_setup_cmd_cipclose, at_exe_cmd_cipclose, 1, 1},
@@ -1260,17 +1692,20 @@ static const at_cmd_struct at_net_cmd[] = {
     {"+CIPSENDLCFG", NULL, at_query_cmd_cipsendlcfg, at_setup_cmd_cipsendlcfg, NULL, 2, 2},
     {"+CIPSENDEX", NULL, NULL, at_setup_cmd_cipsendex, NULL, 1, 4},
     {"+CIPDINFO", NULL, at_query_cmd_cipdinfo, at_setup_cmd_cipdinfo, NULL, 1, 1},
+    {"+WIPS", NULL, at_query_cmd_wips, at_setup_cmd_wips, NULL, 1, 1},
     {"+CIPMUX", NULL, at_query_cmd_cipmux, at_setup_cmd_cipmux, NULL, 1, 1},
     {"+CIPRECVMODE", NULL, at_query_cmd_ciprecvmode, at_setup_cmd_ciprecvmode, NULL, 1, 1},
     {"+CIPRECVDATA", NULL, NULL, at_setup_cmd_ciprecvdata, NULL, 0, 0},
+    {"+CIPRECVBUF", NULL, at_query_cmd_ciprecvbuf, at_setup_cmd_ciprecvbuf, NULL, 1, 2},
     {"+CIPRECVLEN", NULL, at_query_cmd_ciprecvlen, NULL, NULL, 0, 0},
     {"+CIPSERVER", NULL, at_query_cmd_cipserver, at_setup_cmd_cipserver, NULL, 1, 4},
     {"+CIPSERVERMAXCONN", NULL, at_query_cmd_cipservermaxconn, at_setup_cmd_cipservermaxconn, NULL, 1, 1},
-    {"+CIPSSLCCONF", NULL, at_query_cmd_cipsslcconf, at_setup_cmd_cipsslcconf, NULL, 0, 0},
-    {"+CIPSSLCCN", NULL, at_query_cmd_cipsslccn, at_setup_cmd_cipsslccn, NULL, 0, 0},
-    {"+CIPSSLCSNI", NULL, at_query_cmd_cipsslcsni, at_setup_cmd_cipsslcsni, NULL, 0, 0},
-    {"+CIPSSLCALPN", NULL, at_query_cmd_cipsslcalpn, at_setup_cmd_cipsslcalpn, NULL, 0, 0},
-    {"+CIPSSLCPSK", NULL, at_query_cmd_cipsslcpsk, at_setup_cmd_cipsslcpsk, NULL, 0, 0},
+    {"+CIPSSLCCONF", NULL, at_query_cmd_cipsslcconf, at_setup_cmd_cipsslcconf, NULL, 4, 5},
+    //{"+CIPSSLCCN", NULL, at_query_cmd_cipsslccn, at_setup_cmd_cipsslccn, NULL, 0, 0},
+    {"+CIPSSLCSNI", NULL, at_query_cmd_cipsslcsni, at_setup_cmd_cipsslcsni, NULL, 1, 2},
+    {"+CIPSSLCALPN", NULL, at_query_cmd_cipsslcalpn, at_setup_cmd_cipsslcalpn, NULL, 2, 8},
+    {"+CIPSSLCPSK", NULL, at_query_cmd_cipsslcpsk, at_setup_cmd_cipsslcpsk, NULL, 2, 3},
+    {"+CIPSSLCPSKHEX", NULL, at_query_cmd_cipsslcpskhex, at_setup_cmd_cipsslcpskhex, NULL, 2, 3},
     {"+CIPMODE", NULL, at_query_cmd_cipmode, at_setup_cmd_cipmode, NULL, 1, 1},
     {"+CIPSTO", NULL, at_query_cmd_cipsto, at_setup_cmd_cipsto, NULL,  1, 1},
     {"+SAVETRANSLINK", NULL, NULL, at_setup_cmd_savetranslink, NULL, 1, 5},
@@ -1278,8 +1713,10 @@ static const at_cmd_struct at_net_cmd[] = {
     {"+CIPSNTPTIME", NULL, at_query_cmd_cipsntptime, NULL, NULL, 0, 0},
     {"+CIPSNTPINTV", NULL, at_query_cmd_cipsntpintv, at_setup_cmd_cipsntpintv, NULL, 1, 1},
     {"+CIPRECONNINTV", NULL, at_query_cmd_cipreconnintv, at_setup_cmd_cipreconnintv, NULL, 1, 1},
-    {"+PING", NULL, NULL, at_setup_cmd_ping, NULL, 1, 1},
+    {"+PING", NULL, NULL, at_setup_cmd_ping, NULL, 1, 4},
     {"+CIUPDATE", NULL, at_query_cmd_ciupdate, at_setup_cmd_ciupdate, at_exe_cmd_ciupdate, 0, 0},
+    {"+IPERF", NULL, NULL, at_setup_cmd_iperf, NULL, 2, 5},
+    {"+IPERFSTOP", NULL, NULL, NULL, at_setup_cmd_iperf_stop, 0, 0},
 };
 
 bool at_net_cmd_regist(void)

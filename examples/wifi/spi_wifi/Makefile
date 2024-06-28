@@ -14,4 +14,5 @@ CONFIG_LINK_IN_PSRAM ?= 0
 
 cmake_definition+=-DCONFIG_LINK_IN_PSRAM=$(CONFIG_LINK_IN_PSRAM)
 
-include $(QCC74x_SDK_BASE)/project.build
+include $(QCC74x_SDK_BASE)/project.build 
+$(shell ./tools/genromfs -d romfs/ -f ./build/build_out/romfs.bin)

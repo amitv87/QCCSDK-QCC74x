@@ -17,9 +17,9 @@
 
 /* Insert configuration defines, e.g., #define EAP_MD5, here, if needed. */
 
-#define CONFIG_QCC74x_PMK_CACHE_IN_MGMR
+#define CONFIG_BL_PMK_CACHE_IN_MGMR
 
-#define CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG
+#define CONFIG_BL_EXTRA_WPA_SSID_FLAG
 #define CONFIG_ONLY_STA_AP_MODE
 #define CONFIG_NO_HIGHER_40M_OR_NON_24G
 #define CONFIG_SAE_BASIC_ONLY
@@ -53,7 +53,7 @@
 #define EAP_LEAP
 #define EAP_TNC
 #define _CRT_SECURE_NO_DEPRECATE
-#define CONFIG_QCC74x_MBEDTLS
+#define CONFIG_USE_MBEDTLS
 
 #ifdef USE_INTERNAL_CRYPTO
 #define CONFIG_TLS_INTERNAL_CLIENT
@@ -86,7 +86,7 @@
 #define CONFIG_WEP
 
 // for now only used for SAE
-#ifdef CONFIG_QCC74x_MBEDTLS
+#ifdef CONFIG_USE_MBEDTLS
 #define CONFIG_SME
 #define CONFIG_SAE
 #define CONFIG_ECC

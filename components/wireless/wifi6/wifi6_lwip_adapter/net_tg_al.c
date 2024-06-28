@@ -599,8 +599,8 @@ static int net_tg_mcast_membership(struct fhost_tg_stream *stream, bool join)
 static int net_tg_pcb_config(struct udp_pcb *pcb, struct fhost_tg_stream *stream)
 {
     u32_t ip;
-    ip_addr_t rip;
-    ip_addr_t lip;
+    ip4_addr_t rip;
+    ip4_addr_t lip;
 
     ip = (stream->prof).local_ip;
     IP4_ADDR(&lip,  ip & 0xff, (ip >> 8) & 0xff,

@@ -1,6 +1,13 @@
 #ifndef __SPISYNC_CONFIG_H__
 #define __SPISYNC_CONFIG_H__
 
+#if SPISYNC_MASTER_ENABLE
+#else
+#include "qcc74x_gpio.h"
+
+#define SPISYNC_CTRL_PIN         (GPIO_PIN_11)
+#endif
+
 typedef struct spisync_config {
     const char *spi_name;
     const char *spi_tx_dmach;

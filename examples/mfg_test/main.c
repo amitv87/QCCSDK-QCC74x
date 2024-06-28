@@ -11,12 +11,11 @@
 #include "queue.h"
 #include "rfparam_adapter.h"
 #include "mfg_version.h"
-
+#include "sdk_version.h"
 #if defined(MFG_QCC743)
 #include "qcc743_hbn.h"
 #include "qcc743_glb.h"
 #endif
-#include "mfg_version.h"
 
 #include <qcc74x_gpio.h>
 #include <qcc74x_uart.h>
@@ -32,11 +31,12 @@ const char git_commit[41] __attribute__ ((section(".verinfo"))) = GIT_COMMIT;
 const char time_info[30] __attribute__ ((section(".verinfo"))) = COMPILE_TIME;
 
 
-const qcc74xverinf_t mfg_ver __attribute__ ((section(".qcc74xverinf"))) = {
+// qcc74xverinf_t mfg_ver __attribute__ ((section(".qcc74xverinf"))) = {
+qcc74xverinf_t mfg_ver = {
     .anti_rollback = 0,
-    .x = QCC74x_MFG_VER[0] - 0x30,
-    .y = QCC74x_MFG_VER[2] - 0x30,
-    .z = QCC74x_MFG_VER[3] - 0x30,
+    .x = 0,
+    .y = 0,
+    .z = 0,
     .name = (char *)ver_name,
     .build_time = (char *)time_info,
     .commit_id = (char *)git_commit,
@@ -1218,10 +1218,65 @@ static void btble_init_task_entry(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+#define MFG_VER_INFO_BASE QCC743_FLASH_XIP_BASE + 0xc00
+
+int isDigit(char c) {
+    return (c >= '0' && c <= '9');
+}
+
+/* unsigned number*/
+int stringToNumber(char *str) {
+    int result = 0;
+    int i = 0;
+    for (; str[i] != '\0'; i++) {
+        if (isDigit(str[i])) {
+            result = result * 10 + (str[i] - '0');
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
 static void mfg_dump_boot_info(void)
 {
     puts("MFG Version: ");
-    puts(QCC74x_MFG_VER);
+    puts(PROJECT_SDK_VERSION);
+    uint8_t i;
+    uint8_t tmp;
+    uint8_t cnt = 0;
+    while (PROJECT_SDK_VERSION[i] != '\0') {
+        /* skip non number char */
+        while (PROJECT_SDK_VERSION[i] != '\0' && !isDigit(PROJECT_SDK_VERSION[i])) {
+            i++;
+        }
+        /* process the numbers */
+        if (isDigit(PROJECT_SDK_VERSION[i])) {
+            if (cnt == 0){
+                mfg_ver.x = stringToNumber(&PROJECT_SDK_VERSION[i]);
+                cnt++;
+            } else if (cnt == 1) {
+                mfg_ver.y = stringToNumber(&PROJECT_SDK_VERSION[i]);
+                cnt++;
+            } else if (cnt == 2) {
+                mfg_ver.z = stringToNumber(&PROJECT_SDK_VERSION[i]);
+                cnt++;
+            }
+            /*else if (cnt == 3) {
+                mfg_ver.rsvd0 = stringToNumber(&PROJECT_SDK_VERSION[i]);
+                cnt++;
+            }*/
+        }
+        /* search for next number */
+        while (PROJECT_SDK_VERSION[i] != '\0' && isDigit(PROJECT_SDK_VERSION[i])) {
+            i++;
+        }
+    }
+    /* check if dirty
+    if ((i > 4) && (PROJECT_SDK_VERSION[i-5] == 'd') && (PROJECT_SDK_VERSION[i-4] == 'i') && (PROJECT_SDK_VERSION[i-3] == 'r') && (PROJECT_SDK_VERSION[i-2] == 't') && (PROJECT_SDK_VERSION[i-1] == 'y')){
+        mfg_ver.rsvd1 = 1;
+    }
+    */
 #if ( PM_PDS_LDO_LEVEL_DEFAULT == 8 )
     puts("_dcdc\r\n");
 #else
@@ -1237,7 +1292,7 @@ static void mfg_dump_boot_info(void)
     puts("------------------------------------------------------------\r\n");
 }
 
-#define MFG_VER_INFO_BASE QCC743_FLASH_XIP_BASE + 0xc00
+
 
 void _dump_media_ver(void)
 {

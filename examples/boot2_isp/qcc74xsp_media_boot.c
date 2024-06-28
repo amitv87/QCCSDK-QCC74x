@@ -30,7 +30,7 @@ static int32_t qcc74xsp_mediaboot_cal_hash(uint32_t start_addr, uint32_t total_l
     uint32_t *p;
     p = (uint32_t *)hal_boot2_get_xip_addr(start_addr);
 #if defined(CHIP_QCC743) || defined(CHIP_QCC74x_undef) ||  defined(CHIP_QCC74x_undefP) || defined(CHIP_QCC74x_undef)
-    qcc74x_l1c_dcache_clean_invalidate_range((uintptr_t)p, total_len);
+    qcc74x_l1c_dcache_clean_invalidate_range(p, total_len);
 #endif
     while (deal_len < total_len) {
         read_len = total_len - deal_len;

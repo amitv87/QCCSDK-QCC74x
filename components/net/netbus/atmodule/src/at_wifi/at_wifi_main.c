@@ -250,7 +250,7 @@ void wifiopt_sta_connect(void)
         wifi_mgmr_sta_connect_ext(g_wifi_sta_interface, ssid, psk, &ext_param);
     }
 #else
-    wifi_sta_connect(ssid, psk, NULL, NULL, pmf_cfg, freq, freq, dhcp_en);
+    wifi_sta_connect(ssid, psk, NULL, at_wifi_config->sta_info.wep_en?"WEP":NULL, pmf_cfg, freq, freq, dhcp_en);
 #endif
 }
 
@@ -337,7 +337,7 @@ static void _wifi_ap_status_callback(struct netif *netif)
     wifi_ap_update_sta_ip((uint8_t *)netif->hwaddr, netif->ip_addr.addr);
 
     if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
-        at_response_string("+DIST_STA_IP:\"%02x:%02x:%02x:%02x:%02x:%02x\",\"%s\"\r\n",
+        at_response_string("+EVT:DIST_STA_IP \"%02x:%02x:%02x:%02x:%02x:%02x\",\"%s\"\r\n",
                 netif->hwaddr[0],
                 netif->hwaddr[1],
                 netif->hwaddr[2],
@@ -492,7 +492,7 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
         break;
 
         case CODE_WIFI_ON_MGMR_DONE: {
-            wifi_sta_enable_reconnect(1);
+            //wifi_sta_enable_reconnect(1);
             if (at_wifi_config->wifi_mode == WIFI_SOFTAP_MODE || at_wifi_config->wifi_mode == WIFI_AP_STA_MODE) {
             	//FIXME: This is Timer context, not allowed call block API
                 //wifi_ap_start();
@@ -508,7 +508,9 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
         case CODE_WIFI_ON_DISCONNECT: {
             if (g_wifi_sta_is_connected) {
                 if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
-                    at_response_string("WIFI DISCONNECT\r\n");
+                    if (at_wifi_config->wevt_enable) {
+                        at_response_string("+EVT:WIFI DISCONNECT\r\n");
+                    }
                 }
                 g_wifi_sta_is_connected = 0;
                 wifi_sta_enable_reconnect(1);
@@ -521,7 +523,9 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
         case CODE_WIFI_ON_CONNECTED: {
             if (!g_wifi_sta_is_connected) {
                 if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
-                    at_response_string("WIFI CONNECTED\r\n");
+                    if (at_wifi_config->wevt_enable) {
+                        at_response_string("+EVT:WIFI CONNECTED\r\n");
+                    }
                 }
                 g_wifi_sta_is_connected = 1;
 
@@ -547,7 +551,9 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
         case CODE_WIFI_ON_GOT_IP: {
             if (g_wifi_sta_is_connected) {
                 if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
-                    at_response_string("WIFI GOT IP\r\n");
+                    if (at_wifi_config->wevt_enable) {
+                        at_response_string("+EVT:WIFI GOT IP\r\n");
+                    }
                 }
 
                 g_wifi_sta_disconnect_reason = 0;
@@ -561,13 +567,15 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             int idx = wifi_ap_update_sta_index();
             wifi_mgmr_ap_sta_info_get(&sta_info, idx);
             if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
-                at_response_string("+STA_CONNECTED:\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n",
-                        sta_info.sta_mac[0],
-                        sta_info.sta_mac[1],
-                        sta_info.sta_mac[2],
-                        sta_info.sta_mac[3],
-                        sta_info.sta_mac[4],
-                        sta_info.sta_mac[5]);
+                if (at_wifi_config->wevt_enable) {
+                    at_response_string("+EVT:STA_CONNECTED \"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n",
+                            sta_info.sta_mac[0],
+                            sta_info.sta_mac[1],
+                            sta_info.sta_mac[2],
+                            sta_info.sta_mac[3],
+                            sta_info.sta_mac[4],
+                            sta_info.sta_mac[5]);
+                }
             }
         }
         break;
@@ -576,19 +584,39 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             uint8_t sta_mac[6] = {0, 0, 0, 0, 0, 0};
             wifi_ap_delete_sta_info(sta_mac);
             if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
-                at_response_string("+STA_DISCONNECTED:\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n",
-                        sta_mac[0],
-                        sta_mac[1],
-                        sta_mac[2],
-                        sta_mac[3],
-                        sta_mac[4],
-                        sta_mac[5]);
+                if (at_wifi_config->wevt_enable) {
+                    at_response_string("+EVT:STA_DISCONNECTED \"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n",
+                            sta_mac[0],
+                            sta_mac[1],
+                            sta_mac[2],
+                            sta_mac[3],
+                            sta_mac[4],
+                            sta_mac[5]);
+                }
             }
         }
         break;
         default: {
             /*nothing*/
         }
+    }
+}
+
+static QueueHandle_t event_queue;
+static void wifi_event_task_entry(void *arg)
+{
+    uint32_t code = 0;
+    while (1) {
+        if (xQueueReceive(event_queue, &code, portMAX_DELAY)) {
+            at_wifi_event_cb(code, NULL);
+        }
+    }
+}
+
+static void wifi_event_start(uint32_t code)
+{
+    if (!xQueueSend(event_queue, &code, 0)) {
+        printf("wifi event send fail %d\r\n", code);
     }
 }
 
@@ -600,14 +628,14 @@ void wifi_event_handler(uint32_t code)
     switch (code) {
         case CODE_WIFI_ON_INIT_DONE: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_INIT_DONE\r\n", __func__);
-            //at_wifi_event_cb(code, NULL);
+    
             char *country_code_string[WIFI_COUNTRY_CODE_MAX] = {"CN", "JP", "US", "EU"};
             strlcpy(conf.country_code, country_code_string[at_wifi_config->wifi_country.country_code], sizeof(conf.country_code));
             wifi_mgmr_init(&conf);
         } break;
         case CODE_WIFI_ON_MGMR_DONE: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_MGMR_DONE\r\n", __func__);
-            at_wifi_event_cb(code, NULL);
+            wifi_event_start(code);
         } break;
         case CODE_WIFI_ON_SCAN_DONE: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_SCAN_DONE\r\n", __func__);
@@ -618,16 +646,16 @@ void wifi_event_handler(uint32_t code)
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_CONNECTED\r\n", __func__);
             extern void mm_sec_keydump();
             mm_sec_keydump();
-            at_wifi_event_cb(code, NULL);
+            wifi_event_start(code);
         } break;
         case CODE_WIFI_ON_GOT_IP: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_GOT_IP\r\n", __func__);
             LOG_I("[SYS] Memory left is %d Bytes\r\n", kfree_size());
-            at_wifi_event_cb(code, NULL);
+            wifi_event_start(code);
         } break;
         case CODE_WIFI_ON_DISCONNECT: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_DISCONNECT\r\n", __func__);
-            at_wifi_event_cb(code, NULL);
+            wifi_event_start(code);
         } break;
         case CODE_WIFI_ON_AP_STARTED: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_AP_STARTED\r\n", __func__);
@@ -637,11 +665,11 @@ void wifi_event_handler(uint32_t code)
         } break;
         case CODE_WIFI_ON_AP_STA_ADD: {
             LOG_I("[APP] [EVT] [AP] [ADD] %lld\r\n", xTaskGetTickCount());
-            at_wifi_event_cb(code, NULL);
+            wifi_event_start(code);
         } break;
         case CODE_WIFI_ON_AP_STA_DEL: {
             LOG_I("[APP] [EVT] [AP] [DEL] %lld\r\n", xTaskGetTickCount());
-            at_wifi_event_cb(code, NULL);
+            wifi_event_start(code);
         } break;
         default: {
             LOG_I("[APP] [EVT] Unknown code %u \r\n", code);
@@ -802,6 +830,10 @@ int at_wifi_start(void)
 
     memset(&g_wifi_ap_sta_info, 0, sizeof(g_wifi_ap_sta_info));
 #endif
+    xTaskCreate(wifi_event_task_entry, (char *)"wifi_event", 1024, NULL, 15, NULL);
+    event_queue = xQueueCreate(6, sizeof(uint32_t));
+    vTaskDelay(100);
+
     return 0;
 }
 

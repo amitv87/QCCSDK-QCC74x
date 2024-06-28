@@ -2,6 +2,7 @@
 #define __QCC74x_BOOT2_H__
 
 #include "qcc74x_core.h"
+#include "partition.h"
 
 typedef struct {
     uint8_t type;                           /*!< Partition entry type */
@@ -28,5 +29,6 @@ int qcc74x_boot2_update_ptable(qcc74x_partition_config_t *ptEntry);
 int qcc74x_boot2_dump(void);
 int qcc74x_boot2_init(void);
 void qcc74x_update_mfg_ptable(void);
+pt_table_stuff_config *qcc74x_boot2_get_pt_config(void);
 
 #endif

@@ -677,4 +677,10 @@ extern unsigned int wpa_trace_test_fail_after;
 #define TEST_FAIL() 0
 #endif
 
+#ifdef CONFIG_RWNX
+#ifndef INET6_ADDRSTRLEN
+#define INET6_ADDRSTRLEN 46
+#endif
+#endif
+
 #endif /* OS_H */

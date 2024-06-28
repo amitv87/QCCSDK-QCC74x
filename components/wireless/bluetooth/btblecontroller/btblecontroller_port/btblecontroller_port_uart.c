@@ -222,7 +222,7 @@ __attribute__((weak)) void btble_uart_init(uint8_t uartid)
     cfg.rx_fifo_threshold = 7;
     qcc74x_uart_init(btble_uart, &cfg);
     #ifdef UART_GLITCH_TEST_ENABLE
-    qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_GLITCH_VALUE, 12);
+    qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_DEGLITCH_CNT, 12);
     #endif
     #if defined(CFG_IOT_SDK)
     qcc74x_irq_register_with_ctx(btble_uart->irq_num, uart_isr, NULL);

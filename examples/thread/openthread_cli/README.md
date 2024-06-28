@@ -33,7 +33,7 @@ make flash CHIP=chip_name COMX=xxx # xxx is your com name
 
 ## How to run
 
-By default, command line example was built with SDK command set and uses `otc` to start OpenThread Command.
+By default, command line example has qcc74x SDK command set and uses `otc` to execute OpenThread Command.
 
 Prepare two boards with command line example programmed.
 

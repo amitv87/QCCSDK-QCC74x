@@ -165,7 +165,7 @@ static int ssl_send( void *ctx, const unsigned char *buf, size_t len )
     return ret;
 }
 
-void *mbedtls_ssl_connect(int fd, const char *ca_cert, int ca_cert_len, 
+void *mbedtls_ssl_connect(int linkid, int fd, const char *ca_cert, int ca_cert_len, 
 					 const char *own_cert, int own_cert_len, const char *private_cert, int private_cert_len)
 {
     int ret;
@@ -250,22 +250,41 @@ void *mbedtls_ssl_connect(int fd, const char *ca_cert, int ca_cert_len,
     if (ca_cert && ca_cert_len > 0) {
         mbedtls_ssl_conf_authmode(&ssl_param->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
         mbedtls_ssl_conf_ca_chain(&ssl_param->conf, &ssl_param->ca_cert, NULL);
-
-        if (own_cert && own_cert_len > 0 && private_cert && private_cert_len > 0)
-            mbedtls_ssl_conf_own_cert(&ssl_param->conf, &ssl_param->owncert, &ssl_param->pkey);
-    }
-    else {
+    } else {
         mbedtls_ssl_conf_authmode(&ssl_param->conf, MBEDTLS_SSL_VERIFY_NONE);
     }
+
+    if (own_cert && own_cert_len > 0 && private_cert && private_cert_len > 0) {
+        mbedtls_ssl_conf_own_cert(&ssl_param->conf, &ssl_param->owncert, &ssl_param->pkey);
+    }
+
     mbedtls_ssl_conf_rng(&ssl_param->conf, ssl_random, NULL);
 #if defined(MBEDTLS_DEBUG_C)
     mbedtls_ssl_conf_dbg(&ssl_param->conf, ssl_debug, NULL);
 #endif
+    
+    char **alpn;
+    int alpm_num;
+    alpn = at_net_ssl_alpn_get(linkid, &alpm_num);
+    if (alpm_num) {
+        mbedtls_ssl_conf_alpn_protocols(&ssl_param->conf, alpn);
+    }
+    
+    char *psk, *psk_hint;
+    int psk_len, pskhint_len;
+    at_net_ssl_psk_get(linkid, &psk, &psk_len, &psk_hint, &pskhint_len);
+    if (psk_len && pskhint_len) {
+        mbedtls_ssl_conf_psk(&ssl_param->conf, psk, psk_len, psk_hint, pskhint_len);
+    }
 
     ret = mbedtls_ssl_setup(&ssl_param->ssl, &ssl_param->conf);
     if (ret != 0) {
         AT_NET_SSL_PRINTF("[MBEDTLS] ssl connect: mbedtls_ssl_setup returned - %d\r\n", ret);
         goto ERROR;
+    }
+
+    if (at_net_ssl_sni_get(linkid)) {
+        mbedtls_ssl_set_hostname(&ssl_param->ssl, at_net_ssl_sni_get(linkid));
     }
     mbedtls_ssl_set_bio(&ssl_param->ssl, &ssl_param->net, ssl_send, ssl_recv, NULL);
 
@@ -391,8 +410,12 @@ void *mbedtls_ssl_accept(int fd, const char *ca_cert, int ca_cert_len,
         goto ERROR;
     }
 
-    if (ca_cert && ca_cert_len > 0) 
+    if (ca_cert && ca_cert_len > 0) {
+        mbedtls_ssl_conf_authmode(&ssl_param->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
         mbedtls_ssl_conf_ca_chain(&ssl_param->conf, &ssl_param->ca_cert, NULL);
+    } else {
+        mbedtls_ssl_conf_authmode(&ssl_param->conf, MBEDTLS_SSL_VERIFY_NONE);
+    }
     if (srv_cert && srv_cert_len > 0 && private_cert && private_cert_len > 0)
         mbedtls_ssl_conf_own_cert(&ssl_param->conf, &ssl_param->owncert, &ssl_param->pkey);
 

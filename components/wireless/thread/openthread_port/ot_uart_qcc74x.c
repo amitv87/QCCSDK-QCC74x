@@ -59,7 +59,9 @@ void ot_serialProcess(ot_system_event_t sevent)
             Ring_Buffer_Read_Byte(&uart_rb, &uart_line[i]);
         }
 
-        otPlatUartReceived(uart_line, available_len);
+        if (available_len) {
+            otPlatUartReceived(uart_line, available_len);
+        }
     }
 }
 

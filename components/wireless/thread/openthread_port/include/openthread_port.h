@@ -11,6 +11,7 @@ extern "C" {
 
 #include <openthread-core-config.h>
 #include <openthread/thread.h>
+#include <openthread/logging.h>
 
 #ifndef OT_TASK_SIZE
 #define OT_TASK_SIZE 1024
@@ -38,7 +39,8 @@ typedef union {
         uint16_t isImmAck4Error:1;
         uint16_t isCslPhaseUpdated:1;
         uint16_t isTxTimestampValid:1;
-        uint16_t unused:8;
+        uint16_t isWiFiCoexEnable:1;
+        uint16_t unused:7;
     } bf;
     uint16_t byte;
 } __packed otRadio_opt_t;
@@ -56,6 +58,9 @@ typedef enum _ot_system_event {
     OT_SYSTEM_EVENT_UART_TXD                            = 0x00000020,
     OT_SYSTEM_EVENT_UART_RXD                            = 0x00000040,
     OT_SYSETM_EVENT_UART_ALL_MASK                       = OT_SYSTEM_EVENT_UART_TXR | OT_SYSTEM_EVENT_UART_TXD | OT_SYSTEM_EVENT_UART_RXD,
+    
+    OT_SYSTEM_EVENT_SERIAL_RX_DONE                      = 0x00000080,
+    OT_SYSTEM_EVENT_SERIAL_ALL_MASK                     = OT_SYSTEM_EVENT_SERIAL_RX_DONE,
 
     OT_SYSTEM_EVENT_RADIO_TX_DONE_NO_ACK_REQ            = 0x00000100,
     OT_SYSTEM_EVENT_RADIO_TX_ERROR                      = 0x00000200,
@@ -72,10 +77,15 @@ typedef enum _ot_system_event {
         OT_SYSTEM_EVENT_RADIO_RX_DONE | OT_SYSTEM_EVENT_RADIO_RX_CRC_FIALED,
     OT_SYSTEM_EVENT_RADIO_ALL_MASK                      = OT_SYSTEM_EVENT_RADIO_TX_ALL_MASK | OT_SYSTEM_EVENT_RADIO_RX_ALL_MASK,
 
-    OT_SYSTEM_EVENT_SERIAL_RX_DONE                      = 0x00010000,
-    OT_SYSTEM_EVENT_SERIAL_ALL_MASK                     = OT_SYSTEM_EVENT_SERIAL_RX_DONE,
+    OT_SYSTEM_EVENT_POLL                                = 0x00010000,
+    OT_SYSTEM_EVENT_POLL_DATA_TIMEOUT                   = 0x00020000,
+    OT_SYSTEM_EVENT_FULL_STACK                          = 0x00040000,
+    OT_SYSTEM_EVENT_RESET_NEXT_POLL                     = 0x00080000,
+    OT_SYSTEM_EVENT_MAC_TX_RETRY                        = 0x00100000,
+    OT_SYSTEM_EVENT_CSL_TIMER                           = 0x00200000,
 
-    OT_SYSTEM_EVENT_APP                                 = 0xff000000,
+    OT_SYSTEM_EVENT_OTBR_MASK                           = 0x00800000,
+    OT_SYSTEM_EVENT_APP_MASK                            = 0xff000000,
 
     OT_SYSTEM_EVENT_ALL                                 = 0xffffffff,
 } ot_system_event_t;
@@ -117,12 +127,22 @@ void otrStackInit(void);
  *          main event loop execution. This function is called after
  *          Openthread instance created and by OpenThread task.
  *
- * @param  None
+ * @param  aInstance, Open Thread instance 
  *
  * @return None
  *
 *******************************************************************************/
 void otrInitUser(otInstance * instance);
+
+/****************************************************************************//**
+ * @brief  Open Thread infra network interface process
+ *
+ * @param  aInstance, Open Thread instance 
+ *
+ * @return None
+ *
+*******************************************************************************/
+void otbr_netif_process(otInstance *aInstance);
 
 /****************************************************************************//**
  * @brief  Initalize alarm timer task
@@ -234,6 +254,15 @@ void otrLock(void);
 *******************************************************************************/
 void otrUnlock(void);
 
+/****************************************************************************//**
+ * @brief  Check whether current task conext is Thread Task
+ *
+ * @param  None
+ *
+ * @return ture, it is under Thread Task conext
+ *
+*******************************************************************************/
+bool otrIsThreadTask(void);
 
 /****************************************************************************//**
  * @brief  Turn off interrupt
@@ -274,6 +303,16 @@ void otrNotifyEvent(ot_system_event_t sevent);
  *
 *******************************************************************************/
 ot_system_event_t otrGetNotifyEvent(void);
+
+/****************************************************************************//**
+ * @brief  Get OTBR hostname
+ *
+ * @param  None
+ *
+ * @return hostname string
+ *
+*******************************************************************************/
+char * otbr_hostname(void);
 
 /****************************************************************************//**
  * @brief  Macro OT_THREAD_SAFE provides a method to access OpenThread with 
@@ -358,6 +397,10 @@ void otrAppProcess(ot_system_event_t sevent);
  *
 *******************************************************************************/
 #define OT_APP_NOTIFY(ebit)                 otrNotifyEvent(ebit & OT_SYSTEM_EVENT_APP)
+
+#if defined (QCC74x_undef) || defined (QCC74x_undefL)
+void ot_uartSetFd(int fd);
+#endif
 
 #ifdef __cplusplus
 }

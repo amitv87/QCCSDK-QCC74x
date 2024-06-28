@@ -199,6 +199,11 @@ uint8_t qcc74x_boot2_get_active_partition(void)
     return boot2_partition_table.partition_active_idx;
 }
 
+pt_table_stuff_config *qcc74x_boot2_get_pt_config(void)
+{
+    return &boot2_partition_table.table;
+}
+
 int qcc74x_boot2_get_active_entries_byname(uint8_t *name, qcc74x_partition_config_t *ptEntry_hal)
 {
     pt_table_entry_config *ptEntry = (pt_table_entry_config*)ptEntry_hal;

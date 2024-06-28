@@ -777,6 +777,14 @@
 #endif /* !LWIP_IPV4 */
 
 /**
+ * IP_NAPT==1: Enables IPv4 Network Address and Port Translation
+ * Note that IP_FORWARD needs to be enabled for NAPT to work
+ */
+#if !defined IP_NAPT || defined __DOXYGEN__
+#define IP_NAPT                      0
+#endif
+
+/**
  * IP_OPTIONS_ALLOWED: Defines the behavior for IP options.
  *      IP_OPTIONS_ALLOWED==0: All packets with IP options are dropped.
  *      IP_OPTIONS_ALLOWED==1: IP options are allowed (but not parsed).
@@ -2302,6 +2310,14 @@
 #define MIB2_STATS                      0
 #endif
 
+/**
+ * IP_NAPT_STATS==1: Stats for IP NAPT.
+ */
+#if !defined IP_NAPT_STATS || defined __DOXYGEN__
+#define IP_NAPT_STATS                   (IP_NAPT)
+#endif
+
+
 #else
 
 #define LINK_STATS                      0
@@ -2322,6 +2338,7 @@
 #define MLD6_STATS                      0
 #define ND6_STATS                       0
 #define MIB2_STATS                      0
+#define IP_NAPT_STATS                   0
 
 #endif /* LWIP_STATS */
 /**
@@ -3576,6 +3593,13 @@
 #define LWIP_TESTMODE                   0
 #endif
 
+/**
+ * NAPT_DEBUG: Enable debugging for NAPT.
+ */
+#ifndef NAPT_DEBUG
+#define NAPT_DEBUG                       LWIP_DBG_OFF
+#endif
+
 /*
    --------------------------------------------------
    ---------- Performance tracking options ----------
@@ -3593,8 +3617,28 @@
 #if !defined LWIP_PERF || defined __DOXYGEN__
 #define LWIP_PERF                       0
 #endif
+
+#if !defined TCP_TIMER_PRECISE_NEEDED || defined __DOXYGEN__
+#define TCP_TIMER_PRECISE_NEEDED        0
+#endif
+
+#if !defined DHCP_TIMER_PRECISE_NEEDED || defined __DOXYGEN__
+#define DHCP_TIMER_PRECISE_NEEDED       0
+#endif
+
+#if !defined ARP_TIMER_PRECISE_NEEDED || defined __DOXYGEN__
+#define ARP_TIMER_PRECISE_NEEDED        0
+#endif
+
+#if !defined IP4_FRAG_TIMER_PRECISE_NEEDED || defined __DOXYGEN__
+#define IP4_FRAG_TIMER_PRECISE_NEEDED   0
+#endif
+
+#if !defined DNS_TIMER_PRECISE_NEEDED || defined __DOXYGEN__
+#define DNS_TIMER_PRECISE_NEEDED        0
+#endif
+
 /**
  * @}
  */
-
 #endif /* LWIP_HDR_OPT_H */

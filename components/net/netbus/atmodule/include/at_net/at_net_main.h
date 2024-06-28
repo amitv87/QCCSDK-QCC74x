@@ -63,6 +63,26 @@ int at_net_sntp_is_start(void);
 
 uint64_t at_current_ms_get();
 
+int at_net_recvbuf_size_set(int linkid, uint32_t size);
+
+int at_net_recvbuf_size_get(int linkid);
+
+int at_net_ssl_path_set(int linkid, const char *ca, const char *cert, const char *key);
+
+int at_net_ssl_path_get(int linkid, const char **ca, const char **cert, const char **key);
+
+int at_net_ssl_sni_set(int linkid, const char *sni);
+
+char *at_net_ssl_sni_get(int linkid);
+
+int at_net_ssl_alpn_set(int linkid, int alpn_num, const char *alpn);
+
+char **at_net_ssl_alpn_get(int linkid, int *alpn_num);
+
+int at_net_ssl_psk_set(int linkid, char *psk, int psk_len, char *pskhint, int pskhint_len);
+
+int at_net_ssl_psk_get(int linkid, char **psk, int *psk_len, char **pskhint, int *pskhint_len);
+
 #ifdef __cplusplus
 }
 #endif

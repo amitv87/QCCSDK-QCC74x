@@ -52,10 +52,11 @@ int at_wifi_config_init(void)
         at_wifi_config->reconn_cfg.interval_second = 0;
         at_wifi_config->reconn_cfg.repeat_count = 0;
     }
-    at_wifi_config->scan_option.reserved = 0;
+    at_wifi_config->scan_option.sort_enable = 1;
     at_wifi_config->scan_option.rssi_filter = -100;
     at_wifi_config->scan_option.print_mask = 0x7FF;
     at_wifi_config->scan_option.authmode_mask = 0xFFFF;
+    at_wifi_config->wevt_enable = 1;
     if (!at_config_read(AT_CONFIG_KEY_WIFI_AP_INFO, &at_wifi_config->ap_info, sizeof(wifi_ap_info))) {
         snprintf(at_wifi_config->ap_info.ssid, sizeof(at_wifi_config->ap_info.ssid), "AP_%02X%02X%02X", at_wifi_config->ap_mac.addr[3], at_wifi_config->ap_mac.addr[4], at_wifi_config->ap_mac.addr[5]);
         strlcpy(at_wifi_config->ap_info.pwd, "", sizeof(at_wifi_config->ap_info.pwd));
@@ -91,6 +92,7 @@ int at_wifi_config_init(void)
         at_wifi_config->sta_ip.ip = IP_SET_ADDR(0, 0, 0, 0);
         at_wifi_config->sta_ip.gateway = IP_SET_ADDR(0, 0, 0, 0);
         at_wifi_config->sta_ip.netmask = IP_SET_ADDR(0, 0, 0, 0);
+        at_wifi_config->sta_ip.dns = IP_SET_ADDR(0, 0, 0, 0);
     }
     if (!at_config_read(AT_CONFIG_KEY_WIFI_COUNTRY_CODE, &at_wifi_config->wifi_country, sizeof(wifi_country_code))) {
         at_wifi_config->wifi_country.country_policy = 1;

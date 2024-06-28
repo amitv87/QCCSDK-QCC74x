@@ -146,6 +146,8 @@ typedef struct wifi_mgmr_scan_params {
     int channels_cnt;
     uint8_t channels[MAX_FIXED_CHANNELS_LIMIT];
     uint32_t duration;
+    /// 0: active scan; 1: Passive scan request
+    bool passive;
 } wifi_mgmr_scan_params_t;
 
 typedef struct wifi_mgmr_raw_send_params {
@@ -839,4 +841,9 @@ int wifi_mgmr_wifi_pwr_on(void);
  */
 int wifi_mgmr_rate_config(uint16_t fixed_rate_cfg);
 
+/**
+ * wifi_mgmr_coex_enable
+ * Enable or disable wifi coex
+ */
+void wifi_mgmr_coex_enable(bool en);
 #endif

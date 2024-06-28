@@ -94,6 +94,18 @@
  */
 /**
  ****************************************************************************************
+ * @brief Find first valid set.
+ * @param[in] val Value find first valid set.
+ * @return one plus the index of the least significant 1-bit of val, or if val is zero, returns zero.
+ ****************************************************************************************
+ */
+__INLINE uint32_t co_ffs(uint32_t val)
+{
+    return __builtin_ffs(val);
+}
+
+/**
+ ****************************************************************************************
  * @brief Count leading zeros.
  * @param[in] val Value to count the number of leading zeros on.
  * @return Number of leading zeros when value is written as 32 bits.

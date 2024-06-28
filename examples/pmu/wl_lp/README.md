@@ -20,8 +20,8 @@ DTIM = 10: Enter the command "tickless 10" in the command line.
 
 | Mode       | uA  |
 | :--------- | :-- |
-| Deep sleep | 50  |
-| DTIM = 1   | 770 |
-| DTIM = 3   | 348 |
-| DTIM = 10  | 156 |
+| Deep sleep | 67  |
+| DTIM = 1   | 810 |
+| DTIM = 3   | 319 |
+| DTIM = 10  | 154 |
 

@@ -5,6 +5,13 @@
 #include <ot_radio_trx.h>
 #include <ot_utils_ext.h>
 
+#ifdef CFG_OT_USE_ROM_CODE
+extern ot_system_event_t            ot_system_event_var;
+extern SemaphoreHandle_t            ot_extLock;
+extern otInstance *                 ot_instance;
+extern TaskHandle_t                 ot_taskHandle;
+
+#else
 ot_system_event_t                   ot_system_event_var = OT_SYSTEM_EVENT_NONE;
 static SemaphoreHandle_t            ot_extLock          = NULL;
 static otInstance *                 ot_instance         = NULL;
@@ -53,6 +60,11 @@ void otrUnlock(void)
     xSemaphoreGiveRecursive(ot_extLock);
 }
 
+bool otrIsThreadTask(void) 
+{
+    return ot_taskHandle == xTaskGetCurrentTaskHandle();
+}
+
 void otSysEventSignalPending(void)
 {
     if (xPortIsInsideInterrupt())
@@ -80,11 +92,13 @@ void otrNotifyEvent(ot_system_event_t sevent)
         xTaskNotifyGive(ot_taskHandle);
     }
 }
+#endif
 
 __attribute__((weak)) void ot_serialProcess(ot_system_event_t sevent) {}
 __attribute__((weak)) void otrAppProcess(ot_system_event_t sevent) {}
 __attribute__((weak)) void otrInitUser(otInstance * instance) {}
 __attribute__((weak)) void otbr_netif_process(otInstance *aInstance) {}
+__attribute__((weak)) void otbr_event_process(ot_system_event_t sevent) {}
 
 void otTaskletsSignalPending(otInstance *aInstance)
 {
@@ -105,15 +119,19 @@ void otSysProcessDrivers(otInstance *aInstance)
     ot_alarmTask(sevent);
     ot_radioTask(sevent);
     ot_serialProcess(sevent);
+    otbr_event_process(sevent);
     otrAppProcess(sevent);
 }
 
-void otrStackInit(void) 
+void otrStackInit(void)
 {
     ot_instance = otInstanceInitSingle();
     configASSERT(ot_instance);
 }
 
+#if defined(CFG_PDS_ENABLE)
+extern void otrStackTask(void *p_arg);
+#else
 static void otrStackTask(void *p_arg)
 {
     /** This task is an example to handle both main event loop of openthread task lets and 
@@ -150,6 +168,7 @@ static void otrStackTask(void *p_arg)
 
     vTaskDelete(NULL);
 }
+#endif
 
 void otrStart(otRadio_opt_t opt)
 {

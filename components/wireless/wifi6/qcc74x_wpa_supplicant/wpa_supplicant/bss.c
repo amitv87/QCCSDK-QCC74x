@@ -34,28 +34,6 @@ static void wpa_bss_set_hessid(struct wpa_bss *bss)
 #endif /* CONFIG_INTERWORKING */
 }
 
-static int find_ie_ds(uint8_t *buffer, int len, uint8_t *result) //qcc74x_rx.c
-{
-    int i;
-
-    i = 0;
-    while (i < len) {
-#define IE_ID_DS_CHANNEL 0x03
-        if (IE_ID_DS_CHANNEL == buffer[0]) {//FIXME no magic DS for SSID
-            if (buffer[1] > 32) {
-                return -1;
-            }
-            *result = buffer[2];
-            return 0;
-        } else {
-            /*move to next ie*/
-            i += buffer[1] + 2;//FIXME 2 is for id and len
-            buffer = buffer + buffer[1] + 2;
-        }
-    }
-
-    return -1;
-}
 /**
  * wpa_bss_anqp_alloc - Allocate ANQP data structure for a BSS entry
  * Returns: Allocated ANQP data structure or %NULL on failure
@@ -462,7 +440,6 @@ static struct wpa_bss * wpa_bss_add(struct wpa_supplicant *wpa_s,
 {
 	struct wpa_bss *bss;
 	char extra[50];
-    uint8_t ch = 0;
 
 	bss = os_zalloc(sizeof(*bss) + res->ie_len + res->beacon_ie_len);
 	if (bss == NULL)
@@ -476,11 +453,6 @@ static struct wpa_bss * wpa_bss_add(struct wpa_supplicant *wpa_s,
 	bss->beacon_ie_len = res->beacon_ie_len;
 	os_memcpy(bss->ies, res + 1, res->ie_len + res->beacon_ie_len);
 	wpa_bss_set_hessid(bss);
-    //XXX should fix later
-    find_ie_ds(bss->ies, res->ie_len + res->beacon_ie_len,  &ch);
-    //printf("------------------>update ch:%d\r\n", bss->freq);
-    bss->freq = phy_channel_to_freq(0, ch);
-
 
 	if (wpa_s->num_bss + 1 > wpa_s->conf->bss_max_count &&
 	    wpa_bss_remove_oldest(wpa_s) != 0) {

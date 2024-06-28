@@ -17,10 +17,36 @@
 //#endif
 //#include <bx_rtc.h>
 
+#include "qcc74x_adc.h"
 #include "at_config.h"
 #include "at_base_config.h"
 
 base_config *at_base_config = NULL;
+
+static at_base_adc_tsen_init(void)
+{
+    struct qcc74x_device_s *adc;
+    
+    struct qcc74x_adc_config_s cfg;
+    struct qcc74x_adc_channel_s chan;
+    
+    adc = qcc74x_device_get_by_name("adc");
+
+    /* adc clock = XCLK / 2 / 32 */
+    cfg.clk_div = ADC_CLK_DIV_32;
+    cfg.scan_conv_mode = false;
+    cfg.continuous_conv_mode = false;
+    cfg.differential_mode = false;
+    cfg.resolution = ADC_RESOLUTION_16B;
+    cfg.vref = ADC_VREF_2P0V;
+
+    chan.pos_chan = ADC_CHANNEL_TSEN_P;
+    chan.neg_chan = ADC_CHANNEL_GND;
+
+    qcc74x_adc_init(adc, &cfg);
+    qcc74x_adc_channel_config(adc, &chan, 1);
+    qcc74x_adc_tsen_init(adc, ADC_TSEN_MOD_INTERNAL_DIODE);
+}
 
 int at_base_config_init(void)
 {
@@ -38,17 +64,18 @@ int at_base_config_init(void)
         at_base_config->uart_cfg.parity = 0;
         at_base_config->uart_cfg.flow_control = 0;
     }
+#endif
 
     if (!at_config_read(AT_CONFIG_KEY_SYS_MSG, &at_base_config->sysmsg_cfg, sizeof(base_sysmsg_cfg))) {
         at_base_config->sysmsg_cfg.bit.quit_throughput_msg = 0;
         at_base_config->sysmsg_cfg.bit.link_msg_type = 0;
         at_base_config->sysmsg_cfg.bit.link_state_msg = 0;
     }
-#endif
 
     //bx_rtc_init();
     at_base_config->systime_stamp = 0;
     at_base_config->sleep_mode = BASE_SLEEP_MODE_DISABLE;
+    at_base_adc_tsen_init();
     return 0;
 }
 

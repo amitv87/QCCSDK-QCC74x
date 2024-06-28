@@ -37,17 +37,12 @@
  *
  * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
-#if defined(QCC74x_undef) || defined(QCC74x_undef) || defined(QCC74x_undefL)
-#define configMTIME_BASE_ADDRESS    (0x02000000UL + 0xBFF8UL)
-#define configMTIMECMP_BASE_ADDRESS (0x02000000UL + 0x4000UL)
-#else
 #if __riscv_xlen == 64
 #define configMTIME_BASE_ADDRESS    (0)
 #define configMTIMECMP_BASE_ADDRESS ((0xE4000000UL) + 0x4000UL)
 #else
 #define configMTIME_BASE_ADDRESS    ((0xE0000000UL) + 0xBFF8UL)
 #define configMTIMECMP_BASE_ADDRESS ((0xE0000000UL) + 0x4000UL)
-#endif
 #endif
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configUSE_PREEMPTION                    1

@@ -8,7 +8,7 @@
 
 #define VERSION_LMAC154_MAJOR 1
 #define VERSION_LMAC154_MINOR 6
-#define VERSION_LMAC154_PATCH 0
+#define VERSION_LMAC154_PATCH 4
 
 typedef void (*lmac154_isr_t)(void);
 
@@ -101,36 +101,14 @@ typedef enum {
 }lmac154_aes_status_t;
 
 typedef enum {
-    LMAC154_FPT_STATUS_SUCCESS        = 0,
-    LMAC154_FPT_STATUS_NO_RESOURCE    = -1,
-    LMAC154_FPT_STATUS_ADDR_NOT_FOUND = -2,
+    LMAC154_FPT_STATUS_SUCCESS          = 0,
+    LMAC154_FPT_STATUS_NO_RESOURCE      = -1,
+    LMAC154_FPT_STATUS_ADDR_NOT_FOUND   = -2,
+    LMAC154_FPT_STATUS_EMPTY            = -3,
+    LMAC154_FPT_STATUS_INVALID_PARAM    = -4,
+    LMAC154_FPT_STATUS_INVALID_OPT      = -5
 }lmac154_fpt_status_t;
 
-typedef enum {
-    LMAC154_FPT_DATAREQ             = 0,
-    LMAC154_FPT_DATAREQ_DATA        = 1,
-    LMAC154_FPT_ANY                 = 2
-} lmac154_fptMode_t;
-
-typedef enum {
-    LMAC154_FPT_RESULT_NONE         = 0,
-    LMAC154_FPT_RESULT_FALSE        = 1,
-    LMAC154_FPT_RESULT_TRUE         = 2,
-    LMAC154_FPT_RESULT_BUSY         = 3
-} lmac154_fptResult_t;
-
-typedef union {
-    struct {
-        uint32_t isExist:1;
-        uint32_t isFramePended:1;
-        uint32_t nbrIdx:7;
-        uint32_t isSearchDone:1;
-        uint32_t unused:22;
-    } bf;
-
-    uint32_t word;
-
-} lmac154_fptSearchResult_t;
 
 typedef enum {
     LMAC154_TX_STATUS_TX_FINISHED = 0,
@@ -339,17 +317,6 @@ void lmac154_monitor(void);
 *******************************************************************************/
 lmac154_isr_t lmac154_getInterruptHandler(void);
 lmac154_isr_t lmac154_get2015InterruptHandler(void);
-
-
-/****************************************************************************//**
- * @brief  Get the version of liblmac154.a in string format
- *
- * @param  None
- *
- * @return The version of liblmac154.a
- *
-*******************************************************************************/
-char * lmac154_getLibVersion(void);
 
 /****************************************************************************//**
  * @brief  Get the version number
@@ -917,6 +884,25 @@ void lmac154_enableCoex(void);
 *******************************************************************************/
 void lmac154_disableCoex(void);
 
+/****************************************************************************//**
+ * @brief  Enable TX abort interrupt
+ *
+ * @param  None
+ *
+ * @return None
+ *
+*******************************************************************************/
+void lmac154_enableTxAbortInt(void);
+
+/****************************************************************************//**
+ * @brief  Disable TX abort interrupt
+ *
+ * @param  None
+ *
+ * @return None
+ *
+*******************************************************************************/
+void lmac154_disableTxAbortInt(void);
 
 /****************************************************************************//**
  * @brief  Enable auto transmission of ack frame by hardware (default enabled)
@@ -1050,7 +1036,6 @@ void lmac154_enableReqEnhAckEvent(void);
 *******************************************************************************/
 void lmac154_disableReqEnhAckEvent(void);
 
-
 /****************************************************************************//**
  * @brief  Get the receiving or received mpdu length in bytes (crc included)
  *
@@ -1137,6 +1122,8 @@ void lmac154_setTxRxTransTime(uint8_t timeInUs);
  *
 *******************************************************************************/
 uint64_t lmac154_getEventTimeUs(lmac154_eventTimeType_t type);
+
+void lmac154_fptSetMaxNum(uint8_t shortAddrNum, uint8_t longAddrNum);
 
 /****************************************************************************//**
  * @brief  Run AES CCM
@@ -1300,26 +1287,6 @@ void lmac154_fptClear(void);
  *
 *******************************************************************************/
 void lmac154_fptDump(int print_func(const char *fmt, ...));
-
-/****************************************************************************//**
- * @brief  Set frame pending table mode
- *
- * @param  mode: 
- *
- * @return None
- *
-*******************************************************************************/
-void lmac154_setFramePendingMode(lmac154_fptMode_t mode);
-
-/****************************************************************************//**
- * @brief  Get frame pending table result when receive a packet
- *
- * @param  tout, timeout to get result with macro second unit
- * 
- * @return Result
- *
-*******************************************************************************/
-lmac154_fptSearchResult_t lmac154_framePendingResult(uint32_t tout);
 
 
 // functions below are callback functions running in the interrupt context

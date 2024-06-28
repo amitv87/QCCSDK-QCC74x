@@ -41,6 +41,7 @@
 #include "rfparam_adapter.h"
 
 #include "app_spiwifi.h"
+#include "app_pm.h"
 
 #include "board.h"
 #include "shell.h"
@@ -54,6 +55,10 @@ extern void shell_init_with_task(struct qcc74x_device_s *shell);
 void app_init_entry(void *param)
 {
     app_spiwifi_init();
+
+#ifdef LP_APP
+    app_pm_init();
+#endif
 
     vTaskDelete(NULL);
 }

@@ -1753,8 +1753,10 @@ int wps_build_cred(struct wps_data *wps, struct wpabuf *msg)
 		wpa_snprintf_hex(hex, sizeof(hex), wps->wps->psk, PMK_LEN);
 		os_memcpy(wps->cred.key, hex, PMK_LEN * 2);
 		wps->cred.key_len = PMK_LEN * 2;
-	} else if (!wps->wps->registrar->force_per_enrollee_psk &&
-		   wps->wps->network_key) {
+	} else if ((!wps->wps->registrar->force_per_enrollee_psk ||
+		    wps->wps->use_passphrase) && wps->wps->network_key) {
+		wpa_printf(MSG_DEBUG,
+			   "WPS: Use passphrase format for Network key");
 		os_memcpy(wps->cred.key, wps->wps->network_key,
 			  wps->wps->network_key_len);
 		wps->cred.key_len = wps->wps->network_key_len;
@@ -1783,23 +1785,23 @@ int wps_build_cred(struct wps_data *wps, struct wpabuf *msg)
 
 use_provided:
 #ifdef CONFIG_WPS_TESTING
-	if (wps_testing_dummy_cred)
+	if (wps_testing_stub_cred)
 		cred = wpabuf_alloc(200);
 	else
 		cred = NULL;
 	if (cred) {
-		struct wps_credential dummy;
-		wpa_printf(MSG_DEBUG, "WPS: Add dummy credential");
-		os_memset(&dummy, 0, sizeof(dummy));
-		os_memcpy(dummy.ssid, "dummy", 5);
-		dummy.ssid_len = 5;
-		dummy.auth_type = WPS_AUTH_WPA2PSK;
-		dummy.encr_type = WPS_ENCR_AES;
-		os_memcpy(dummy.key, "dummy psk", 9);
-		dummy.key_len = 9;
-		os_memcpy(dummy.mac_addr, wps->mac_addr_e, ETH_ALEN);
-		wps_build_credential(cred, &dummy);
-		wpa_hexdump_buf(MSG_DEBUG, "WPS: Dummy Credential", cred);
+		struct wps_credential stub;
+		wpa_printf(MSG_DEBUG, "WPS: Add stub credential");
+		os_memset(&stub, 0, sizeof(stub));
+		os_memcpy(stub.ssid, "stub", 5);
+		stub.ssid_len = 5;
+		stub.auth_type = WPS_AUTH_WPA2PSK;
+		stub.encr_type = WPS_ENCR_AES;
+		os_memcpy(stub.key, "stub psk", 9);
+		stub.key_len = 9;
+		os_memcpy(stub.mac_addr, wps->mac_addr_e, ETH_ALEN);
+		wps_build_credential(cred, &stub);
+		wpa_hexdump_buf(MSG_DEBUG, "WPS: Stub Credential", cred);
 
 		wpabuf_put_be16(msg, ATTR_CRED);
 		wpabuf_put_be16(msg, wpabuf_len(cred));

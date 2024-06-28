@@ -380,6 +380,10 @@ netif_add(struct netif *netif,
 #endif /* LWIP_NETIF_LOOPBACK_MULTITHREADING */
 #endif /* ENABLE_LOOPBACK */
 
+#if IP_NAPT
+  netif->napt = 0;
+#endif /* IP_NAPT */
+
 #if LWIP_IPV4
   netif_set_addr(netif, ipaddr, netmask, gw);
 #endif /* LWIP_IPV4 */

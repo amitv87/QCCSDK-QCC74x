@@ -64,6 +64,11 @@ typedef struct {
     romfs_dirent_t cur_dirent;
 } romfs_dir_t;
 
+typedef struct {                                                                                                                                                                       
+    char *buf;
+    uint32_t bufsize;
+} romfs_filebuf_t;
+
 int romfs_mount(uint32_t addr);
 int romfs_open(romfs_file_t *fp, const char *path, int flags);
 int romfs_close(romfs_file_t *fp);
@@ -73,6 +78,7 @@ size_t romfs_lseek(romfs_file_t *fp, int off, romfs_whence_t whence);
 int romfs_stat(const char *path, romfs_stat_t *st);
 int romfs_opendir(romfs_dir_t *dp,const char *path);
 romfs_dirent_t *romfs_readdir(romfs_dir_t *dir);
+int romfs_filebuf_get(romfs_file_t *fp, romfs_filebuf_t *fb);
 int romfs_closedir(romfs_dir_t *dir);
 
 #endif

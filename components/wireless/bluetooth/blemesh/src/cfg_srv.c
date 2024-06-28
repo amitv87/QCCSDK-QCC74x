@@ -37,7 +37,9 @@
 #include "foundation.h"
 #include "friend.h"
 #include "mesh_settings.h"
-
+#if defined(CONFIG_AUTO_PTS)
+#include "testing.h"
+#endif
 
 #define DEFAULT_TTL 7
 

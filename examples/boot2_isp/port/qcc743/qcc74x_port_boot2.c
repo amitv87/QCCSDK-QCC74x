@@ -661,8 +661,11 @@ void ATTR_TCM_SECTION hal_boot2_sboot_finish(void)
 *******************************************************************************/
 void hal_boot2_uart_gpio_init(void)
 {
-    GLB_GPIO_Type pinList[] = { GLB_GPIO_PIN_21, GLB_GPIO_PIN_22 };
-    GLB_GPIO_Func_Init(GPIO_FUN_MD_UART, pinList, sizeof(pinList) / sizeof(pinList[0]));
+    struct qcc74x_device_s *gpio;
+
+    gpio = qcc74x_device_get_by_name("gpio");
+    qcc74x_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_TX);
+    qcc74x_gpio_uart_init(gpio, GPIO_PIN_22, GPIO_UART_FUNC_UART0_RX);
 }
 
 /****************************************************************************/ /**
@@ -675,16 +678,10 @@ void hal_boot2_uart_gpio_init(void)
 *******************************************************************************/
 void hal_boot2_debug_uart_gpio_init(void)
 {
-    GLB_GPIO_Cfg_Type cfg;
+    struct qcc74x_device_s *gpio;
 
-    cfg.pullType = GPIO_PULL_NONE;
-    cfg.drive = 0;
-    cfg.smtCtrl = 1;
-
-    cfg.gpioPin = GLB_GPIO_PIN_21;
-    cfg.gpioFun = GPIO_FUN_MD_UART;
-    cfg.gpioMode = GPIO_MODE_OUTPUT;
-    GLB_GPIO_Init(&cfg);
+    gpio = qcc74x_device_get_by_name("gpio");
+    qcc74x_gpio_uart_init(gpio, GPIO_PIN_21, GPIO_UART_FUNC_UART0_TX);
 }
 
 #if HAL_BOOT2_SUPPORT_USB_IAP

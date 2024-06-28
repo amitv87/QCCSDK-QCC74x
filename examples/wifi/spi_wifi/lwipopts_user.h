@@ -88,11 +88,23 @@
 
 #define LWIP_DHCP                 1
 #define LWIP_DNS                  1
-#define LWIP_IGMP                 1
 #define LWIP_SO_RCVTIMEO          1
 #define LWIP_SO_SNDTIMEO          1
 #define SO_REUSE                  1
 #define LWIP_TCP_KEEPALIVE        1
+
+#ifdef CONFIG_RWNX_LWIP
+#define TCP_TIMER_PRECISE_NEEDED        1
+#define DHCP_TIMER_PRECISE_NEEDED       1
+#define ARP_TIMER_PRECISE_NEEDED        1
+#define IP4_FRAG_TIMER_PRECISE_NEEDED   1
+#define DNS_TIMER_PRECISE_NEEDED        1
+#define LWIP_DHCP_DOES_ACD_CHECK        0
+
+#define LWIP_IGMP                       0
+#else
+#define LWIP_IGMP                       1
+#endif
 
 extern int *__errno(void);
 #define errno                         (*__errno())

@@ -47,6 +47,7 @@ struct_func_get_def(rxu_mgt_ind, uint16_t, length)
     struct_func_get_def(rxu_mgt_ind, uint8_t, inst_nbr)
     struct_func_get_def(rxu_mgt_ind, uint32_t*, payload)
     struct_func_get_def(rxu_mgt_ind, uint16_t, center_freq)
+    struct_func_get_def(rxu_mgt_ind, uint8_t, band)
     struct_func_get_def(rxu_mgt_ind, int8_t, rssi)
 
     struct_func_get_def(scanu_start_cfm, uint8_t, vif_idx)
@@ -404,6 +405,7 @@ void mm_start_req_set_tx_timeout(void *pa, uint16_t array[], int len)
     for(int i = 0; i < len; i++)
         p->tx_timeout[i] = array[i];
 }
+    struct_func_set_def(mm_start_req, uint8_t, coex_mode);
     struct_func_len(mm_start_req)
 
     struct_func_set_def(me_traffic_ind_req, uint8_t, sta_idx)

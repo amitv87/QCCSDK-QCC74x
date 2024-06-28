@@ -3,8 +3,8 @@ Support for RWNX platform
 
 Version used
 ------------
-master branch as of 2021-04-28
-commit: 15b1831a2c623a511d7c6025ec4db8205e34cca6
+version: 2.10
+commit: cff80b4f7d3c0a47c052e8187d671710f48939e4
 
 
 Build configuration

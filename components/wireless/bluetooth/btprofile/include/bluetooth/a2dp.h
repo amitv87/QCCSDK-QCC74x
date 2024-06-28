@@ -125,6 +125,8 @@ enum A2DP_CB_STATE {
 struct a2dp_callback {
 	void (*chain)(struct bt_conn *conn, uint8_t state);
 	void (*stream)(uint8_t state);
+    void (*start_cfm)(void);
+	void (*suspend_cfm)(void);
 };
 
 typedef struct{
@@ -208,6 +210,7 @@ void audio_run(void);
 int bt_start_discovery(struct bt_conn *conn);
 int bt_stream_resume(struct bt_conn *conn);
 int bt_stream_suspend(struct bt_conn *conn);
+int bt_a2dp_send_media(const void *buf, uint32_t size);
 
 #ifdef __cplusplus
 }
