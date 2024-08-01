@@ -28,9 +28,9 @@
 #include "at_http_cmd.h"
 #include "at_through.h"
 #include "at_ble_cmd.h"
-
+#include "at_bredr_cmd.h"
 #define ATCMD_TASK_STACK_SIZE 2048
-#define ATCMD_TASK_PRIORITY 15
+#define ATCMD_TASK_PRIORITY 16
 #define AT_CMD_PRINTF printf
 
 void at_response_result(uint8_t result_code)
@@ -209,6 +209,8 @@ int at_module_init(void)
     at_http_cmd_regist();
     /* register ble AT command */
     at_ble_cmd_regist();
+    /* register bredr AT command */
+    at_bredr_cmd_regist();
 #ifdef LP_APP
     /* register pwr AT command */
     at_pwr_cmd_regist();
@@ -264,5 +266,18 @@ int at_module_func(char *cmd, int (*resp_func) (uint8_t *data, int len))
     ret = at_cmd_input((uint8_t *)cmd, strlen(cmd));
     at->device_ops.write_data = func;//recovery atcmd write function
     return ret;
+}
+
+int at_output_redirect_register(int (*f_output_redirect) (void))
+{
+    at->device_ops.f_output_redirect = f_output_redirect;
+}
+
+int at_output_is_redirect()
+{
+    if (at && at->device_ops.f_output_redirect) {
+        return at->device_ops.f_output_redirect();
+    }
+    return 0;
 }
 

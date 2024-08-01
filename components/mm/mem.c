@@ -251,7 +251,7 @@ uint32_t kfree_size(void)
 
 uint32_t pfree_size(void)
 {
-#if defined(CONFIG_PSRAM) && defined(QCC743) // only for qcc74x_undef
+#if defined(CONFIG_PSRAM_HEAP) && defined(QCC743) // only for qcc74x_undef
     return g_pmemheap.free_bytes;
 #else
     return 0;

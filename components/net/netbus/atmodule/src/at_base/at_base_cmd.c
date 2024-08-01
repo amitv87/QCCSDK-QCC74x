@@ -26,6 +26,7 @@
 #include "at_ota.h"
 #include "mem.h"
 #include "at_through.h"
+#include "qcc743_sys.h"
 
 #define AT_CMD_GET_VERSION(v) (int)((v>>24)&0xFF),(int)((v>>16)&0xFF),(int)((v>>8)&0xFF),(int)(v&0xFF)
 
@@ -42,13 +43,15 @@ static int at_exe_cmd_rst(int argc, const char **argv)
     }
 
     vTaskDelay(pdMS_TO_TICKS(100));
-    GLB_SW_POR_Reset();
+    qcc74x_sys_reset_por();
     return AT_RESULT_CODE_OK;
 }
 
 static int at_exe_cmd_gmr(int argc, const char **argv)
 {
     char *outbuf = NULL;
+    char **ctx = NULL;
+    char *version = NULL;
     uint32_t core_version;
     char core_compile_time[32];
 
@@ -57,13 +60,17 @@ static int at_exe_cmd_gmr(int argc, const char **argv)
     if (!outbuf)
         return AT_RESULT_CODE_FAIL;
 
+    extern const char* qcc74x_sys_version(const char ***ctx);
+
     core_version = at_cmd_get_version();
     at_cmd_get_compile_time(core_compile_time, sizeof(core_compile_time));
 
     snprintf(outbuf, outbuf_len, "AT version:%d.%d.%d.%d(%s)\r\n", AT_CMD_GET_VERSION(core_version), core_compile_time);
-    snprintf(outbuf+strlen(outbuf), outbuf_len-strlen(outbuf), "SDK version:%s\r\n", "sdk_2.0.5");
+
+    while ((version = qcc74x_sys_version(&ctx))) {
+        snprintf(outbuf+strlen(outbuf), outbuf_len-strlen(outbuf), "%s\r\n", version);
+    }
     snprintf(outbuf+strlen(outbuf), outbuf_len-strlen(outbuf), "compile time:%s %s\r\n",  __DATE__, __TIME__);
-    snprintf(outbuf+strlen(outbuf), outbuf_len-strlen(outbuf), "Bin version:%s\r\n", "1.1.0");
     AT_CMD_RESPONSE(outbuf);
     vPortFree(outbuf);
 
@@ -142,7 +149,7 @@ static int at_exe_cmd_restore(int argc, const char **argv)
 
     at_response_string(AT_CMD_MSG_OK);
     vTaskDelay(pdMS_TO_TICKS(100));
-    GLB_SW_POR_Reset();
+    qcc74x_sys_reset_por();
 
     return AT_RESULT_CODE_OK;
 }
@@ -583,6 +590,7 @@ static int at_setup_flash_write(int argc, const char **argv)
     char *endptr;
     uint32_t address = 0;
     int recv_num = 0;
+    int ret = 0;
 
     AT_CMD_PARSE_NUMBER(0, &nbytes);
     AT_CMD_PARSE_STRING(1, addr, sizeof(addr));
@@ -607,9 +615,12 @@ static int at_setup_flash_write(int argc, const char **argv)
     at_response_string("Recv %d bytes\r\n", recv_num);
 
     printf("flash write 0x%x %d \r\n", address, nbytes);
-    qcc74x_flash_write(address, buffer, nbytes);
+    ret = qcc74x_flash_write(address, buffer, nbytes);
     vPortFree(buffer);
 
+    if (ret) {
+        return AT_RESULT_CODE_SEND_FAIL;
+    }
     return AT_RESULT_CODE_SEND_OK;
 }
 
@@ -620,6 +631,7 @@ static int at_setup_flash_read(int argc, const char **argv)
     char *endptr;
     uint32_t address = 0;
     int send_num = 0;
+    int ret = 0;
 
     AT_CMD_PARSE_NUMBER(0, &nbytes);
     AT_CMD_PARSE_STRING(1, addr, sizeof(addr));
@@ -636,8 +648,12 @@ static int at_setup_flash_read(int argc, const char **argv)
     memset(buffer, 0, nbytes);
 
     printf("flash read 0x%x %d \r\n", address, nbytes);
-    qcc74x_flash_read(address, buffer, nbytes);
+    ret = qcc74x_flash_read(address, buffer, nbytes);
 
+    if (ret) {
+        vPortFree(buffer);
+        return AT_RESULT_CODE_ERROR;
+    }
     at_response_string("+FLASH-R:");
     send_num = AT_CMD_DATA_SEND(buffer, nbytes);
 
@@ -657,14 +673,18 @@ static int at_setup_flash_erase(int argc, const char **argv)
     char *endptr;
     uint32_t address = 0;
     int send_num = 0;
+    int ret = 0;
 
     AT_CMD_PARSE_NUMBER(0, &nbytes);
     AT_CMD_PARSE_STRING(1, addr, sizeof(addr));
     address = strtoul(addr, &endptr, 16);
 
     printf("flash erase 0x%x %d \r\n", address, nbytes);
-    qcc74x_flash_erase(address, nbytes);
+    ret = qcc74x_flash_erase(address, nbytes);
 
+    if (ret) {
+        return AT_RESULT_CODE_FAIL;
+    }
     return AT_RESULT_CODE_OK;
 }
 
@@ -719,6 +739,9 @@ static int at_query_gpio_input(int argc, const char **argv)
     int pin, state;
     struct qcc74x_device_s *gpio = qcc74x_device_get_by_name("gpio");
 
+    if (argc != 1) {
+        return AT_RESULT_CODE_ERROR;
+    }
     AT_CMD_PARSE_NUMBER(0, &pin);
     at_response_string("+IOIN=%d:%d\r\n", pin, qcc74x_gpio_read(gpio, pin));
 
@@ -755,89 +778,115 @@ static int at_query_part(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+#define OTA_BUFFER_LEN (4096)
+static at_ota_handle_t g_ota_handle = NULL;
+static int g_ota_recv_total = 0;
+static int g_ota_start = 0;
+
 static int at_query_ota_start(int argc, const char **argv)
 {
+    at_response_string("+OTASTART:%d\r\n", g_ota_start);
     return AT_RESULT_CODE_OK;
 }
 
-#define OTA_BUFFER_LEN (4096)
 static int at_setup_ota_start(int argc, const char **argv)
 {
-    int ota_size;
-    int recv_size;
-    int recv_total = 0;
-    uint32_t bin_size = 0;
-    at_ota_header_t *ota_head;
+    int ota;
+   
+    AT_CMD_PARSE_NUMBER(0, &ota);
+
+    if (ota != 0 && ota != 1 ) {
+        return AT_RESULT_CODE_ERROR;
+    }
+    if (ota == 0 && g_ota_handle) {
+        at_ota_abort(g_ota_handle);
+        g_ota_handle = NULL;
+        g_ota_recv_total = 0;
+    } 
+    g_ota_start = ota;
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_ota_send(int argc, const char **argv)
+{
+    int ret = 0;
+    int len, recv_size = 0;
     uint8_t *buffer;
+    int head_offset = 0;
+    at_ota_header_t *ota_head;
 
-    AT_CMD_PARSE_NUMBER(0, &ota_size);
+    AT_CMD_PARSE_NUMBER(0, &len);
 
-    at_set_work_mode(AT_WORK_MODE_THROUGHPUT);
+    if (len <=0 || len > OTA_BUFFER_LEN || g_ota_start == 0) {
+        return AT_RESULT_CODE_FAIL;
+    }
 
-    buffer = pvPortMalloc(OTA_BUFFER_LEN);
+    if (g_ota_handle == NULL && len < sizeof(at_ota_header_t)) {
+        printf("OTA head size is not enough\r\n");
+        return AT_RESULT_CODE_FAIL;
+    }
+
+    buffer = pvPortMalloc(len);
     if (!buffer) {
         return AT_RESULT_CODE_FAIL;
     }
-    memset(buffer, 0, OTA_BUFFER_LEN);
+    memset(buffer, 0, len);
 
-    recv_total = AT_CMD_DATA_RECV(buffer, sizeof(at_ota_header_t));
+    at_response_result(AT_RESULT_CODE_OK);
+    AT_CMD_RESPONSE(AT_CMD_MSG_WAIT_DATA);
 
-    if (recv_total != sizeof(at_ota_header_t)) {
-        vPortFree(buffer);
-        return AT_RESULT_CODE_FAIL;
+    while(recv_size < len) {
+        recv_size += AT_CMD_DATA_RECV(buffer + recv_size, len - recv_size);
     }
-    ota_head = (at_ota_header_t *)buffer;
-    at_base_config->ota_handle = at_ota_start(ota_head);
 
-    if (!at_base_config->ota_handle) {
-        vPortFree(buffer);
-        return AT_RESULT_CODE_ERROR;
+    if (!g_ota_handle) {
+        g_ota_handle = at_ota_start((at_ota_header_t *)buffer);
+        head_offset = sizeof(at_ota_header_t);
     }
-    bin_size = ota_head->u.s.len;
 
-    while(recv_total < ota_size) {
-        
-        recv_size = AT_CMD_DATA_RECV(buffer, (ota_size - recv_total > OTA_BUFFER_LEN)?OTA_BUFFER_LEN:(ota_size - recv_total));
-        
-        if (recv_size == strlen(AT_THROUGH_EXIT_CMD) && memcmp(buffer, AT_THROUGH_EXIT_CMD, strlen(AT_THROUGH_EXIT_CMD)) == 0) {
-        	at_ota_abort(at_base_config->ota_handle);
-        	at_base_config->ota_handle = NULL;
-        	printf("OTA exit !!!\r\n");
-        	break;
-        }
-        printf("xxxx recv_total:%d recv_size:%d total_size:%d ota_size:%d\r\n", recv_total, recv_size, bin_size, ota_size);
-       
-        if (at_ota_update(at_base_config->ota_handle, recv_total - sizeof(at_ota_header_t), buffer, recv_size) != 0) {
-        	at_ota_abort(at_base_config->ota_handle);
-        	at_base_config->ota_handle = NULL;
-        	vPortFree(buffer);
-            return AT_RESULT_CODE_ERROR;
-        }
-        recv_total += recv_size;
-
+    if (!g_ota_handle) {
+        goto _fail;
     }
-    at_set_work_mode(AT_WORK_MODE_CMD);
 
+    if (len == recv_size) {
+        ret = AT_RESULT_CODE_SEND_OK;
+    } else {
+        ret = AT_RESULT_CODE_SEND_FAIL;
+    }
+
+    if (at_ota_update(g_ota_handle, g_ota_recv_total, buffer + head_offset, recv_size - head_offset) != 0) {
+        at_ota_abort(g_ota_handle);
+        goto _fail;
+    }
+    g_ota_recv_total += (recv_size - head_offset);
+    printf("ota recv_size:%d\r\n", g_ota_recv_total);
     vPortFree(buffer);
-    //at_response_string("OTA receive %d bytes\r\n", recv_total);
-    if (recv_total == ota_size) {
-        return AT_RESULT_CODE_SEND_OK;
-    }
+    return ret;
 
-    return AT_RESULT_CODE_ERROR;
+_fail:
+    vPortFree(buffer);
+    g_ota_handle = NULL;
+    g_ota_recv_total = 0;
+    return AT_RESULT_CODE_SEND_FAIL;
 }
 
 static int at_setup_ota_finish_reset(int argc, const char **argv)
 {
-    if (!at_base_config->ota_handle) {
+    if (!g_ota_handle) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (at_ota_finish(at_base_config->ota_handle, 1, 0) != 0) {
+    printf("ota_recv_total:%d \r\n", g_ota_recv_total);
+    g_ota_recv_total = 0;
+
+    if (at_ota_finish(g_ota_handle, 1, 0) != 0) {
+        at_ota_abort(g_ota_handle);
+        g_ota_handle = NULL;
         return AT_RESULT_CODE_ERROR;
     }
     at_response_result(AT_RESULT_CODE_OK);
     vTaskDelay(pdMS_TO_TICKS(100));
-    GLB_SW_POR_Reset();
+    qcc74x_sys_reset_por();
     return AT_RESULT_CODE_OK;
 }
 
@@ -971,7 +1020,7 @@ static const at_cmd_struct at_base_cmd[] = {
 #endif
     {"+TEMP", NULL, at_query_temp, NULL, NULL, 0, 0},
     {"+EFUSE-W", NULL, NULL, at_setup_efuse_write, NULL, 2, 3},
-    {"+EFUSE-R", NULL, NULL, at_setup_efuse_read, NULL, 2, 2},
+    {"+EFUSE-R", NULL, NULL, at_setup_efuse_read, NULL, 2, 3},
     {"+EFUSE-CFM", NULL, NULL, NULL, at_setup_efuse_write_cfm, 0, 0},
     {"+FLASH-W", NULL, NULL, at_setup_flash_write, NULL, 2, 2},
     {"+FLASH-R", NULL, NULL, at_setup_flash_read, NULL, 2, 2},
@@ -981,8 +1030,9 @@ static const at_cmd_struct at_base_cmd[] = {
     {"+IOIN", NULL, at_query_gpio_input, at_setup_gpio_input, NULL, 1, 1},
     {"+IORST", NULL, NULL, at_setup_gpio_analog_input, NULL, 1, 1},
     {"+PART", NULL, at_query_part, NULL, NULL, 0, 0},
-    {"+OTA-S", NULL, at_query_ota_start, at_setup_ota_start, NULL, 1, 1},
-    {"+OTA-R", NULL, NULL, NULL, at_setup_ota_finish_reset, 0, 0},
+    {"+OTASTART", NULL, at_query_ota_start, at_setup_ota_start, NULL, 1, 1},
+    {"+OTASEND", NULL, NULL, at_setup_ota_send, NULL, 1, 1},
+    {"+OTAFIN", NULL, NULL, NULL, at_setup_ota_finish_reset, 0, 0},
 };
 
 bool at_base_cmd_regist(void)

@@ -153,6 +153,8 @@ static void peripheral_clock_init_lp(void)
 
     QCC74x_WR_REG(GLB_BASE, GLB_CGEN_CFG2, tmpVal);
 
+    GLB_Set_UART_CLK(ENABLE, HBN_UART_CLK_XCLK, 0);
+
 #ifdef CONFIG_BSP_SDH_SDCARD
     PERIPHERAL_CLOCK_SDH_ENABLE();
     GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_EXT_SDH);
@@ -162,6 +164,9 @@ static void peripheral_clock_init_lp(void)
     PERIPHERAL_CLOCK_USB_ENABLE();
     GLB_Set_USB_CLK_From_WIFIPLL(1);
 #endif
+
+    PERIPHERAL_CLOCK_ADC_DAC_ENABLE();
+    GLB_Set_ADC_CLK(ENABLE, GLB_ADC_CLK_XCLK, 1);
 }
 #endif
 
@@ -226,7 +231,7 @@ void qcc74x_show_log(void)
     printf("Build:%s,%s\r\n", __TIME__, __DATE__);
 }
 
-static const char* qcc74x_sys_version(const char ***ctx)
+const char* qcc74x_sys_version(const char ***ctx)
 {
     extern uint8_t _version_info_section_start;
     extern uint8_t _version_info_section_end;
@@ -443,14 +448,28 @@ void board_spi0_gpio_init()
     struct qcc74x_device_s *gpio;
 
     gpio = qcc74x_device_get_by_name("gpio");
-    /* spi cs */
-    qcc74x_gpio_init(gpio, GPIO_PIN_12, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
+    /* spi cs */ 
+    qcc74x_gpio_init(gpio, GPIO_PIN_16, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi clk */
-    qcc74x_gpio_init(gpio, GPIO_PIN_13, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
+    qcc74x_gpio_init(gpio, GPIO_PIN_33, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi miso */
-    qcc74x_gpio_init(gpio, GPIO_PIN_18, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
+    qcc74x_gpio_init(gpio, GPIO_PIN_30, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi mosi */
-    qcc74x_gpio_init(gpio, GPIO_PIN_19, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_1);
+    qcc74x_gpio_init(gpio, GPIO_PIN_27, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
+}
+
+void board_spi0_gpio_3pin_init()
+{
+    struct qcc74x_device_s *gpio;
+
+    gpio = qcc74x_device_get_by_name("gpio");
+    
+    /* spi clk */
+    qcc74x_gpio_init(gpio, GPIO_PIN_33, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
+    /* spi miso */
+    qcc74x_gpio_init(gpio, GPIO_PIN_30, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
+    /* spi mosi */
+    qcc74x_gpio_init(gpio, GPIO_PIN_27, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
 }
 
 void board_pwm_gpio_init()
@@ -719,7 +738,7 @@ __attribute__((weak)) uint32_t get_fattime(void)
 
 static void reboot_cmd(int argc, char **argv)
 {
-    GLB_SW_POR_Reset();
+    qcc74x_sys_reset_por();
 }
 
 static void show_sys_versoin_cmd(int argc, char **argv)
@@ -747,7 +766,7 @@ void mfg_config(void)
 static void mfg_cmd(int argc, char **argv)
 {
     mfg_config();
-    GLB_SW_POR_Reset();
+    qcc74x_sys_reset_por();
 }
 SHELL_CMD_EXPORT_ALIAS(mfg_cmd, mfg, mfg);
 

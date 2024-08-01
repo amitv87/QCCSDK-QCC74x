@@ -17,9 +17,9 @@ else()
 sdk_set_linker_script(qcc743_flash.ld)
 endif()
 
-if(CONFIG_PSRAM)
+# qcc744dk have psram, so define CONFIG_PSRAM for some code to determine this.
 sdk_add_compile_definitions(-DCONFIG_PSRAM)
-endif()
+
 if(CONFIG_CONSOLE_WO)
 sdk_add_compile_definitions(-DCONFIG_CONSOLE_WO)
 endif()

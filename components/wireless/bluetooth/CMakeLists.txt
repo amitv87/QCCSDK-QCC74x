@@ -8,6 +8,7 @@ if(NOT CONFIG_BLE_HOST_DISABLE)
         sdk_add_subdirectory_ifdef(CONFIG_BT_MESH_MODEL blemesh_model)
     endif()
 	sdk_add_subdirectory_ifdef(CONFIG_BT_BREDR btprofile)
+        sdk_add_subdirectory_ifdef(CONFIG_AUTO_PTS bleptstest)
 endif()
 
 # disable undef warning

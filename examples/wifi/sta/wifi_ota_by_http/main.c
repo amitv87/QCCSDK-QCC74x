@@ -76,7 +76,7 @@ struct qcc74x_device_s *wdg;
 static TaskHandle_t ota_task_handle;
 #endif
 static wifi_conf_t conf = {
-    .country_code = "CN",
+    .country_code = "US",
 };
 
 #if AUTO_CONNECT_WIFI

@@ -378,9 +378,13 @@ static void __ramsync_low_tx_cb(void *arg)
 #endif
 }
 
-static void __ramsync_low_reset_cb(void *spisync)
+static void __ramsync_low_reset_cb(void *arg)
 {
-    // todo:
+    spisync_t *spisync = (spisync_t *)arg;
+
+    if (spisync->config && spisync->config->reset_cb) {
+        spisync->config->reset_cb(spisync->config->reset_arg);
+    }
 }
 
 void timer_callback(TimerHandle_t xTimer)
@@ -395,7 +399,59 @@ void timer_callback(TimerHandle_t xTimer)
 
 int spisync_wakeup(spisync_t *spisync)
 {
+    if ((NULL == spisync) && (NULL == g_spisync_current)) {
+        return -1;
+    } else if (NULL == spisync) {
+        spisync = g_spisync_current;
+    }
+
+#ifdef LP_APP
+    extern int enable_tickless;
+    enable_tickless = 0;
+#endif
+
+    spisync->ps_status = 0;
+
     _spisync_setevent(spisync, EVT_SPISYNC_WAKEUP_BIT);
+    return 0;
+}
+
+int spisync_status_get(spisync_t *spisync)
+{
+    if ((NULL == spisync) && (NULL == g_spisync_current)) {
+        return -1;
+    } else if (NULL == spisync) {
+        spisync = g_spisync_current;
+    }
+
+    //SPISYNC_IDLE, // IDLE
+    //SPISYNC_BUSY, // BUSY
+ 
+    return 0;
+}
+
+int spisync_ps_enter(spisync_t *spisync)
+{
+    if ((NULL == spisync) && (NULL == g_spisync_current)) {
+        return -1;
+    } else if (NULL == spisync) {
+        spisync = g_spisync_current;
+    }
+
+    spisync->ps_status = 1;
+    return 0;
+}
+
+int spisync_ps_exit(spisync_t *spisync)
+{
+    if ((NULL == spisync) && (NULL == g_spisync_current)) {
+        return -1;
+    } else if (NULL == spisync) {
+        spisync = g_spisync_current;
+    }
+
+    spisync->ps_status = 2;
+    return 0;
 }
 
 int spisync_init(spisync_t *spisync, const spisync_config_t *config)
@@ -433,6 +489,7 @@ int spisync_init(spisync_t *spisync, const spisync_config_t *config)
     // update magic
     for (i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
         spisync->p_tx->slot[i].tag.magic = SPISYNC_SLOT_MAGIC;
+        spisync->p_tx->slot[i].tag.flag = 0x1;// for poweron reset
         spisync->p_tx->slot[i].tag.clamp[0] = SPISYNC_RX0_STREAMBUFFER_SIZE;
         spisync->p_tx->slot[i].tag.clamp[1] = SPISYNC_RX1_STREAMBUFFER_SIZE;
         spisync->p_tx->slot[i].tag.clamp[2] = SPISYNC_RX2_STREAMBUFFER_SIZE;
@@ -503,6 +560,9 @@ int spisync_init(spisync_t *spisync, const spisync_config_t *config)
 #if SPISYNC_MASTER_ENABLE
 #else
     spisync_s2m_init();
+    spisyn_s2m_set();
+    arch_delay_ms(10);
+    spisync_s2m_reset();
 #endif
     return 0;
 }
@@ -574,6 +634,11 @@ int spisync_write(spisync_t *spisync, uint8_t type, void *buf, uint32_t len, uin
         return -1;
     }
 
+    if (spisync->ps_status) {
+        spisync_wakeup(spisync);
+        vTaskDelay(300);
+        spisync->ps_status = 0;
+    }
     // todo: add clamp here.
 #if 0
     // compare

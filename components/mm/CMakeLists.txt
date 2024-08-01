@@ -4,6 +4,10 @@ sdk_add_include_directories(.)
 
 sdk_library_add_sources(mem.c)
 
+if(CONFIG_PSRAM_HEAP)
+sdk_add_compile_definitions(-DCONFIG_PSRAM_HEAP)
+endif()
+
 if(CONFIG_TLSF)
 sdk_library_add_sources(tlsf/tlsf.c tlsf/qcc74x_tlsf.c)
 sdk_add_include_directories(tlsf)

@@ -1,6 +1,8 @@
 #ifndef __SPISYNC_CONFIG_H__
 #define __SPISYNC_CONFIG_H__
 
+typedef void (*spisync_cb_func_t)(void *arg);
+
 typedef struct spisync_config {
     const char *spi_name;
     const char *spi_tx_dmach;
@@ -14,6 +16,8 @@ typedef struct spisync_config {
     uint32_t spi_dma_req_rx;
     uint32_t spi_dma_tdr;
     uint32_t spi_dma_rdr;
+    spisync_cb_func_t reset_cb;
+    void *reset_arg;
 } spisync_config_t;
 
 #endif

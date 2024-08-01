@@ -12,7 +12,7 @@ __LPFW_SIZE = DEFINED(btble_controller_init) ? 38K : 70K;
 
 __RFTLV_SIZE_OFFSET = 1K;
 __RFTLV_SIZE_HOLE = 2K;
-__RFTLV_HEAD1_H = (0x46524C42); /* BLRF */
+__RFTLV_HEAD1_H = (0x46524C42); /* */
 __RFTLV_HEAD1_L = (0x41524150); /* PAPA */
 
 MEMORY
@@ -119,6 +119,13 @@ SECTIONS
 
         . = ALIGN(32);
         __text_code_end__ = .;
+    } > xip_memory
+
+    .build_id :
+    {
+        . = ALIGN(4);
+        PROVIDE( elf_build_id = ABSOLUTE(.) + 16);
+        *(.note.gnu.build-id)
     } > xip_memory
 
     . = ALIGN(32);

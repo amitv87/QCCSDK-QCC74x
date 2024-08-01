@@ -1,16 +1,53 @@
 # Changes
+##2024-07-24
+1.reset gatt server attr count when call dynamic gatt unregister api.
 
-##2024-5-30
-1.When att time out occur, disconnect this connection.
+##2024-07-23
+1.gatt server dynamic add unregister api and support multi servers register.
 
-##2024-5-30
+##2024-07-16
+1.Add gatt server dynamic register api.
+
+##2024-07-15
+1.Update code for mesh 1.1.
+
+## 2024-07-03
+1.[blestack] Updated the OAD service to work with new Flash driver API.
+
+## 2024-07-01
+1.[blestack]Fixed CVE-2024-1638 and add Core Specification 5.4 Vol. 3 Part C 10.3.1 supported
+2.[blestack]Fixed CVE-2024-3077
+CVE-2024-1638 https://github.com/zephyrproject-rtos/zephyr/security/advisories/GHSA-p6f3-f63q-5mc2
+CVE-2024-3077 https://github.com/zephyrproject-rtos/zephyr/security/advisories/GHSA-gmfv-4vfh-2mh8
+
+## 2024-06-27
+1. Fixed bt_le_name_update strlcpy parameter incorrected.
+
+## 2024-06-24
+1.[QCC743]Add an api for setting br/edr tx power.
+
+## 2024-06-07
+1.Add BREDR unpair CLI command.
+
+## 2024-06-07
+1.Fix the crash issue caused by the risk of removing gatt subscriptions triggered by unpairing an connected peer device.
+
+## 2024-06-06
+1.[BREDR]Fixed bt hci cp setup sync conn req parameter for HFP/HF/ACS/BV-15-I(eSCO S4 settings).
+
+## 2024-06-04
+1.[BREDR][FEATURE] Sets the minimal size of encryption key.
+
+## 2024-5-30
 1.When disconnected,no need to cancel the connection update timer as the timer will be released at the end.
+2.When att time out occur, disconnect this connection.
+3.[BREDR]Fix hfp_outgoint_call_with_mem_loc cli command parameter incorrect.
 
-##2024-5-24
+## 2024-5-24
 1.Add an api to check if bt is ready.
 2.Make bt_auth callback can be updated if needed.
 
-##2024-5-23
+## 2024-5-23
 1.[L2CAP][BR]Fix l2cap l2cap_br_conf_rsp parameter incorrect
 
 ##2024-05-22

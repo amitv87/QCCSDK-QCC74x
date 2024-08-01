@@ -1144,6 +1144,26 @@ static int conn_auth(struct bt_conn *conn)
 #endif /* CONFIG_BT_BREDR */
 
 #if defined(CONFIG_BT_SMP)
+
+bool bt_conn_ltk_present(const struct bt_conn *conn)
+{
+	const struct bt_keys *keys = conn->le.keys;
+
+	if (!keys) {
+		keys = bt_keys_find_addr(conn->id, &conn->le.dst);
+	}
+
+	if (keys) {
+		if (conn->role == BT_CONN_ROLE_MASTER) {
+			return keys->keys & (BT_KEYS_LTK_P256 | BT_KEYS_SLAVE_LTK);
+		} else {
+			return keys->keys & (BT_KEYS_LTK_P256 | BT_KEYS_LTK);
+		}
+	}
+
+	return false;
+}
+
 void bt_conn_identity_resolved(struct bt_conn *conn)
 {
 	const bt_addr_le_t *rpa;

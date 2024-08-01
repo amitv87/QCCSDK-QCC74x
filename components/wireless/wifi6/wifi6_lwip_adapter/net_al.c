@@ -110,7 +110,6 @@ static err_t net_if_output(struct netif *net_if, struct pbuf *p_buf)
 {
     err_t status = ERR_BUF;
 
-#ifdef PKT_OUTPUT_HOOK
     if (qcc74x_wifi_pkt_eth_output_hook) {
         bool is_sta = true; // FIXME
         p_buf = qcc74x_wifi_pkt_eth_output_hook(is_sta, p_buf, qcc74x_wifi_pkt_eth_output_hook_arg);
@@ -119,7 +118,6 @@ static err_t net_if_output(struct netif *net_if, struct pbuf *p_buf)
             return ERR_BUF;
         }
     }
-#endif
     // Increase the ref count so that the buffer is not freed by the networking stack
     // until it is actually sent over the WiFi interface
     pbuf_ref(p_buf);
@@ -300,7 +298,6 @@ static int net_if_input(net_al_rx_t net_buf, net_al_if_t net_if, void *addr, uin
     /* MIOT616-238: Record the time when the last TCPIP packet was received */
     PLATFORM_HOOK(tcpip_rx);
 
-#ifdef PKT_INPUT_HOOK
     if (qcc74x_wifi_pkt_eth_input_hook) {
         bool is_sta = true; // FIXME
         p = qcc74x_wifi_pkt_eth_input_hook(is_sta, p, qcc74x_wifi_pkt_eth_input_hook_arg);
@@ -309,7 +306,6 @@ static int net_if_input(net_al_rx_t net_buf, net_al_if_t net_if, void *addr, uin
             goto end;
         }
     }
-#endif
 
     if (nif->input(p, nif))
     {
@@ -317,7 +313,7 @@ static int net_if_input(net_al_rx_t net_buf, net_al_if_t net_if, void *addr, uin
         return -1;
     }
 
-    goto end; // In case of error that label end is defined but not used when PKT_INPUT_HOOK is disabled
+    goto end; // In case of error that label end is defined but not used when qcc74x_wifi_pkt_eth_input_hook is NULL
 end:
     return 0;
 }

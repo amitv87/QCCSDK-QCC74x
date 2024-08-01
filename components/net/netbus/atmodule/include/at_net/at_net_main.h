@@ -14,6 +14,8 @@
 extern "C" {
 #endif
 
+#include "lwip/ip_addr.h"
+
 #define AT_NET_CLIENT_HANDLE_MAX 5
 #define AT_NET_SERVER_HANDLE_MAX 1
 
@@ -27,17 +29,17 @@ int at_net_client_get_valid_id(void);
 
 int at_net_client_id_is_valid(int id);
 
-int at_net_client_tcp_connect(int id, uint32_t remote_ip, uint16_t remote_port, int keepalive);
+int at_net_client_tcp_connect(int id, ip_addr_t *remote_ip, uint16_t remote_port, int keepalive);
 
-int at_net_client_udp_connect(int id, uint32_t remote_ipt, uint16_t remote_port, uint16_t local_port, int mode);
+int at_net_client_udp_connect(int id, ip_addr_t *remote_ip, uint16_t remote_port, uint16_t local_port, int mode);
 
-int at_net_client_ssl_connect(int id, uint32_t remote_ip, uint16_t remote_port, int keepalive);
+int at_net_client_ssl_connect(int id, ip_addr_t *remote_ip, uint16_t remote_port, int keepalive);
 
 int at_net_client_is_connected(int id);
 
-int at_net_client_set_remote(int id, uint32_t ip, uint16_t port);
+int at_net_client_set_remote(int id, ip_addr_t *ipaddr, uint16_t port);
 
-int at_net_client_get_info(int id, char *type, uint32_t *remote_ip, uint16_t *remote_port, uint16_t *local_port, uint8_t *tetype);
+int at_net_client_get_info(int id, char *type, ip_addr_t *remote_ip, uint16_t *remote_port, uint16_t *local_port, uint8_t *tetype);
 
 int at_net_client_get_recvsize(int id);
 
@@ -47,9 +49,9 @@ int at_net_client_close(int id);
 
 int at_net_client_close_all(void);
 
-int at_net_server_tcp_create(uint16_t port, int max_conn, int timeout);
+int at_net_server_tcp_create(uint16_t port, int max_conn, int timeout, uint8_t is_ipv6);
 
-int at_net_server_ssl_create(uint16_t port, int max_conn, int timeout, int ca_enable);
+int at_net_server_ssl_create(uint16_t port, int max_conn, int timeout, int ca_enable, uint8_t is_ipv6);
 
 int at_net_server_is_created(uint16_t *port, char *type, int *ca_enable);
 
@@ -67,6 +69,8 @@ int at_net_recvbuf_size_set(int linkid, uint32_t size);
 
 int at_net_recvbuf_size_get(int linkid);
 
+int at_net_recvbuf_read(int linkid, ip_addr_t *remote_ipaddr, uint16_t *remote_port, uint8_t *buf, uint32_t size);
+
 int at_net_ssl_path_set(int linkid, const char *ca, const char *cert, const char *key);
 
 int at_net_ssl_path_get(int linkid, const char **ca, const char **cert, const char **key);
@@ -82,6 +86,10 @@ char **at_net_ssl_alpn_get(int linkid, int *alpn_num);
 int at_net_ssl_psk_set(int linkid, char *psk, int psk_len, char *pskhint, int pskhint_len);
 
 int at_net_ssl_psk_get(int linkid, char **psk, int *psk_len, char **pskhint, int *pskhint_len);
+
+int at_string_host_to_ip(char *host, ip_addr_t *ip);
+
+int at_net_dns_load(void);
 
 #ifdef __cplusplus
 }

@@ -25,7 +25,7 @@
                                 ##__VA_ARGS__);\
                                 } while(0==1)
 #endif
-#define spisync_log	printf
+#define spisync_log	//printf
 #define spisync_err	printf
 
 #else

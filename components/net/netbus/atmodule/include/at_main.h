@@ -17,7 +17,7 @@ extern "C" {
 #define AT_CMD_BIN_VERSION "1.0.0"
 #define AT_FS_ROOT_DIR "/romfs"
 
-#define AT_CMD_MAX_NUM 128
+#define AT_CMD_MAX_NUM 256
 #define AT_CMD_MAX_LEN 256
 #define AT_CMD_MAX_PARA 16
 #define AT_CMD_MAX_FUNC 8
@@ -54,6 +54,7 @@ typedef struct {
     int (*deinit_device)(void); 
     int (*read_data) (uint8_t *data, int len);
     int (*write_data) (uint8_t *data, int len);
+    int (*f_output_redirect) (void);
 } at_device_ops;
 
 typedef int (*at_func)(void);
@@ -97,6 +98,10 @@ int at_set_work_mode(at_work_mode mode);
 at_work_mode at_get_work_mode(void);
 
 int at_module_func(char *cmd, int (*resp_func) (uint8_t *data, int len));
+
+int at_output_redirect_register(int (*output_redirect) (void));
+
+int at_output_is_redirect();
 
 #ifdef __cplusplus
 }

@@ -28,6 +28,7 @@
 #include "sdp.h"
 #include "a2dp.h"
 #include "hfp_hf.h"
+#include "spp.h"
 #include "avctp.h"
 #include "avrcp.h"
 #include "rfcomm.h"
@@ -787,7 +788,9 @@ no_chan:
 	l2cap_br_send_conn_rsp(conn, scid, 0, ident, result);
 	if (result == BT_L2CAP_BR_ERR_SEC_BLOCK)
 	{
+		#if DISABLE_BREDR_INVALID_ENC_KEY_TEST
 		bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
+		#endif
 	}
 }
 
@@ -1636,9 +1639,13 @@ void bt_l2cap_br_init(void)
 	sys_slist_init(&br_servers);
 
 	bt_sdp_init();
+	bt_rfcomm_init();
+
+	if (IS_ENABLED(CONFIG_BT_SPP)) {
+		bt_spp_init();
+	}
 
 	if (IS_ENABLED(CONFIG_BT_HFP)) {
-		bt_rfcomm_init();
 		bt_hfp_hf_init();
 	}
 

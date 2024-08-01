@@ -2225,11 +2225,11 @@ static int accept_sco_conn(const bt_addr_t *bdaddr, struct bt_conn *sco_conn, ui
 
 	cp->tx_bandwidth = 0x00001f40;
 	cp->rx_bandwidth = 0x00001f40;
-	cp->max_latency = 0x0007;
+	cp->max_latency = 0xFFFF;
     if(link_type == BT_HCI_SCO)
 	    cp->retrans_effort = 0;
     else
-        cp->retrans_effort = 1;
+        cp->retrans_effort = 2;
     
 	cp->content_format = BT_VOICE_CVSD_16BIT;
 #if defined CONFIG_BT_HFP
@@ -5985,9 +5985,12 @@ extern struct net_buf_pool prep_pool;
 #if defined(CONFIG_BT_BREDR)
 extern struct net_buf_pool br_sig_pool;
 extern struct net_buf_pool sdp_pool;
+extern struct net_buf_pool dummy_pool;
 #if defined CONFIG_BT_HFP
 extern struct net_buf_pool hf_pool;
-extern struct net_buf_pool dummy_pool;
+#endif
+#if defined CONFIG_BT_SPP
+extern struct net_buf_pool spp_pool;
 #endif
 #endif
 #endif
@@ -6039,9 +6042,12 @@ int bt_disable_action(void)
     #if defined(CONFIG_BT_BREDR)
     net_buf_deinit(&br_sig_pool);
     net_buf_deinit(&sdp_pool);
+    net_buf_deinit(&dummy_pool);
     #if defined CONFIG_BT_HFP
     net_buf_deinit(&hf_pool);
-    net_buf_deinit(&dummy_pool);
+    #endif
+    #if defined CONFIG_BT_SPP
+    net_buf_deinit(&spp_pool);
     #endif
     #endif
     #endif//defined(CONFIG_BT_CONN)
@@ -6529,7 +6535,7 @@ static inline int bt_le_name_update(const struct bt_data *ad, size_t ad_len)
 		for (i = 0; i < ad_len; i++) {
 			if (ad[i].type == BT_DATA_NAME_COMPLETE ||
 			    ad[i].type == BT_DATA_NAME_SHORTENED) {
-				strlcpy(name,(char*)ad[i].data,ad[i].data_len);
+				strlcpy(name,(char*)ad[i].data,ad[i].data_len+1);
 				ret = bt_set_name(name);
 			}
 		}
@@ -6747,6 +6753,12 @@ int bt_le_adv_start_internal(const struct bt_le_adv_param *param,
 			set_param.type = BT_LE_ADV_IND;
 		}
 	} else {
+		#if defined(CONFIG_BT_MESH_V1d1) && (defined(CONFIG_BT_STACK_PTS) || defined(CONFIG_AUTO_PTS))
+		if (param->options & BT_LE_ADV_OPT_USE_NRPA) {
+			le_set_non_resolv_private_addr(param->id);
+			set_param.own_addr_type = BT_ADDR_LE_RANDOM;
+		} else
+		#endif /* CONFIG_BT_MESH_V1d1 */
 		if (param->options & BT_LE_ADV_OPT_USE_IDENTITY) {
 			if (id_addr->type == BT_ADDR_LE_RANDOM) {
 				err = set_random_address(&id_addr->a);
@@ -8069,6 +8081,72 @@ int bt_br_set_a2dp_stream_duty(u8_t DutyValue)
 
     return bt_hci_cmd_send_sync( HCI_VS_BT_A2DP_DUTY_CYCLE_CMD_OPCODE, buf, NULL );
 }
+
+int bt_br_set_min_enc_key_size(u8_t KeySize)
+{
+    struct bt_hci_cp_set_min_enc_key_size set_param;
+	struct net_buf *buf;
+	int err;
+
+    if(KeySize < 1 || KeySize>16)
+        return -EINVAL ;
+    
+	memset(&set_param, 0, sizeof(set_param));
+
+	set_param.min_enc_key_size =  KeySize;
+
+	buf = bt_hci_cmd_create(BT_HCI_OP_SET_MIN_ENC_KEY_SIZE, sizeof(set_param));
+	if (!buf) {
+		return -ENOBUFS;
+	}
+
+	net_buf_add_mem(buf, &set_param, sizeof(set_param));
+
+	err = bt_hci_cmd_send_sync(BT_HCI_OP_SET_MIN_ENC_KEY_SIZE, buf, NULL);
+
+	if (err) {
+		return err;
+	}
+    
+	return 0;
+}
+
+int bt_br_set_tx_pwr(int8_t br_power, int8_t edr_power)
+{
+    struct hci_vsc_bt_tx_pwr_cmd set_param;
+	struct net_buf *buf;
+	int err;
+
+    if ( (u8_t)br_power == 0xff && (u8_t)edr_power ==  0xff)
+        return -EINVAL ;
+
+    if( (br_power < 0 || br_power > 10) && ((u8_t)br_power !=  0xff))
+        return -EINVAL ;
+    
+    if( (edr_power < 0 || edr_power > 8) && ((u8_t)edr_power !=  0xff))
+        return -EINVAL ;
+    
+	memset(&set_param, 0, sizeof(set_param));
+
+	set_param.br_power = br_power;
+    set_param.edr_power = edr_power;
+
+	buf = bt_hci_cmd_create(HCI_VS_BT_SET_TX_PWR, sizeof(set_param));
+	if (!buf) {
+		return -ENOBUFS;
+	}
+
+	net_buf_add_mem(buf, &set_param, sizeof(set_param));
+
+	err = bt_hci_cmd_send_sync(HCI_VS_BT_SET_TX_PWR, buf, NULL);
+
+	if (err) {
+		return err;
+	}
+    
+	return 0;
+}
+
 
 #endif /* CONFIG_BT_BREDR */
 

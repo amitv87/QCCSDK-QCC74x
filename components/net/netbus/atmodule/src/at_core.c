@@ -552,3 +552,23 @@ int at_cmd_input(uint8_t *data, int32_t len)
         return 0;
     }
 }
+
+int at_write_data(uint8_t *data, int32_t len)
+{
+    return at->device_ops.write_data(data, len);
+}
+
+void at_write_string(const char *format, va_list args)
+{
+    char outbuf[128];
+
+    if (!at) {
+        return;
+    }
+
+    memset(outbuf, 0, sizeof(outbuf));
+    vsnprintf(outbuf, sizeof(outbuf), format, args);
+
+    at->device_ops.write_data((uint8_t *)outbuf, strlen(outbuf));
+}
+

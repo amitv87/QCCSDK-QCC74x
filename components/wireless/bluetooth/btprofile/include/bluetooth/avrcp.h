@@ -177,7 +177,7 @@ int avrcp_reg_not_cmd(struct bt_avctp *session, uint8_t event);
 int avrcp_change_volume(uint8_t vol);
 int avrcp_hdl_set_abs_vol(struct bt_avctp *session, uint8_t trans_lab, uint8_t *params);
 int avrcp_hdl_reg_not_vol(struct bt_avctp *session, uint8_t trans_lab, uint8_t rsp_type);
-
+int avrcp_set_absvol_cmd(struct bt_avctp *session, uint8_t abs_vol);
 #ifdef __cplusplus
 }
 #endif

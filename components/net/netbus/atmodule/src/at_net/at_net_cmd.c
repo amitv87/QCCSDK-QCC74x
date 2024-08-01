@@ -15,6 +15,7 @@
 //#include <wifi_mgmr_ext.h>
 #include <lwip/sys.h>
 #include <lwip/netdb.h>
+#include <lwip/dns.h>
 //#include <ping.h>
 #include <at_net_ping.h>
 #include <time.h>
@@ -27,6 +28,7 @@
 #include "at_net_main.h"
 #include "at_net_config.h"
 #include "at_through.h"
+#include "wifi_mgmr_ext.h"
 
 #define AT_NET_CMD_PRINTF printf
 
@@ -41,18 +43,6 @@
 
     return 1;
 }*/
-
-static int string_host_to_ip(char *host, uint32_t *ip)
-{
-    struct hostent *hostinfo = gethostbyname(host);
-    if (hostinfo) {
-        *ip = (uint32_t)((struct in_addr *) hostinfo->h_addr)->s_addr;
-        return 0;
-    }
-
-    AT_NET_CMD_PRINTF("unknown host: %s\r\n", host);
-    return -1;
-}
 
 static int at_exe_cmd_cifsr(int argc, const char **argv)
 {
@@ -69,6 +59,21 @@ static int at_exe_cmd_cifsr(int argc, const char **argv)
 
     if (at_wifi_config->wifi_mode == WIFI_STATION_MODE || at_wifi_config->wifi_mode == WIFI_AP_STA_MODE) {
         at_response_string("+CIFSR:%s,\"%s\"\r\n", "STAIP", ip4addr_ntoa(&sta_addr));
+#if LWIP_IPV6 
+    if (at_net_config->ipv6_enable) {
+        struct netif *nif = (struct netif *)fhost_to_net_if(MGMR_VIF_STA);
+ 
+        for (uint32_t i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
+            const ip6_addr_t * ip6addr = netif_ip6_addr(nif, i);
+            if (ip6_addr_isvalid(netif_ip6_addr_state(nif, i)) && ip6_addr_islinklocal(ip6addr)) {
+                at_response_string("+CIFSR:%s:\"%s\"\r\n", "STAIP6LL", ipaddr_ntoa(ip6addr));
+            }
+            if (ip6_addr_isvalid(netif_ip6_addr_state(nif, i)) && ip6_addr_isglobal(ip6addr)) {
+                at_response_string("+CIFSR:%s:\"%s\"\r\n", "STAIP6GL", ipaddr_ntoa(ip6addr));
+            }
+        }
+    }
+#endif 
         at_response_string("+CIFSR:%s,\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n", "STAMAC",
             at_wifi_config->sta_mac.addr[0],
             at_wifi_config->sta_mac.addr[1],
@@ -80,6 +85,18 @@ static int at_exe_cmd_cifsr(int argc, const char **argv)
 
     if (at_wifi_config->wifi_mode == WIFI_SOFTAP_MODE || at_wifi_config->wifi_mode == WIFI_AP_STA_MODE) {
         at_response_string("+CIFSR:%s,\"%s\"\r\n", "APIP", ip4addr_ntoa(&ap_addr));
+#if LWIP_IPV6 
+    if (at_net_config->ipv6_enable) {
+        struct netif *nif = (struct netif *)fhost_to_net_if(MGMR_VIF_AP);
+ 
+        for (uint32_t i = 0; i < LWIP_IPV6_NUM_ADDRESSES; i++) {
+            const ip6_addr_t * ip6addr = netif_ip6_addr(nif, i);
+            if (ip6_addr_isvalid(netif_ip6_addr_state(nif, i)) && ip6_addr_islinklocal(ip6addr)) {
+                at_response_string("+CIFSR:%s:\"%s\"\r\n", "APIP6LL", ipaddr_ntoa(ip6addr));
+            }
+        }
+    }
+#endif
         at_response_string("+CIFSR:%s,\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n", "APMAC",
             at_wifi_config->ap_mac.addr[0],
             at_wifi_config->ap_mac.addr[1],
@@ -93,59 +110,163 @@ static int at_exe_cmd_cifsr(int argc, const char **argv)
 
 static int at_query_cmd_cipv6(int argc, const char **argv)
 {
-    return AT_RESULT_CODE_ERROR;
+    at_response_string("+CIPV6:%d\r\n", at_net_config->ipv6_enable);
+
+    return AT_RESULT_CODE_OK;
 }
 
 static int at_setup_cmd_cipv6(int argc, const char **argv)
 {
-    return AT_RESULT_CODE_ERROR;
+    int ipv6 = 0;
+
+    AT_CMD_PARSE_NUMBER(0, &ipv6);
+
+    if (ipv6 != 0 && ipv6 != 1) {
+        return AT_RESULT_CODE_ERROR;
+    }
+    at_net_config->ipv6_enable = ipv6;
+    
+    if (at->store) {
+        at_net_config_save(AT_CONFIG_KEY_NET_IPV6_ENABLE);
+    }
+
+    return AT_RESULT_CODE_OK;
 }
 
 static int at_query_cmd_cipdns(int argc, const char **argv)
 {
-    return AT_RESULT_CODE_ERROR;
+    ip_addr_t *dns1, *dns2, *dns3;
+    char dns_str1[16] = {0};
+    char dns_str2[16] = {0};
+    char dns_str3[16] = {0};
+
+    dns1 = dns_getserver(0);
+    dns2 = dns_getserver(1);
+    dns3 = dns_getserver(2);
+
+    strlcpy(dns_str1, ipaddr_ntoa((ip_addr_t *)dns1), sizeof(dns_str1));
+    strlcpy(dns_str2, ipaddr_ntoa((ip_addr_t *)dns2), sizeof(dns_str2));
+    strlcpy(dns_str3, ipaddr_ntoa((ip_addr_t *)dns3), sizeof(dns_str3));
+    at_response_string("+CIPDNS:\"%s\",\"%s\",\"%s\"\r\n", dns_str1, dns_str2, dns_str3);
+
+    return AT_RESULT_CODE_OK;
 }
 
 static int at_setup_cmd_cipdns(int argc, const char **argv)
 {
-    return AT_RESULT_CODE_ERROR;
+    char dns_str1[16] = {0};
+    char dns_str2[16] = {0};
+    char dns_str3[16] = {0};
+    int enable;
+    int dns1_valid = 0, dns2_valid = 0, dns3_valid = 0;
+    ip_addr_t dns1 = {0};
+    ip_addr_t dns2 = {0};
+    ip_addr_t dns3 = {0};
+    
+    AT_CMD_PARSE_NUMBER(0, &enable);
+    AT_CMD_PARSE_OPT_STRING(1, dns_str1, sizeof(dns_str1), dns1_valid);
+    AT_CMD_PARSE_OPT_STRING(2, dns_str2, sizeof(dns_str2), dns2_valid);
+    AT_CMD_PARSE_OPT_STRING(3, dns_str3, sizeof(dns_str3), dns3_valid);
+           
+    if (enable == 0 && argc != 1) {
+        return AT_RESULT_CODE_ERROR;
+    }
+    if (dns1_valid) {
+        ipaddr_aton(dns_str1, &dns1);
+        if (ip_addr_isany(&dns1)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        at_net_config->dns[0] = dns1;
+    }
+    if (dns2_valid) {
+        ipaddr_aton(dns_str2, &dns2);
+        if (ip_addr_isany(&dns2)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        at_net_config->dns[1] = dns2;
+    } else {
+        ip_addr_set_zero(&at_net_config->dns[1]);
+    }
+    if (dns3_valid) {
+        ipaddr_aton(dns_str3, &dns3);
+        if (ip_addr_isany(&dns3)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        at_net_config->dns[2] = dns3;
+    } else {
+        ip_addr_set_zero(&at_net_config->dns[2]);
+    }
+
+    if (enable == 0) {
+        ipaddr_aton(AT_CONFIG_DEFAULT_DNS1, &at_net_config->dns[0]);
+        ipaddr_aton(AT_CONFIG_DEFAULT_DNS2, &at_net_config->dns[1]);
+        ipaddr_aton("0.0.0.0", &at_net_config->dns[2]);
+    }
+    dns_setserver(0, &at_net_config->dns[0]);
+    dns_setserver(1, &at_net_config->dns[1]);
+    dns_setserver(2, &at_net_config->dns[2]);
+    
+    if (at->store) {
+        at_net_config_save(AT_CONFIG_KEY_NET_DNS);
+    }
+
+    return AT_RESULT_CODE_OK;
+}
+
+static void _dns_found_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
+{
+    at_response_string("+CIPDOMAIN:\"%s\"\r\n", ipaddr_ntoa((ip_addr_t *)ipaddr));
 }
 
 static int at_setup_cmd_cipdomain(int argc, const char **argv)
 {
     char hostname[128];
-    int ip_network_valid = 0, ip_network;
-    struct hostent *hostinfo;
+    int ip_network_valid = 0, ip_network = 2;
+    ip_addr_t addr;
+    uint8_t dns_addrtype;
+    int ret;
 
     AT_CMD_PARSE_STRING(0, hostname, sizeof(hostname));
     AT_CMD_PARSE_OPT_NUMBER(1, &ip_network, ip_network_valid);
 
-    if (ip_network_valid && (ip_network != 1 && ip_network != 2)) {
+    if (ip_network_valid && (ip_network != 1 && ip_network != 2 && ip_network != 3)) {
         return AT_RESULT_CODE_ERROR;
     }
-
-    hostinfo = gethostbyname(hostname);
-    if (!hostinfo) {
-        return AT_RESULT_CODE_FAIL;
+    
+    if (ip_network == 2) {
+        dns_addrtype = LWIP_DNS_ADDRTYPE_IPV4;
+    } 
+#if LWIP_IPV6
+    else if (ip_network == 1 && at_net_config->ipv6_enable) {
+        dns_addrtype = LWIP_DNS_ADDRTYPE_IPV4_IPV6;
+    } else if (ip_network == 3 && at_net_config->ipv6_enable) {
+        dns_addrtype = LWIP_DNS_ADDRTYPE_IPV6;
+    } else {
+        return AT_RESULT_CODE_ERROR;
     }
+#endif
 
-    at_response_string("+CIPDOMAIN:\"%s\"\r\n", ipaddr_ntoa((ip_addr_t *)hostinfo->h_addr));
+    ret = dns_gethostbyname_addrtype(hostname, &addr, _dns_found_callback, NULL, dns_addrtype);
+    //hostinfo = gethostbyname(hostname);
+    if (ret == ERR_OK) {
+
+        at_response_string("+CIPDOMAIN:\"%s\"\r\n", ipaddr_ntoa((ip_addr_t *)&addr));
+
+    }
     return AT_RESULT_CODE_OK;
 }
 
 static int at_query_cmd_cipstate(int argc, const char **argv)
 {
     char type[8];
-    uint32_t remote_ip;
     uint16_t remote_port, local_port;
     uint8_t tetype;
-    ip4_addr_t ipaddr;
+    ip_addr_t ipaddr;
     int i;
 
     for (i = 0; i < AT_NET_CLIENT_HANDLE_MAX; i++) {
-        if (at_net_client_get_info(i, type, &remote_ip, &remote_port, &local_port, &tetype) == 0) {
-            ipaddr.addr = remote_ip;
-            at_response_string("+CIPSTATUS:%d,\"%s\",\"%s\",%d,%d,%d\r\n", i, type, ip4addr_ntoa(&ipaddr), remote_port, local_port, tetype);
+        if (at_net_client_get_info(i, type, &ipaddr, &remote_port, &local_port, &tetype) == 0) {
+            at_response_string("+CIPSTATUS:%d,\"%s\",\"%s\",%d,%d,%d\r\n", i, type, ipaddr_ntoa(&ipaddr), remote_port, local_port, tetype);
         }
     }
     return AT_RESULT_CODE_OK;
@@ -154,16 +275,14 @@ static int at_query_cmd_cipstate(int argc, const char **argv)
 static int at_query_cmd_cipstart(int argc, const char **argv)
 {
     char type[8];
-    uint32_t remote_ip;
     uint16_t remote_port, local_port;
     uint8_t tetype;
-    ip4_addr_t ipaddr;
+    ip_addr_t ipaddr;
     int i;
 
     for (i = 0; i < AT_NET_CLIENT_HANDLE_MAX; i++) {
-        if (at_net_client_get_info(i, type, &remote_ip, &remote_port, &local_port, &tetype) == 0) {
-            ipaddr.addr = remote_ip;
-            at_response_string("+CIPSTART:%d,\"%s\",\"%s\",%d,%d,%d\r\n", i, type, ip4addr_ntoa(&ipaddr), remote_port, local_port, tetype);
+        if (at_net_client_get_info(i, type, &ipaddr, &remote_port, &local_port, &tetype) == 0) {
+            at_response_string("+CIPSTART:%d,\"%s\",\"%s\",%d,%d,%d\r\n", i, type, ipaddr_ntoa(&ipaddr), remote_port, local_port, tetype);
         }
     }
     return AT_RESULT_CODE_OK;
@@ -180,7 +299,7 @@ static int at_setup_cmd_cipstart(int argc, const char **argv)
     int mode_valid = 0, mode = 0;
     char local_ip[16];
     int local_ip_valid = 0;
-    uint32_t remote_ip = 0;
+    ip_addr_t remote_ipaddr;
     int argc_index = 0, ret = 0;
 
     if (at_net_config->mux_mode == NET_LINK_MULT) {
@@ -198,13 +317,18 @@ static int at_setup_cmd_cipstart(int argc, const char **argv)
     if (!at_net_client_id_is_valid(linkid)) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (string_host_to_ip(remote_host, &remote_ip) != 0) {
+    if (at_string_host_to_ip(remote_host, &remote_ipaddr) != 0) {
         return AT_RESULT_CODE_ERROR;
     }
     if (remote_port < 1 || remote_port > 65535) {
         return AT_RESULT_CODE_ERROR; 
     }
     if (strcasecmp(type, "TCP") == 0) {
+        AT_CMD_PARSE_OPT_NUMBER(argc_index, &keepalive, keepalive_valid);
+        argc_index++;
+        AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
+        argc_index++;
+    } else if (strcasecmp(type, "TCPv6") == 0 && at_net_config->ipv6_enable) {
         AT_CMD_PARSE_OPT_NUMBER(argc_index, &keepalive, keepalive_valid);
         argc_index++;
         AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
@@ -218,7 +342,21 @@ static int at_setup_cmd_cipstart(int argc, const char **argv)
         argc_index++;
         AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
         argc_index++;
+    } else if (strcasecmp(type, "UDPv6") == 0 && at_net_config->ipv6_enable) {
+        AT_CMD_PARSE_OPT_NUMBER(argc_index, &local_port, local_port_valid);
+        argc_index++;
+        AT_CMD_PARSE_OPT_NUMBER(argc_index, &mode, mode_valid);
+        argc_index++;
+        AT_CMD_PARSE_OPT_NUMBER(argc_index, &keepalive, keepalive_valid);
+        argc_index++;
+        AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
+        argc_index++;
     } else if (strcasecmp(type, "SSL") == 0) {
+        AT_CMD_PARSE_OPT_NUMBER(argc_index, &keepalive, keepalive_valid);
+        argc_index++;
+        AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
+        argc_index++;
+    } else if (strcasecmp(type, "SSLv6") == 0 && at_net_config->ipv6_enable) {
         AT_CMD_PARSE_OPT_NUMBER(argc_index, &keepalive, keepalive_valid);
         argc_index++;
         AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
@@ -236,12 +374,12 @@ static int at_setup_cmd_cipstart(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
 
-    if (strcasecmp(type, "TCP") == 0) {
-        ret = at_net_client_tcp_connect(linkid, remote_ip, (uint16_t)remote_port, keepalive);
-    } else if (strcasecmp(type, "UDP") == 0) {
-        ret = at_net_client_udp_connect(linkid, remote_ip, (uint16_t)remote_port, (uint16_t)local_port, mode);
-    } else if (strcasecmp(type, "SSL") == 0) {
-        ret = at_net_client_ssl_connect(linkid, remote_ip, (uint16_t)remote_port, keepalive);
+    if (strcasecmp(type, "TCP") == 0 || strcasecmp(type, "TCPv6") == 0) {
+        ret = at_net_client_tcp_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, keepalive);
+    } else if (strcasecmp(type, "UDP") == 0 || strcasecmp(type, "UDPv6") == 0) {
+        ret = at_net_client_udp_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, (uint16_t)local_port, mode);
+    } else if (strcasecmp(type, "SSL") == 0 || strcasecmp(type, "SSLv6") == 0) {
+        ret = at_net_client_ssl_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, keepalive);
     }
 
     if (ret != 0) {
@@ -262,7 +400,7 @@ static int at_setup_cmd_cipstartex(int argc, const char **argv)
     int mode_valid = 0, mode = 0;
     char local_ip[16];
     int local_ip_valid = 0;
-    uint32_t remote_ip = 0;
+    ip_addr_t remote_ipaddr = {0};
     int argc_index = 0, ret = 0;
 
     linkid = at_net_client_get_valid_id();
@@ -279,7 +417,7 @@ static int at_setup_cmd_cipstartex(int argc, const char **argv)
     if (!at_net_client_id_is_valid(linkid)) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (string_host_to_ip(remote_host, &remote_ip) != 0) {
+    if (at_string_host_to_ip(remote_host, &remote_ipaddr) != 0) {
         return AT_RESULT_CODE_ERROR;
     }
     if (remote_port < 1 || remote_port > 65535) {
@@ -290,7 +428,12 @@ static int at_setup_cmd_cipstartex(int argc, const char **argv)
         argc_index++;
         AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
         argc_index++;
-    } else if (strcasecmp(type, "UDP") == 0) {
+    } else if (strcasecmp(type, "TCPv6") == 0 && at_net_config->ipv6_enable) {
+        AT_CMD_PARSE_OPT_NUMBER(argc_index, &keepalive, keepalive_valid);
+        argc_index++;
+        AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
+        argc_index++;
+    }else if (strcasecmp(type, "UDP") == 0) {
         AT_CMD_PARSE_OPT_NUMBER(argc_index, &local_port, local_port_valid);
         argc_index++;
         AT_CMD_PARSE_OPT_NUMBER(argc_index, &mode, mode_valid);
@@ -300,6 +443,11 @@ static int at_setup_cmd_cipstartex(int argc, const char **argv)
         AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
         argc_index++;
     } else if (strcasecmp(type, "SSL") == 0) {
+        AT_CMD_PARSE_OPT_NUMBER(argc_index, &keepalive, keepalive_valid);
+        argc_index++;
+        AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
+        argc_index++;
+    } else if (strcasecmp(type, "SSLv6") == 0 && at_net_config->ipv6_enable) {
         AT_CMD_PARSE_OPT_NUMBER(argc_index, &keepalive, keepalive_valid);
         argc_index++;
         AT_CMD_PARSE_OPT_STRING(argc_index, local_ip, sizeof(local_ip), local_ip_valid);
@@ -316,13 +464,13 @@ static int at_setup_cmd_cipstartex(int argc, const char **argv)
     if (mode_valid && (mode < 0 || mode > 2)) {
         return AT_RESULT_CODE_ERROR;
     }
-
-    if (strcasecmp(type, "TCP") == 0) {
-        ret = at_net_client_tcp_connect(linkid, remote_ip, (uint16_t)remote_port, keepalive);
-    } else if (strcasecmp(type, "UDP") == 0) {
-        ret = at_net_client_udp_connect(linkid, remote_ip, (uint16_t)remote_port, (uint16_t)local_port, mode);
-    } else if (strcasecmp(type, "SSL") == 0) {
-        ret = at_net_client_ssl_connect(linkid, remote_ip, (uint16_t)remote_port, keepalive);
+ 
+    if (strcasecmp(type, "TCP") == 0 || strcasecmp(type, "TCPv6") == 0) {
+        ret = at_net_client_tcp_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, keepalive);
+    } else if (strcasecmp(type, "UDP") == 0 || strcasecmp(type, "UDPv6") == 0) {
+        ret = at_net_client_udp_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, (uint16_t)local_port, mode);
+    } else if (strcasecmp(type, "SSL") == 0 || strcasecmp(type, "SSLv6") == 0) {
+        ret = at_net_client_ssl_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, keepalive);
     }
 
     if (ret != 0) {
@@ -439,7 +587,7 @@ static int at_setup_cmd_cipsend(int argc, const char **argv)
     int remote_port = 0;
     int remote_host_valid = 0;
     int remote_port_valid = 0;
-    uint32_t remote_ip = 0;
+    ip_addr_t remote_ipaddr;
     int recv_num = 0;
     int send_num = 0;
 
@@ -461,7 +609,7 @@ static int at_setup_cmd_cipsend(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
     if (remote_host_valid) {
-        if (string_host_to_ip(remote_host, &remote_ip) != 0) {
+        if (at_string_host_to_ip(remote_host, &remote_ipaddr) != 0) {
             return AT_RESULT_CODE_ERROR;
         }
     }
@@ -473,7 +621,7 @@ static int at_setup_cmd_cipsend(int argc, const char **argv)
         return AT_RESULT_CODE_FAIL;
     }
     if (remote_host_valid) {
-        if (at_net_client_set_remote(linkid, remote_ip, (uint16_t)remote_port) != 0) {
+        if (at_net_client_set_remote(linkid, &remote_ipaddr, (uint16_t)remote_port) != 0) {
             return AT_RESULT_CODE_FAIL;
         }
     }
@@ -529,7 +677,7 @@ static int at_setup_cmd_cipsendl(int argc, const char **argv)
     int remote_port = 0;
     int remote_host_valid = 0;
     int remote_port_valid = 0;
-    uint32_t remote_ip = 0;
+    ip_addr_t remote_ipaddr;
 
     if (at_net_config->mux_mode == NET_LINK_SINGLE) {
         AT_CMD_PARSE_NUMBER(0, &length);
@@ -549,7 +697,7 @@ static int at_setup_cmd_cipsendl(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
     if (remote_host_valid) {
-        if (string_host_to_ip(remote_host, &remote_ip) != 0) {
+        if (at_string_host_to_ip(remote_host, &remote_ipaddr) != 0) {
             return AT_RESULT_CODE_ERROR;
         }
     }
@@ -561,7 +709,7 @@ static int at_setup_cmd_cipsendl(int argc, const char **argv)
         return AT_RESULT_CODE_FAIL;
     }
     if (remote_host_valid) {
-        if (at_net_client_set_remote(linkid, remote_ip, (uint16_t)remote_port) != 0) {
+        if (at_net_client_set_remote(linkid, &remote_ipaddr, (uint16_t)remote_port) != 0) {
             return AT_RESULT_CODE_FAIL;
         }
     }
@@ -635,7 +783,7 @@ static int at_setup_cmd_cipsendex(int argc, const char **argv)
     int remote_port = 0;
     int remote_host_valid = 0;
     int remote_port_valid = 0;
-    uint32_t remote_ip = 0;
+    ip_addr_t remote_ipaddr;
     int recv_num = 0;
     int send_num = 0;
     int index = 0, finish = 0;
@@ -659,7 +807,7 @@ static int at_setup_cmd_cipsendex(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
     if (remote_host_valid) {
-        if (string_host_to_ip(remote_host, &remote_ip) != 0) {
+        if (at_string_host_to_ip(remote_host, &remote_ipaddr) != 0) {
             return AT_RESULT_CODE_ERROR;
         }
     }
@@ -671,7 +819,7 @@ static int at_setup_cmd_cipsendex(int argc, const char **argv)
         return AT_RESULT_CODE_FAIL;
     }
     if (remote_host_valid) {
-        if (at_net_client_set_remote(linkid, remote_ip, (uint16_t)remote_port) != 0) {
+        if (at_net_client_set_remote(linkid, &remote_ipaddr, (uint16_t)remote_port) != 0) {
             return AT_RESULT_CODE_FAIL;
         }
     }
@@ -728,7 +876,7 @@ static int at_setup_cmd_cipdinfo(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
-static int at_setup_cmd_wips(int argc, const char **argv)
+static int at_setup_cmd_cipevt(int argc, const char **argv)
 {
     int enable;
 
@@ -738,9 +886,9 @@ static int at_setup_cmd_wips(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
-static int at_query_cmd_wips(int argc, const char **argv)
+static int at_query_cmd_cipevt(int argc, const char **argv)
 {
-    at_response_string("+WIPS:%d\r\n", at_net_config->wips_enable);
+    at_response_string("+CIPEVT:%d\r\n", at_net_config->wips_enable);
     return AT_RESULT_CODE_OK;
 }
 
@@ -770,7 +918,7 @@ static int at_setup_cmd_cipmux(int argc, const char **argv)
 
 static int at_query_cmd_ciprecvmode(int argc, const char **argv)
 {
-    at_response_string("+CIPRECVMODE::%d\r\n", at_net_config->recv_mode);
+    at_response_string("+CIPRECVMODE:%d\r\n", at_net_config->recv_mode);
     return AT_RESULT_CODE_OK;
 }
 
@@ -782,13 +930,63 @@ static int at_setup_cmd_ciprecvmode(int argc, const char **argv)
     if(mode != NET_RECV_MODE_ACTIVE && mode != NET_RECV_MODE_PASSIVE) {
         return AT_RESULT_CODE_ERROR;
     }
-
+   
+    if (at_get_work_mode() != AT_WORK_MODE_CMD) {
+        return AT_RESULT_CODE_ERROR;
+    }
     at_net_config->recv_mode = mode;
     return AT_RESULT_CODE_OK;
 }
 
 static int at_setup_cmd_ciprecvdata(int argc, const char **argv)
 {
+    int linkid = 0, size, ret = 0, n, offset = 0;
+    uint8_t *buffer;
+    uint16_t remote_port;
+    ip_addr_t ipaddr;
+    char buf[32];
+
+    if (at_net_config->mux_mode == NET_LINK_SINGLE) {
+        if (argc != 1) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        AT_CMD_PARSE_NUMBER(0, &size);
+    } else {
+        if (argc != 2) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        AT_CMD_PARSE_NUMBER(0, &linkid);
+        AT_CMD_PARSE_NUMBER(1, &size);
+    }
+
+    if (size <= 0 || size > at_net_recvbuf_size_get(linkid)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    buffer = (char *)pvPortMalloc(size);
+
+    ret = at_net_recvbuf_read(linkid, &ipaddr, &remote_port, buffer, size);
+
+    n = snprintf(buf + offset, sizeof(buf), "+CIPRECVDATA:%d,", ret);
+    if (n > 0) {
+        offset += n;
+    }
+
+    if (at_net_config->ipd_info == NET_IPDINFO_ENABLE_IPPORT) {
+        n = snprintf(buf + offset, sizeof(buf) - offset, "\"%s\",%d,", ipaddr_ntoa(&ipaddr), remote_port);
+        if (n > 0) {
+            offset += n;
+        }
+    } 
+    at_response_string(buf);
+   
+    if (ret > 0) {
+        at->device_ops.write_data((uint8_t *)buffer, ret);
+    }
+    at_response_string("\r\n");
+    
+    vPortFree(buffer);
+
     return AT_RESULT_CODE_OK;
 }
 
@@ -917,12 +1115,15 @@ static int at_setup_cmd_cipserver(int argc, const char **argv)
         }
 
         if (strcasecmp(type, "TCP") == 0) {
-            ret = at_net_server_tcp_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout);
+            ret = at_net_server_tcp_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout, 0);
         } else if (strcasecmp(type, "UDP") == 0) {
-            ret = at_net_server_udp_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout);
-        }
-        else  if (strcasecmp(type, "SSL") == 0) {
-            ret = at_net_server_ssl_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout, ca_enable);
+            ret = at_net_server_udp_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout, 0);
+        } else  if (strcasecmp(type, "SSL") == 0) {
+            ret = at_net_server_ssl_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout, ca_enable, 0);
+        } else  if (strcasecmp(type, "TCPv6") == 0 && at_net_config->ipv6_enable) {
+            ret = at_net_server_tcp_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout, 1);
+        } else  if (strcasecmp(type, "SSLv6") == 0 && at_net_config->ipv6_enable) {
+            ret = at_net_server_ssl_create((uint16_t)port, at_net_config->server_maxconn, at_net_config->server_timeout, ca_enable, 1);
         } else {
             return AT_RESULT_CODE_ERROR;
         }
@@ -1265,14 +1466,15 @@ static int at_setup_cmd_savetranslink(int argc, const char **argv)
         strlcpy(type, "TCP", sizeof(type));
     }
 
-    if (strcmp(type, "TCP") == 0 || strcmp(type, "SSL") == 0) {
+    if (strcmp(type, "TCP") == 0 || strcmp(type, "SSL") == 0 ||
+        strcmp(type, "TCPv6") == 0 || strcmp(type, "SSLv6") == 0) {
         if (param_valid) {
             keepalive = param;
         }
         if (keepalive < 0 || keepalive > 7200) {
             return AT_RESULT_CODE_ERROR;
         }
-    } else if (strcmp(type, "UDP") == 0) {
+    } else if (strcmp(type, "UDP") == 0 || strcmp(type, "UDPv6") == 0) {
         if (param_valid) {
             local_port = param;
         }
@@ -1455,6 +1657,16 @@ static int at_setup_cmd_cipreconnintv(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int _ping_callback(int ping_time)
+{
+    if (ping_time > 0) {
+        at_response_string("+PING:%dms\r\n", ping_time);
+    } else {
+        at_response_string("+PING:%s\r\n", "TIMEOUT");
+    }
+    return 0;
+}
+
 static int at_setup_cmd_ping(int argc, const char **argv)
 {
     // TODO: FIXME
@@ -1462,7 +1674,6 @@ static int at_setup_cmd_ping(int argc, const char **argv)
     char hostname[128];
     struct hostent *hostinfo;
     struct ping_var *env;
-    int ping_response_time = 0;
     int len, count, interval;
     int len_valid = 0, count_valid = 0, interval_valid = 0;
 
@@ -1483,25 +1694,23 @@ static int at_setup_cmd_ping(int argc, const char **argv)
 
     hostinfo = gethostbyname(hostname);
     if (hostinfo) {
-        env = ping_api_init(interval, len, count, 1000, (ip_addr_t *)hostinfo->h_addr);
+#if LWIP_IPV6
+        if (IP_IS_V6((ip_addr_t *)hostinfo->h_addr) && !at_net_config->ipv6_enable) {
+            return AT_RESULT_CODE_FAIL;
+        }
+#endif
+        env = ping_api_init(interval, len, count, 1000, (ip_addr_t *)hostinfo->h_addr, _ping_callback);
         if (env) {
             while (env->requests_count <= 0) //wait start
                 vTaskDelay(1);
             while (env->node_num > 0) //wait finish
-                vTaskDelay(1);
-            ping_response_time = env->ping_time;
+                vTaskDelay(interval);
         }
+    } else {
+        return AT_RESULT_CODE_ERROR;
     }
 
-    if (ping_response_time > 0) {
-        at_response_string("+PING:%d\r\n", ping_response_time);
-        return AT_RESULT_CODE_OK;
-    }
-    else
-    {
-        at_response_string("+PING:%s\r\n", "TIMEOUT");
-        return AT_RESULT_CODE_FAIL;
-    }
+    return AT_RESULT_CODE_OK;
 #endif
 }
 
@@ -1518,6 +1727,14 @@ static int at_setup_cmd_ciupdate(int argc, const char **argv)
 static int at_exe_cmd_ciupdate(int argc, const char **argv)
 {
     return AT_RESULT_CODE_OK;
+}
+
+static int at_iperf_redirect(void )
+{
+    if (NULL == fhost_iperf_msg_handle_get()) {
+        return 0;
+    }
+    return (xTaskGetCurrentTaskHandle() == fhost_iperf_msg_handle_get() || (strcmp(pcTaskGetName(NULL), "RX") == 0)); 
 }
 
 static int at_setup_cmd_iperf(int argc, const char **argv)
@@ -1583,6 +1800,7 @@ static int at_setup_cmd_iperf(int argc, const char **argv)
              p);
 
     printf(buffer);
+    at_output_redirect_register(at_iperf_redirect);
     shell_exe_cmd(buffer, strlen(buffer));
 
     return AT_RESULT_CODE_OK;
@@ -1679,8 +1897,8 @@ static int at_query_cmd_cipsslcconf(int argc, const char **argv)
 
 static const at_cmd_struct at_net_cmd[] = {
     {"+CIFSR", NULL, NULL, NULL, at_exe_cmd_cifsr, 0, 0},
-    {"+CIPV6", NULL, at_query_cmd_cipv6, at_setup_cmd_cipv6, NULL, 0, 0},
-    {"+CIPDNS", NULL, at_query_cmd_cipdns, at_setup_cmd_cipdns, NULL, 0, 0},
+    {"+CIPV6", NULL, at_query_cmd_cipv6, at_setup_cmd_cipv6, NULL, 1, 1},
+    {"+CIPDNS", NULL, at_query_cmd_cipdns, at_setup_cmd_cipdns, NULL, 1, 4},
     {"+CIPDOMAIN", NULL, NULL, at_setup_cmd_cipdomain, NULL, 1, 2},
     {"+CIPSTATE", NULL, at_query_cmd_cipstate, NULL, NULL, 0, 0},
     {"+CIPSTART", NULL, at_query_cmd_cipstart, at_setup_cmd_cipstart, NULL, 3, 7},
@@ -1692,10 +1910,10 @@ static const at_cmd_struct at_net_cmd[] = {
     {"+CIPSENDLCFG", NULL, at_query_cmd_cipsendlcfg, at_setup_cmd_cipsendlcfg, NULL, 2, 2},
     {"+CIPSENDEX", NULL, NULL, at_setup_cmd_cipsendex, NULL, 1, 4},
     {"+CIPDINFO", NULL, at_query_cmd_cipdinfo, at_setup_cmd_cipdinfo, NULL, 1, 1},
-    {"+WIPS", NULL, at_query_cmd_wips, at_setup_cmd_wips, NULL, 1, 1},
+    {"+CIPEVT", NULL, at_query_cmd_cipevt, at_setup_cmd_cipevt, NULL, 1, 1},
     {"+CIPMUX", NULL, at_query_cmd_cipmux, at_setup_cmd_cipmux, NULL, 1, 1},
     {"+CIPRECVMODE", NULL, at_query_cmd_ciprecvmode, at_setup_cmd_ciprecvmode, NULL, 1, 1},
-    {"+CIPRECVDATA", NULL, NULL, at_setup_cmd_ciprecvdata, NULL, 0, 0},
+    {"+CIPRECVDATA", NULL, NULL, at_setup_cmd_ciprecvdata, NULL, 1, 2},
     {"+CIPRECVBUF", NULL, at_query_cmd_ciprecvbuf, at_setup_cmd_ciprecvbuf, NULL, 1, 2},
     {"+CIPRECVLEN", NULL, at_query_cmd_ciprecvlen, NULL, NULL, 0, 0},
     {"+CIPSERVER", NULL, at_query_cmd_cipserver, at_setup_cmd_cipserver, NULL, 1, 4},

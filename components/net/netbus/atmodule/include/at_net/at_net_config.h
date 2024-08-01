@@ -18,6 +18,12 @@ extern "C" {
 #define AT_CONFIG_KEY_NET_RECONN_INTV "NETRECONNINTV"
 #define AT_CONFIG_KEY_NET_TRANS_LINK "NETTRANSLINK"
 #define AT_CONFIG_KEY_NET_SSLCONF "NETSSLCONF"
+#define AT_CONFIG_KEY_NET_IPV6_ENABLE "IPV6"
+#define AT_CONFIG_KEY_NET_DNS "DNS"
+
+
+#define AT_CONFIG_DEFAULT_DNS1 "208.67.222.222" 
+#define AT_CONFIG_DEFAULT_DNS2 "8.8.8.8" 
 
 typedef enum {
     NET_MODE_NORMAL = 0,
@@ -98,7 +104,9 @@ typedef struct {
     net_trans_link trans_link;
     net_sendl_cfg sendl_cfg;
     uint8_t wips_enable;
+    uint8_t ipv6_enable;
     net_ssl_conf_t sslconf[AT_NET_CLIENT_HANDLE_MAX];
+    ip_addr_t dns[DNS_MAX_SERVERS];
 }net_config;
 
 extern net_config *at_net_config;

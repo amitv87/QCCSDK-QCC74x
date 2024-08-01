@@ -99,6 +99,7 @@ void coredump_run(void) {
     if(!coredump_flash_disable) {
         core_bin_end_hook(coredump_flash_addr);
     }
+    printf("\r\n-+-+-+- QCC74x COREDUMP END +-+-+-+\r\n");
     while (1) {
         asm ("nop");
     }

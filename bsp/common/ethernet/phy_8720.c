@@ -4,7 +4,7 @@
 #define CHECK_PARAM(expr) ((void)0)
 
 struct qcc74x_device_s *emac_dev = NULL;
-static struct qcc74x_emac_phy_cfg_s *phy_8720_cfg = NULL;
+static struct qcc74x_eth_phy_cfg_s *phy_8720_cfg = NULL;
 
 /**
  * @brief phy 8720 reset
@@ -63,7 +63,7 @@ int phy_8720_reset(void)
  * @return int
  *
  */
-int phy_8720_auto_negotiate(struct qcc74x_emac_phy_cfg_s *cfg)
+int phy_8720_auto_negotiate(struct qcc74x_eth_phy_cfg_s *cfg)
 {
     uint16_t regval = 0;
     uint16_t phyid1 = 0, phyid2 = 0;
@@ -82,8 +82,9 @@ int phy_8720_auto_negotiate(struct qcc74x_emac_phy_cfg_s *cfg)
     }
     printf("emac phy id 1 =%08x\r\n", (unsigned int)phyid1);
     printf("emac phy id 2 =%08x\r\n", (unsigned int)phyid2);
-    if (cfg->phy_id != (((phyid1 << 16) | phyid2) & 0x000FFFF0)) {
+    if (cfg->phy_id != (((phyid1 << 16) | phyid2) & 0xFFFFFFF0)) {
         /* ID error */
+        printf("emac phy id error,expected=%08x\r\n",cfg->phy_id );
         return -1;
     } else {
         cfg->phy_id = (phyid1 << 16) | phyid2;
@@ -187,7 +188,7 @@ int phy_8720_auto_negotiate(struct qcc74x_emac_phy_cfg_s *cfg)
  * @return int
  *
  */
-int phy_8720_link_up(struct qcc74x_emac_phy_cfg_s *cfg)
+int phy_8720_link_up(struct qcc74x_eth_phy_cfg_s *cfg)
 {
     uint16_t phy_bsr = 0;
     uint16_t phy_sr = 0;
@@ -247,7 +248,7 @@ int phy_8720_link_up(struct qcc74x_emac_phy_cfg_s *cfg)
  * @return int
  *
  */
-int phy_8720_poll_cable_status(struct qcc74x_emac_phy_cfg_s *cfg)
+int phy_8720_poll_cable_status(struct qcc74x_eth_phy_cfg_s *cfg)
 {
     uint16_t phy_regval = 0;
 
@@ -268,7 +269,7 @@ int phy_8720_poll_cable_status(struct qcc74x_emac_phy_cfg_s *cfg)
  * @return int
  *
  */
-int phy_8720_init(struct qcc74x_device_s *emac, struct qcc74x_emac_phy_cfg_s *cfg)
+int phy_8720_init(struct qcc74x_device_s *emac, struct qcc74x_eth_phy_cfg_s *cfg)
 {
     uint16_t phyReg;
 
@@ -335,9 +336,9 @@ int phy_8720_init(struct qcc74x_device_s *emac, struct qcc74x_emac_phy_cfg_s *cf
 
 /**
  * @brief get phy 8720 module status
- * @return emac_phy_status_t @ref emac_phy_status_t enum
+ * @return eth_phy_status_t @ref eth_phy_status_t enum
  */
-emac_phy_status_t phy_8720_status_get(void)
+eth_phy_status_t phy_8720_status_get(void)
 {
     uint16_t phy_BSR;
     CHECK_PARAM(NULL != phy_8720_cfg);
@@ -356,10 +357,10 @@ emac_phy_status_t phy_8720_status_get(void)
     if ((100 == phy_8720_cfg->speed) &&
         (phy_8720_cfg->full_duplex) &&
         (PHY_STATE_UP == phy_8720_cfg->phy_state)) {
-        return EMAC_PHY_STAT_100MBITS_FULLDUPLEX;
+        return ETH_PHY_STAT_100MBITS_FULLDUPLEX;
     } else if (PHY_STATE_UP == phy_8720_cfg->phy_state) {
-        return EMAC_PHY_STAT_LINK_UP;
+        return ETH_PHY_STAT_LINK_UP;
     } else {
-        return EMAC_PHY_STAT_LINK_DOWN;
+        return ETH_PHY_STAT_LINK_DOWN;
     }
 }

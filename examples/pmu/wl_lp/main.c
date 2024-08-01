@@ -53,7 +53,7 @@ static struct qcc74x_device_s *uart0;
 static TaskHandle_t wifi_fw_task;
 
 static wifi_conf_t conf = {
-    .country_code = "CN",
+    .country_code = "US",
 };
 
 extern void shell_init_with_task(struct qcc74x_device_s *shell);
@@ -359,6 +359,21 @@ static void cmd_hbn_test(int argc, char **argv)
     }
 }
 
+static void cmd_hbn_time(int argc, char **argv)
+{
+    if (argc != 2) {
+        printf("arg error, please input :hbn_time [time_sec]\r\n");
+        return;
+    }
+    qcc74x_lp_hbn_fw_cfg_t hbn_test_cfg = {
+        .hbn_sleep_cnt = 32768 * atoi(argv[1]), // s
+        .hbn_level = 0,
+    };
+
+    qcc74x_lp_hbn_init(0,0,0,0);
+    qcc74x_lp_hbn_enter(&hbn_test_cfg);
+}
+
 static void cmd_io_dbg(int argc, char **argv)
 {
     if (argc != 2) {
@@ -377,6 +392,7 @@ SHELL_CMD_EXPORT_ALIAS(cmd_tickless, tickless, cmd tickless);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_lp, wifi_lp_test, wifi low power test);
 SHELL_CMD_EXPORT_ALIAS(test_tcp_keepalive, lpfw_tcp_keepalive, tcp keepalive test);
 SHELL_CMD_EXPORT_ALIAS(cmd_hbn_test, hbn_test, hbn test);
+SHELL_CMD_EXPORT_ALIAS(cmd_hbn_time, hbn_time, hbn_time [sec]);
 SHELL_CMD_EXPORT_ALIAS(cmd_io_dbg, io_debug, cmd io_debug);
 #endif
 

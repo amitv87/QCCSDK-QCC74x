@@ -11,6 +11,8 @@
 //#include <utils_memp.h>
 #include <at_utils.h>
 
+typedef int (*at_ping_cb_t)(int ping_time);
+
 struct ping_var
 {
     u32_t total_count;
@@ -26,6 +28,7 @@ struct ping_var
     struct raw_pcb *pcb;
     struct utils_list req_list;
     uint32_t ping_time;
+    at_ping_cb_t cb;
 };
 
 struct t_hdr
@@ -36,7 +39,7 @@ struct t_hdr
 };
 
 int network_netutils_ping_cli_register();
-struct ping_var *ping_api_init(u16_t interval, u16_t size, u32_t count, u16_t timeout, ip_addr_t *dest);
+struct ping_var *ping_api_init(u16_t interval, u16_t size, u32_t count, u16_t timeout, ip_addr_t *dest, at_ping_cb_t cb);
 
 #endif
 #endif

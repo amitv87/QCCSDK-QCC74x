@@ -14,7 +14,8 @@
 #include <lwip/sys.h>
 #include <lwip/netdb.h>
 #include <lwip/sockets.h>
-
+#include "lwip/ip_addr.h"
+#include <stream_buffer.h>
 #include <at_net_sntp.h>
 #include <wifi_mgmr_ext.h>
 #include <qcc74x_sec_trng.h>
@@ -33,6 +34,8 @@
 #define AT_NET_RECV_BUF_SIZE       (2920)
 #define AT_NET_PRINTF              printf
 #define AT_NET_DEBUG               printf
+
+#define AT_NET_IPD_EVT_HEAD(s)      (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE)?s:s":"
 
 #define CHECK_NET_CLIENT_ID_VALID(id) \
     if (!at_net_client_id_is_valid(id)) { \
@@ -72,7 +75,7 @@ typedef struct {
     int fd;
     void *priv;
 
-    uint32_t remote_ip;
+    ip_addr_t remote_ip;
     uint16_t remote_port;
     uint16_t local_port;
     uint8_t udp_mode;
@@ -85,7 +88,7 @@ typedef struct {
     int so_linger;
     int tcp_nodelay;
     int so_sndtimeo;
-    uint8_t *recv_buf;
+    StreamBufferHandle_t recv_buf;
     uint32_t recvbuf_size;
 
     char ca_path[32];
@@ -110,7 +113,8 @@ typedef struct {
     uint8_t ca_enable;
     int8_t client_max;
     int8_t client_num;
-    
+  
+    uint8_t is_ipv6;  
     char ca_path[32];
     char cert_path[32];
     char priv_key_path[32];
@@ -119,12 +123,36 @@ typedef struct {
 static at_net_client_handle *g_at_client_handle = NULL;
 static at_net_server_handle *g_at_server_handle = NULL;
 static SemaphoreHandle_t net_mutex;
+static SemaphoreHandle_t net_reconnect_ref;
 static uint8_t g_at_net_task_is_start = 0;
 static uint8_t g_at_net_sntp_is_start = 0;
 static char g_at_net_savelink_host[128];
 
-static int ip_multicast_enable(int fd, uint32_t ip)
+static void sockaddr_to_ipaddr(struct sockaddr *sa, ip_addr_t *ipaddr) 
 {
+    if (sa->sa_family == AF_INET) {
+        struct sockaddr_in *sa_in = (struct sockaddr_in *)sa;
+        ip4_addr_set_u32(ip_2_ip4(ipaddr), sa_in->sin_addr.s_addr);
+    }
+#if CFG_IPV6
+    else if (sa->sa_family == AF_INET6) {
+        struct sockaddr_in6 *sa_in6 = (struct sockaddr_in6 *)sa;
+        ip6_addr_set(ip_2_ip6(ipaddr), (const ip6_addr_t *)(&sa_in6->sin6_addr));
+    } 
+#endif
+    else {
+        printf("Unsupported address family: %d\n", sa->sa_family);
+    }
+}
+
+static int ip_multicast_enable(int fd, ip_addr_t *ipaddr)
+{
+    if (fd < 0) {
+        return -1;
+    }
+    if (!ip_addr_ismulticast(ipaddr)) {
+        return -1;
+    }
 #if LWIP_IGMP
     char optval;
     /* Close multicast loop. */
@@ -135,14 +163,27 @@ static int ip_multicast_enable(int fd, uint32_t ip)
     }
 
     /* Set multicast interface. */
-    struct in_addr addr;	
-    memset((void *)&addr, 0, sizeof(struct in_addr));
-    addr.s_addr = htonl(INADDR_ANY);
-    if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF,(char *)&addr, sizeof(addr))) {
-        AT_NET_PRINTF("sock set multicast interface failed\r\n");
-        return -1;
+#if CFG_IPV6
+    if (IP_IS_V6(ipaddr)) {
+        struct in6_addr addr6;	
+        memset((void *)&addr6, 0, sizeof(struct in6_addr));
+        addr6 = in6addr_any;	
+        if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF,(char *)&addr6, sizeof(addr6))) {
+            AT_NET_PRINTF("sock set multicast interface failed\r\n");
+            return -1;
+        }
+    } else 
+#endif
+    {
+        struct in_addr addr;	
+        memset((void *)&addr, 0, sizeof(struct in_addr));
+        addr.s_addr = htonl(INADDR_ANY);
+        if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF,(char *)&addr, sizeof(addr))) {
+            AT_NET_PRINTF("sock set multicast interface failed\r\n");
+            return -1;
+        }
     }
-
+    
     /* Setup time-to-live. */
     optval = 10; /* Hop count */
     if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &optval, sizeof(optval))) {
@@ -151,13 +192,27 @@ static int ip_multicast_enable(int fd, uint32_t ip)
     }
 
     /* Add membership to receiving socket. */
-    struct ip_mreq mreq;
-    memset(&mreq, 0, sizeof(struct ip_mreq));
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-    mreq.imr_multiaddr.s_addr = ip;  
-    if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq, sizeof(mreq))) {
-        AT_NET_PRINTF("sock set add membership failed\r\n");
-        return -1;
+#if CFG_IPV6
+    if (IP_IS_V6(ipaddr)) {
+        struct ipv6_mreq mreq6;
+        memset(&mreq6, 0, sizeof(struct ipv6_mreq));
+        mreq6.ipv6mr_interface = in6addr_any;
+        memcpy(&mreq6.ipv6mr_multiaddr, ipaddr, sizeof(mreq6.ipv6mr_multiaddr));
+        if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq6, sizeof(mreq6))) {
+            AT_NET_PRINTF("sock set add membership failed\r\n");
+            return -1;
+        }
+    } else 
+#endif
+    {
+        struct ip_mreq mreq;
+        memset(&mreq, 0, sizeof(struct ip_mreq));
+        mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+        mreq.imr_multiaddr.s_addr = ip;  
+        if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq, sizeof(mreq))) {
+            AT_NET_PRINTF("sock set add membership failed\r\n");
+            return -1;
+        }
     }
 
     AT_NET_PRINTF("sock add membership\r\n");
@@ -167,10 +222,10 @@ static int ip_multicast_enable(int fd, uint32_t ip)
 
 static int so_keepalive_enable(int fd, int idle, int interval, int count)
 {
-    int keepAlive = 1;   // 开启keepalive属性. 缺省值: 0(关闭)  
-    int keepIdle = idle;   // 如果在60秒内没有任何数据交互,则进行探测. 缺省值:7200(s)  
-    int keepInterval = interval;   // 探测时发探测包的时间间隔为5秒. 缺省值:75(s)  
-    int keepCount = count;   // 探测重试的次数. 全部超时则认定连接失效..缺省值:9(次)  
+    int keepAlive = 1;   
+    int keepIdle = idle;     
+    int keepInterval = interval;     
+    int keepCount = count;   
 
     if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&keepAlive, sizeof(keepAlive))) {
         AT_NET_PRINTF("sock enable tcp keepalive failed\r\n");
@@ -298,7 +353,7 @@ static uint16_t udp_localport_rand(void)
     return port;
 }
 
-static int tcp_client_connect(uint32_t ip, uint16_t port)
+static int tcp_client_connect(ip_addr_t *ipaddr, uint16_t port)
 {
     int fd;
     int res;
@@ -306,28 +361,41 @@ static int tcp_client_connect(uint32_t ip, uint16_t port)
     //struct hostent *hostinfo;
     struct sockaddr_in addr;
 
-    ip4_addr_t ipaddr;
-    ipaddr.addr = ip;
-    AT_NET_PRINTF("tcp client connect %s:%d\r\n", ip4addr_ntoa(&ipaddr), port);
+    AT_NET_PRINTF("tcp client connect %s:%d\r\n", ipaddr_ntoa(ipaddr), port);
     /*hostinfo = gethostbyname(host);
     if (!hostinfo) {
         AT_NET_PRINTF("gethostbyname failed\r\n");
         return -1;
     }*/
 
-    if ( (fd =  socket(AF_INET, SOCK_STREAM, 0))  < 0) {
-        AT_NET_PRINTF("socket create failed\r\n");
-        return -2;
+#if CFG_IPV6
+    struct sockaddr_in6 addr6 = {0};
+    if(IP_IS_V6(ipaddr)) {
+        if ( (fd =  socket(AF_INET6, SOCK_STREAM, IPPROTO_IPV6))  < 0) {
+            AT_NET_PRINTF("socket create failed\r\n");
+            return -2;
+        }
+
+        memcpy(&addr6.sin6_addr, ipaddr, sizeof(addr6.sin6_addr));
+        addr6.sin6_family = AF_INET6;
+        addr6.sin6_port = htons(port);
+    } else 
+#endif 
+    {
+        if ( (fd =  socket(AF_INET, SOCK_STREAM, 0))  < 0) {
+            AT_NET_PRINTF("socket create failed\r\n");
+            return -2;
+        }
+
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_len = sizeof(addr);
+        addr.sin_port = htons(port);
+        //addr.sin_addr.s_addr = ((struct in_addr *) hostinfo->h_addr)->s_addr;
+        addr.sin_addr.s_addr = ip_addr_get_ip4_u32(ipaddr);
     }
 
     AT_NET_DEBUG("tcp_client_connect fd:%d\r\n", fd);
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_len = sizeof(addr);
-    addr.sin_port = htons(port);
-    //addr.sin_addr.s_addr = ((struct in_addr *) hostinfo->h_addr)->s_addr;
-    addr.sin_addr.s_addr = ip;
 
     int on= 1;
     res = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on) );
@@ -335,7 +403,15 @@ static int tcp_client_connect(uint32_t ip, uint16_t port)
         AT_NET_PRINTF("setsockopt failed, res:%d\r\n", res);
     }
 
-    res = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
+#if CFG_IPV6
+    if(IP_IS_V6(ipaddr)) {
+        res = connect(fd, (struct sockaddr *)&addr6, sizeof(addr6));
+    } else 
+#endif 
+    {
+        res = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
+    }
+
     if (res < 0) {
         AT_NET_PRINTF("connect failed, res:%d\r\n", res);
         close(fd);
@@ -363,28 +439,53 @@ static int tcp_client_send(int fd, void *buffer, int length)
     return 0;
 }
 
-static int udp_client_connect(uint16_t port)
+static int udp_client_connect(uint16_t port, ip_addr_t *ipaddr)
 {
     int fd;	
-    struct sockaddr_in addr;	
     unsigned char loop= 0;
     int so_broadcast=1;
-
-    AT_NET_PRINTF("udp client connect port %d\r\n", port);
-    if ( (fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {		
-        return -1;	
+#if CFG_IPV6
+    if (IP_IS_V6(ipaddr)) {
+        if ( (fd = socket(AF_INET6, SOCK_DGRAM, 0)) < 0) {		
+            return -1;	
+        }
+    } else 
+#endif
+    {
+        if ( (fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {		
+            return -1;	
+        }
     }
-
+    AT_NET_PRINTF("udp client connect port %d\r\n", port);
+    
     setsockopt(fd, SOL_SOCKET,SO_BROADCAST, &so_broadcast, sizeof(so_broadcast));
     setsockopt(fd, IPPROTO_IP, IP_MULTICAST_LOOP, &loop, sizeof(loop));
 
-    memset(&addr, 0,  sizeof(addr));	
-    addr.sin_family = AF_INET;	
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);	
-    if(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        close(fd);
-        return -2;
+#if CFG_IPV6
+    if (IP_IS_V6(ipaddr)) {
+        struct sockaddr_in6 addr6;
+        memset(&addr6, 0, sizeof(addr6));	
+        addr6.sin6_family = AF_INET6;
+        memcpy(&addr6.sin6_addr, ipaddr, sizeof(addr6.sin6_addr));
+        addr6.sin6_port = htons(port);
+        addr6.sin6_addr = in6addr_any;	
+        if(bind(fd, (struct sockaddr*)&addr6, sizeof(addr6)) < 0) {
+            close(fd);
+            return -2;
+        }
+    } else 
+#endif
+    {
+        struct sockaddr_in addr;	
+        memset(&addr, 0,  sizeof(addr));	
+        addr.sin_family = AF_INET;	
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);	
+        if(bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            close(fd);
+            return -2;
+        }
+
     }
 
     return fd;
@@ -400,17 +501,29 @@ static int udp_client_close(int fd)
     return 0;
 }
 
-static int udp_client_send(int fd, void *buffer, int length, uint32_t ip, uint16_t port)
+static int udp_client_send(int fd, void *buffer, int length, ip_addr_t *ipaddr, uint16_t port)
 {
-    struct sockaddr_in toaddr;
-
+    int ret;
     if (fd >= 0) {
-        memset(&toaddr, 0, sizeof(toaddr));	
-        toaddr.sin_family = AF_INET;
-        toaddr.sin_addr.s_addr = ip;
-        toaddr.sin_port = htons(port);
+#if CFG_IPV6
+        if (IP_IS_V6(ipaddr)) {
+            struct sockaddr_in6 toaddr6;
+            memset(&toaddr6, 0, sizeof(toaddr6));	
+            toaddr6.sin6_family = AF_INET6;
+            memcpy(&toaddr6.sin6_addr, ipaddr, sizeof(toaddr6.sin6_addr));
+            toaddr6.sin6_port = htons(port);
+            ret = sendto(fd, buffer, length, 0, (struct sockaddr *)&toaddr6, sizeof(struct sockaddr_in6));
+        } else 
+#endif
+        {
+            struct sockaddr_in toaddr;
+            memset(&toaddr, 0, sizeof(toaddr));	
+            toaddr.sin_family = AF_INET;
+            toaddr.sin_addr.s_addr = ip_addr_get_ip4_u32(ipaddr);
+            toaddr.sin_port = htons(port);
+            ret = sendto(fd, buffer, length, 0, (struct sockaddr *)&toaddr, sizeof(struct sockaddr_in));
+        }
         
-        int ret = sendto(fd, buffer, length, 0, (struct sockaddr *)&toaddr, sizeof(struct sockaddr_in));
         return (ret < 0) ? 0 : ret;
         //printf("sendto ret:%d len:%d\r\n", ret, length);
     }
@@ -434,16 +547,14 @@ static int get_romfs_file_content(const char *file, romfs_filebuf_t *buf)
     return 0;
 }
 
-static int ssl_client_connect(int id, uint32_t ip, uint16_t port, void **priv)
+static int ssl_client_connect(int id, ip_addr_t *ipaddr, uint16_t port, void **priv)
 {
     int fd;
     void *handle;
 
-    ip4_addr_t ipaddr;
-    ipaddr.addr = ip;
-    AT_NET_PRINTF("ssl client connect %s:%d\r\n", ip4addr_ntoa(&ipaddr), port);
+    AT_NET_PRINTF("ssl client connect %s:%d\r\n", ipaddr_ntoa(ipaddr), port);
 
-    fd = tcp_client_connect(ip, port);
+    fd = tcp_client_connect(ipaddr, port);
     if (fd < 0) {
         AT_NET_PRINTF("tcp_client_connect fd:%d\r\n", fd);
         return -1;
@@ -487,7 +598,7 @@ static int ssl_client_send(int fd, void *buffer, int length, void *priv)
     return 0;
 }
 
-static int udp_server_create(uint16_t port, int listen)
+static int udp_server_create(uint16_t port, int listen, uint8_t is_ipv6)
 {	
     int fd;	
     struct sockaddr_in servaddr;	
@@ -495,49 +606,102 @@ static int udp_server_create(uint16_t port, int listen)
     struct timeval timeout = { 0 };
 
     AT_NET_PRINTF("udp server create port %d\r\n", port);
-    if ( (fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-        return -1;	
-    }
 
-    memset(&servaddr, 0, sizeof(servaddr));	
-    servaddr.sin_family = AF_INET;	
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);	
-    servaddr.sin_port = htons(port);	
+#if CFG_IPV6
+    struct sockaddr_in6 addr6 = {0};
+    if (is_ipv6) {
+        if ( (fd =  socket(AF_INET6, SOCK_DGRAM, 0))  < 0) {
+            AT_NET_PRINTF("socket create failed\r\n");
+            return -2;
+        }
+
+        memset(&addr6, 0, sizeof(addr6));	
+        addr6.sin6_family = AF_INET6;	
+        addr6.sin6_addr = in6addr_any;	
+        addr6.sin6_port = htons(port);	
+    } else 
+#endif 
+    {
+        if ( (fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+            return -1;	
+        }
+
+        memset(&servaddr, 0, sizeof(servaddr));	
+        servaddr.sin_family = AF_INET;	
+        servaddr.sin_addr.s_addr = htonl(INADDR_ANY);	
+        servaddr.sin_port = htons(port);	
+    }
 
     on= 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    if (bind(fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {		
-        close(fd);
-        return -2;	
+#if CFG_IPV6
+    if (is_ipv6) {
+        if (bind(fd, (struct sockaddr*)&addr6, sizeof(addr6)) < 0) {		
+            close(fd);
+            return -2;	
+        }
+    } else 
+#endif 
+    {
+        if (bind(fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {		
+            close(fd);
+            return -2;	
+        }
     }
-
+   
     timeout.tv_sec = 5;
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     return fd;
 }
 
-static int tcp_server_create(uint16_t port, int listen)
+static int tcp_server_create(uint16_t port, int listen, uint8_t is_ipv6)
 {	
     int fd;	
     struct sockaddr_in servaddr;	
     int on;
 
     AT_NET_PRINTF("tcp server create port %d\r\n", port);
-    if ( (fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {		
-        return -1;	
+
+#if CFG_IPV6
+    struct sockaddr_in6 addr6 = {0};
+    if (is_ipv6) {
+        if ( (fd =  socket(AF_INET6, SOCK_STREAM, 0))  < 0) {
+            AT_NET_PRINTF("socket create failed\r\n");
+            return -2;
+        }
+
+        memset(&addr6, 0, sizeof(addr6));	
+        addr6.sin6_family = AF_INET6;	
+        addr6.sin6_addr = in6addr_any;	
+        addr6.sin6_port = htons(port);	
+    } else 
+#endif
+    {
+        if ( (fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {		
+            return -1;	
+        }
+        memset(&servaddr, 0, sizeof(servaddr));	
+        servaddr.sin_family = AF_INET;	
+        servaddr.sin_addr.s_addr = htonl(INADDR_ANY);	
+        servaddr.sin_port = htons(port);	
     }
-
-    memset(&servaddr, 0, sizeof(servaddr));	
-    servaddr.sin_family = AF_INET;	
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);	
-    servaddr.sin_port = htons(port);	
-
+  
     on= 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-    if (bind(fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {		
-        close(fd);
-        return -2;	
+#if CFG_IPV6
+    if (is_ipv6) {
+        if (bind(fd, (struct sockaddr*)&addr6, sizeof(addr6)) < 0) {		
+            close(fd);
+            return -2;	
+        }
+    } else
+#endif
+    {
+        if (bind(fd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {		
+            close(fd);
+            return -2;	
+        }
     }
 
     if (listen(fd, listen) < 0) {		
@@ -570,13 +734,10 @@ static void net_unlock(void)
 
 static int net_is_active(void)
 {
-    int state;
-
-    //wifi_mgmr_state_get(&state);
     if (at_wifi_config->wifi_mode == WIFI_STATION_MODE) {
-    	ip_addr_t sta_addr = {0};
-    	wifi_sta_ip4_addr_get(&sta_addr.addr, NULL, NULL, NULL);
-    	if (!ip_addr_isany(&sta_addr)) {
+        uint32_t addr = 0;
+    	wifi_sta_ip4_addr_get(&addr, NULL, NULL, NULL);
+    	if (addr != IPADDR_ANY) {
     		return 1;
     	}
     } else if (at_wifi_config->wifi_mode == WIFI_SOFTAP_MODE) {
@@ -596,7 +757,7 @@ static int net_is_active(void)
     return 0;
 }
 
-static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length, uint32_t ip, uint16_t port)
+static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length, ip_addr_t *ipaddr, uint16_t port)
 {
     if (ipd == NET_IPDINFO_CONNECTED) {
         if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
@@ -604,20 +765,18 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
                 char type[8];
                 uint16_t local_port;
                 uint8_t tetype;
-                ip4_addr_t ipaddr;
 
-                ipaddr.addr = ip;
                 at_net_client_get_info(id, type, NULL, NULL, &local_port, &tetype);
                 if (at_net_config->wips_enable) {
-                    at_response_string("+LINK_CONN:%d,%d,\"%s\",%d,\"%s\",%d,%d\r\n", 0, id, type, tetype, ip4addr_ntoa(&ipaddr), port, local_port);
+                    at_response_string("+LINK_CONN:%d,%d,\"%s\",%d,\"%s\",%d,%d\r\n", 0, id, type, tetype, ipaddr_ntoa(ipaddr), port, local_port);
                 }
             }
             else {
                 if (at_net_config->wips_enable) {
                     if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                        at_response_string("+IPS:CONNECT\r\n");
+                        at_response_string("+CIP:CONNECT\r\n");
                     else
-                        at_response_string("+IPS:%d,CONNECT\r\n", id);
+                        at_response_string("+CIP:%d,CONNECT\r\n", id);
                 }
             }
         }
@@ -626,9 +785,9 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
         if (at_net_config->wips_enable) {
             if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {     
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string("+IPS:CLOSED\r\n");
+                    at_response_string("+CIP:CLOSED\r\n");
                 else
-                    at_response_string("+IPS:%d,CLOSED\r\n", id);
+                    at_response_string("+CIP:%d,CLOSED\r\n", id);
             }
         }
     }
@@ -636,26 +795,25 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
         if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT && at_net_config->wips_enable) {
             if (at_net_config->ipd_info == NET_IPDINFO_DISABLE_IPPORT) {
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string("\r\n+IPD,%d:", length);
+                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD,%d"), length);
                 else
-                    at_response_string("\r\n+IPD,%d,%d:", id, length);
-            }
-            else {
-                ip4_addr_t ipaddr;
-                ipaddr.addr = ip;
+                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD,%d,%d"), id, length);
+            } else {
 
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string("\r\n+IPD,%d,\"%s\",%d:", length, ip4addr_ntoa(&ipaddr), port);
+                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD,%d,\"%s\",%d"), length, ipaddr_ntoa(ipaddr), port);
                 else
-                    at_response_string("\r\n+IPD,%d,%d,\"%s\",%d:", id, length, ip4addr_ntoa(&ipaddr), port);
+                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD,%d,%d,\"%s\",%d"), id, length, ipaddr_ntoa(ipaddr), port);
             }
-
+            if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
+                xStreamBufferSend(g_at_client_handle[id].recv_buf, buffer, length, portMAX_DELAY);
+            } else {
+                AT_CMD_DATA_SEND(buffer, length);
+            }
+        } else {
             AT_CMD_DATA_SEND(buffer, length);
-            at_response_string("\r\n");
         }
-        else {
-            AT_CMD_DATA_SEND(buffer, length);
-        }
+        at_response_string("\r\n");
     }
 
     return 0;
@@ -687,7 +845,7 @@ static int net_socket_setopt(int fd, int keepalive, int so_linger, int tcp_nodel
     return 0;
 }
 
-static int net_socket_connect(int id, net_client_type type, uint32_t ip, uint16_t port, int keepalive, uint16_t local_port, int mode)
+static int net_socket_connect(int id, net_client_type type, ip_addr_t *ipaddr, uint16_t port, int keepalive, uint16_t local_port, int mode)
 {
     int fd;
     void *priv = NULL;
@@ -702,7 +860,7 @@ static int net_socket_connect(int id, net_client_type type, uint32_t ip, uint16_
     }
 
     if (type == NET_CLIENT_TCP) {
-        fd = tcp_client_connect(ip, port);
+        fd = tcp_client_connect(ipaddr, port);
         AT_NET_PRINTF("tcp_client_connect fd:%d\r\n", fd);
         if (fd >= 0) {
             keep_alive = keepalive;
@@ -717,12 +875,11 @@ static int net_socket_connect(int id, net_client_type type, uint32_t ip, uint16_
     else if (type == NET_CLIENT_UDP) {
         if (local_port == 0)
             local_port = udp_localport_rand();
-        fd = udp_client_connect(local_port);
-        if (fd >= 0 && (htonl(ip) > 0xE0000000 && htonl(ip) <= 0xEFFFFFFF))
-            ip_multicast_enable(fd, ip);
+        fd = udp_client_connect(local_port, ipaddr);
+        ip_multicast_enable(fd, ipaddr);
     }
     else if (type == NET_CLIENT_SSL) {
-        fd = ssl_client_connect(id, ip, port, &priv);
+        fd = ssl_client_connect(id, ipaddr, port, &priv);
         if (fd >= 0) {
             if (keepalive) {
                 so_keepalive_enable(fd, keepalive, 1, 3);
@@ -744,10 +901,11 @@ static int net_socket_connect(int id, net_client_type type, uint32_t ip, uint16_
 
     net_lock();
     g_at_client_handle[id].valid = 1;
+    xSemaphoreGive(net_reconnect_ref);
     g_at_client_handle[id].type = type;
     g_at_client_handle[id].fd = fd;
     g_at_client_handle[id].priv = priv;
-    g_at_client_handle[id].remote_ip = ip;
+    g_at_client_handle[id].remote_ip = *ipaddr;
     g_at_client_handle[id].remote_port = port;
     g_at_client_handle[id].local_port = local_port;
     g_at_client_handle[id].udp_mode = mode;
@@ -759,11 +917,10 @@ static int net_socket_connect(int id, net_client_type type, uint32_t ip, uint16_
     g_at_client_handle[id].tcp_nodelay = tcp_nodelay;
     g_at_client_handle[id].so_sndtimeo = so_sndtimeo;
     if (!g_at_client_handle[id].recv_buf) {
-        g_at_client_handle[id].recv_buf = pvPortMalloc(g_at_client_handle[id].recvbuf_size);
+        g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
     }
     net_unlock();
-
-    net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
+    net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, &g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
     return 0;
 }
 
@@ -780,28 +937,32 @@ static int net_socket_close(int id)
         return -1;
     }
 
-    if (type == NET_CLIENT_TCP)
-       tcp_client_close(fd);
-    else if (type == NET_CLIENT_UDP)
-       udp_client_close(fd);
-    else if (type == NET_CLIENT_SSL)
-       ssl_client_close(fd, priv);
-
     net_lock();
-    if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT)
+    if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT) {
         g_at_client_handle[id].valid = 0;
+        xSemaphoreTake(net_reconnect_ref, 0);
+    }
     g_at_client_handle[id].fd = -1;
     g_at_client_handle[id].priv = NULL;
     g_at_client_handle[id].disconnect_time = os_get_time_ms();
-    
-    vPortFree(g_at_client_handle[id].recv_buf);
-    g_at_client_handle[id].recv_buf = NULL;
+   
+    if (g_at_client_handle[id].recv_buf) {
+        vStreamBufferDelete(g_at_client_handle[id].recv_buf);
+        g_at_client_handle[id].recv_buf = NULL;
+    }
     if (g_at_client_handle[id].tetype && g_at_server_handle[servid].valid) {
         g_at_server_handle[servid].client_num--;
         if (g_at_server_handle[servid].client_num < 0)
             g_at_server_handle[servid].client_num = 0;
     }
     net_unlock();
+
+    if (type == NET_CLIENT_TCP)
+       tcp_client_close(fd);
+    else if (type == NET_CLIENT_UDP)
+       udp_client_close(fd);
+    else if (type == NET_CLIENT_SSL)
+       ssl_client_close(fd, priv);
 
     net_socket_ipd(NET_IPDINFO_DISCONNECTED, id, NULL, 0, 0, 0);
     return 0;
@@ -815,7 +976,7 @@ static int net_socket_send(int id, void *buffer, int length)
     int type = g_at_client_handle[id].type;
     int fd = g_at_client_handle[id].fd;   
     void *priv = g_at_client_handle[id].priv;
-    uint32_t remote_ip = g_at_client_handle[id].remote_ip;
+    ip_addr_t remote_ip = g_at_client_handle[id].remote_ip;
     uint16_t remote_port = g_at_client_handle[id].remote_port;
 
     if (!valid)
@@ -824,7 +985,7 @@ static int net_socket_send(int id, void *buffer, int length)
     if (type == NET_CLIENT_TCP)
        ret = tcp_client_send(fd, buffer, length);
     else if (type == NET_CLIENT_UDP)
-       ret = udp_client_send(fd, buffer, length, remote_ip, remote_port);
+       ret = udp_client_send(fd, buffer, length, &remote_ip, remote_port);
     else if (type == NET_CLIENT_SSL)
        ret = ssl_client_send(fd, buffer, length, priv);
 
@@ -836,35 +997,36 @@ static int net_socket_recv(int id)
     int num = 0;
     struct sockaddr_in remote_addr;
     int len = sizeof(remote_addr);
+    static char at_net_recv_buf[AT_NET_RECV_BUF_SIZE];
 
     int type = g_at_client_handle[id].type;
     int fd = g_at_client_handle[id].fd;
     void *priv = g_at_client_handle[id].priv;
-    uint32_t remote_ip = g_at_client_handle[id].remote_ip;
+    ip_addr_t remote_ip = g_at_client_handle[id].remote_ip;
     uint16_t remote_port = g_at_client_handle[id].remote_port;
     int udp_mode = g_at_client_handle[id].udp_mode;
 
     if (type == NET_CLIENT_TCP) {
         num = recv(fd, 
-                g_at_client_handle[id].recv_buf, 
-                g_at_client_handle[id].recvbuf_size, 
+                at_net_recv_buf, 
+                AT_NET_RECV_BUF_SIZE, 
                 0);
         //num = so_recvsize_get(fd);
         //at_response_string("\r\n+IPD,%d:", num);
     }
     else if (type == NET_CLIENT_UDP) {
         num = recvfrom(fd, 
-                g_at_client_handle[id].recv_buf, 
-                g_at_client_handle[id].recvbuf_size, 
+                at_net_recv_buf, 
+                AT_NET_RECV_BUF_SIZE, 
                 0, 
                 (struct sockaddr *)&remote_addr, 
                 (socklen_t *)(&len));
 
         //update remote addr
         if (udp_mode == 1 || udp_mode == 2) {
-            if (remote_ip != remote_addr.sin_addr.s_addr || remote_port != ntohs(remote_addr.sin_port)) {
+            if (ip_2_ip4(&remote_ip) != remote_addr.sin_addr.s_addr || remote_port != ntohs(remote_addr.sin_port)) {
                 net_lock();
-                g_at_client_handle[id].remote_ip = remote_addr.sin_addr.s_addr;
+                ip4_addr_set_u32(ip_2_ip4(&g_at_client_handle[id].remote_ip), remote_addr.sin_addr.s_addr);
                 g_at_client_handle[id].remote_port = ntohs(remote_addr.sin_port);
                 if (udp_mode == 1)
                     g_at_client_handle[id].udp_mode = 0;
@@ -874,8 +1036,8 @@ static int net_socket_recv(int id)
     }
     else if (type == NET_CLIENT_SSL) {
         num = mbedtls_ssl_recv(priv, 
-                g_at_client_handle[id].recv_buf, 
-                g_at_client_handle[id].recvbuf_size);
+                at_net_recv_buf, 
+                AT_NET_RECV_BUF_SIZE);
     }
     else
         return 0;
@@ -898,9 +1060,9 @@ static int net_socket_recv(int id)
 
         net_socket_ipd(NET_IPDINFO_RECVDATA, 
                        id, 
-                       g_at_client_handle[id].recv_buf, 
+                       at_net_recv_buf, 
                        num, 
-                       g_at_client_handle[id].remote_ip, 
+                       &g_at_client_handle[id].remote_ip, 
                        g_at_client_handle[id].remote_port);
 
         net_lock();
@@ -911,11 +1073,14 @@ static int net_socket_recv(int id)
     return num;
 }
 
-static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, uint8_t num, uint8_t max_conn)
+static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, uint8_t num, uint8_t max_conn, uint8_t is_ipv6)
 {
     int sock;
     struct sockaddr_in remote_addr;
-    socklen_t len = sizeof(struct sockaddr_in);
+#if CFG_IPV6
+    struct sockaddr_in6 remote_addr6;
+#endif
+    socklen_t len;
     int id;
     void *priv = NULL;
 
@@ -927,7 +1092,16 @@ static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, 
     	}
     	sock = fd;
     } else {
-    	sock = accept(fd, (struct sockaddr*)&remote_addr, &len);
+#if CFG_IPV6
+        if (is_ipv6) {
+            len = sizeof(struct sockaddr_in6);
+    	    sock = accept(fd, (struct sockaddr*)&remote_addr6, &len);
+        } else 
+#endif
+        {
+            len = sizeof(struct sockaddr_in);
+    	    sock = accept(fd, (struct sockaddr*)&remote_addr, &len);
+        }
     }
 
     if (sock >= 0) {
@@ -960,11 +1134,20 @@ static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, 
 
         net_lock();
         g_at_client_handle[id].valid = 1;
+        xSemaphoreGive(net_reconnect_ref);
         g_at_client_handle[id].type = type;
         g_at_client_handle[id].fd = sock;
         g_at_client_handle[id].priv = priv;
-        g_at_client_handle[id].remote_ip = remote_addr.sin_addr.s_addr;
-        g_at_client_handle[id].remote_port = ntohs(remote_addr.sin_port);
+#if CFG_IPV6
+        if (is_ipv6) {
+            sockaddr_to_ipaddr((struct sockaddr *)&remote_addr6, &g_at_client_handle[id].remote_ip);
+            g_at_client_handle[id].remote_port = ntohs(remote_addr6.sin6_port);
+        } else 
+#endif
+        {
+            sockaddr_to_ipaddr((struct sockaddr *)&remote_addr, &g_at_client_handle[id].remote_ip);
+            g_at_client_handle[id].remote_port = ntohs(remote_addr.sin_port);
+        }
         g_at_client_handle[id].local_port = port;
         g_at_client_handle[id].udp_mode = 0;
         g_at_client_handle[id].tetype = 1;
@@ -975,11 +1158,11 @@ static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, 
         g_at_client_handle[id].tcp_nodelay = 0;
         g_at_client_handle[id].so_sndtimeo = 0;
         if (!g_at_client_handle[id].recv_buf) {
-            g_at_client_handle[id].recv_buf = pvPortMalloc(g_at_client_handle[id].recvbuf_size);
+            g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
         }
         net_unlock();
 
-        net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
+        net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, &g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
         return 1;
     }
 
@@ -991,40 +1174,43 @@ static void net_poll_reconnect(void)
     int id = 0;
     int fd;
     void *priv;
-    uint32_t ip;
+    ip_addr_t ipaddr;
     uint16_t port;
     uint16_t local_port;
-    struct hostent *hostinfo;
 
     if (g_at_client_handle[id].valid && g_at_client_handle[id].fd < 0) {
         if ((at_get_work_mode() != AT_WORK_MODE_THROUGHPUT) && (at_get_work_mode() != AT_WORK_MODE_CMD_THROUGHPUT)) {
             net_lock();
             g_at_client_handle[id].valid = 0;
+            xSemaphoreTake(net_reconnect_ref, 0);
             net_unlock();
             return;
         }
 
-        if (os_get_time_ms() - g_at_client_handle[id].disconnect_time <= at_net_config->reconn_intv*100)
+        if (os_get_time_ms() - g_at_client_handle[id].disconnect_time <= at_net_config->reconn_intv*100) {
+            vTaskDelay(at_net_config->reconn_intv*100);
             return;
+        }
         g_at_client_handle[id].disconnect_time = os_get_time_ms();
 
-        if (!net_is_active())
+        if (!net_is_active()) {
+            vTaskDelay(at_net_config->reconn_intv*100);
             return;
+        }
 
-        if (g_at_client_handle[id].remote_ip == 0) {
-            hostinfo = gethostbyname(g_at_net_savelink_host);
-            if (!hostinfo) {
+        if (ip_addr_isany(&g_at_client_handle[id].remote_ip)) {
+            int res = at_string_host_to_ip(g_at_net_savelink_host, &ipaddr);
+            if (res != 0) {
                 return;
             }
-            ip = (uint32_t)((struct in_addr *) hostinfo->h_addr)->s_addr;
         }
         else
-            ip = g_at_client_handle[id].remote_ip;
+            ipaddr = g_at_client_handle[id].remote_ip;
         port = g_at_client_handle[id].remote_port;
         local_port = g_at_client_handle[id].local_port;
     
         if (g_at_client_handle[id].type == NET_CLIENT_TCP) {
-            fd = tcp_client_connect(ip, port);
+            fd = tcp_client_connect(&ipaddr, port);
             if (fd >= 0) {
                 net_socket_setopt(fd, g_at_client_handle[id].keep_alive, g_at_client_handle[id].so_linger, g_at_client_handle[id].tcp_nodelay, g_at_client_handle[id].so_sndtimeo);
                 local_port = so_localport_get(fd);
@@ -1033,12 +1219,11 @@ static void net_poll_reconnect(void)
         else if (g_at_client_handle[id].type == NET_CLIENT_UDP) {
             if (local_port == 0)
                 local_port = udp_localport_rand();
-            fd = udp_client_connect(local_port);
-            if (fd >= 0 && (htonl(ip) > 0xE0000000 && htonl(ip) <= 0xEFFFFFFF))
-                ip_multicast_enable(fd, ip);
+            fd = udp_client_connect(local_port, &ipaddr);
+            ip_multicast_enable(fd, &ipaddr);
         }
         else if (g_at_client_handle[id].type == NET_CLIENT_SSL) {
-            fd = ssl_client_connect(id, ip, port, &priv);
+            fd = ssl_client_connect(id, &ipaddr, port, &priv);
             if (fd >= 0) {
                 if (g_at_client_handle[id].keep_alive)
                     so_keepalive_enable(fd, g_at_client_handle[id].keep_alive, 1, 3);
@@ -1054,11 +1239,11 @@ static void net_poll_reconnect(void)
         net_lock();
         g_at_client_handle[id].fd = fd;
         g_at_client_handle[id].priv = priv;
-        g_at_client_handle[id].remote_ip = ip;
+        g_at_client_handle[id].remote_ip = ipaddr;
         g_at_client_handle[id].remote_port = port;
         g_at_client_handle[id].local_port = local_port;
         if (!g_at_client_handle[id].recv_buf) {
-            g_at_client_handle[id].recv_buf = pvPortMalloc(g_at_client_handle[id].recvbuf_size);
+            g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
         }
         net_unlock();
     }
@@ -1088,11 +1273,6 @@ static void net_poll_recv(void)
     }
 
     if (maxfd == -1) {
-#ifdef LP_APP
-        vTaskDelay(30000);
-#else
-        vTaskDelay(100);
-#endif
         return;
     }
 
@@ -1112,7 +1292,7 @@ static void net_poll_recv(void)
             if (g_at_server_handle[i].valid && FD_ISSET(g_at_server_handle[i].fd, &fdR)) {
                 if (net_socket_accept(g_at_server_handle[i].fd, g_at_server_handle[i].type,
                             g_at_server_handle[i].port, g_at_server_handle[i].recv_timeout,
-                            g_at_server_handle[i].client_num, g_at_server_handle[i].client_max) ) {
+                            g_at_server_handle[i].client_num, g_at_server_handle[i].client_max, g_at_server_handle[i].is_ipv6) ) {
                     g_at_server_handle[i].client_num++;
                 }
             }
@@ -1138,24 +1318,31 @@ static void net_init_save_link(void)
     int id;
 
     if (at_net_config->trans_link.enable) {
-        if (strcmp(at_net_config->trans_link.type, "TCP") == 0)
+        if (strstr(at_net_config->trans_link.type, "TCP") != NULL)
             type = NET_CLIENT_TCP;
-        else if (strcmp(at_net_config->trans_link.type, "UDP") == 0)
+        else if (strstr(at_net_config->trans_link.type, "UDP") != NULL)
             type = NET_CLIENT_UDP;
-        else if (strcmp(at_net_config->trans_link.type, "SSL") == 0)
+        else if (strstr(at_net_config->trans_link.type, "SSL") != NULL)
             type = NET_CLIENT_SSL;
         else
             return;
 
-        at_set_work_mode(AT_WORK_MODE_CMD_THROUGHPUT);
+        at_set_work_mode(AT_WORK_MODE_THROUGHPUT);
         at_net_config->work_mode = NET_MODE_TRANS;
 
         id = at_net_client_get_valid_id();
         net_lock();
         g_at_client_handle[id].valid = 1;
+        xSemaphoreGive(net_reconnect_ref);
         g_at_client_handle[id].type = type;
         g_at_client_handle[id].fd = -1;
-        g_at_client_handle[id].remote_ip = 0;
+        ip_addr_set_any(
+#if LWIP_IPV6
+            1, 
+#else 
+            0,
+#endif
+            &g_at_client_handle[id].remote_ip);
         strlcpy(g_at_net_savelink_host, at_net_config->trans_link.remote_host, sizeof(g_at_net_savelink_host));
         g_at_client_handle[id].remote_port = at_net_config->trans_link.remote_port;
         g_at_client_handle[id].local_port = at_net_config->trans_link.local_port;
@@ -1175,9 +1362,12 @@ static void net_main_task(void *pvParameters)
 {
     g_at_net_task_is_start = 1;
 
-    net_init_save_link();
-
     while(1) {
+        if (!uxSemaphoreGetCount(net_reconnect_ref)) {
+            xSemaphoreTake(net_reconnect_ref, portMAX_DELAY);
+            xSemaphoreGive(net_reconnect_ref);
+        }
+
         net_poll_reconnect();
 
         net_poll_recv();
@@ -1211,6 +1401,7 @@ static int at_net_init(void)
         return -1;
     }
     net_mutex = xSemaphoreCreateMutex();
+    net_reconnect_ref = xSemaphoreCreateCounting(AT_NET_SERVER_HANDLE_MAX + AT_NET_CLIENT_HANDLE_MAX, 0);
 
     memset(g_at_client_handle, 0, sizeof(at_net_client_handle) * AT_NET_CLIENT_HANDLE_MAX);
     memset(g_at_server_handle, 0, sizeof(at_net_server_handle) * AT_NET_SERVER_HANDLE_MAX);
@@ -1273,21 +1464,21 @@ int at_net_client_id_is_valid(int id)
         return 1;
 }
 
-int at_net_client_tcp_connect(int id, uint32_t remote_ip, uint16_t remote_port, int keepalive)
+int at_net_client_tcp_connect(int id, ip_addr_t *remote_ip, uint16_t remote_port, int keepalive)
 {
     CHECK_NET_CLIENT_ID_VALID(id);
 
     return net_socket_connect(id, NET_CLIENT_TCP, remote_ip, remote_port, keepalive, 0, 0);
 }
 
-int at_net_client_udp_connect(int id, uint32_t remote_ip, uint16_t remote_port, uint16_t local_port, int mode)
+int at_net_client_udp_connect(int id, ip_addr_t *remote_ip, uint16_t remote_port, uint16_t local_port, int mode)
 {
     CHECK_NET_CLIENT_ID_VALID(id);
 
     return net_socket_connect(id, NET_CLIENT_UDP, remote_ip, remote_port, 0, local_port, mode);
 }
 
-int at_net_client_ssl_connect(int id, uint32_t remote_ip, uint16_t remote_port, int keepalive)
+int at_net_client_ssl_connect(int id, ip_addr_t *remote_ip, uint16_t remote_port, int keepalive)
 {
     CHECK_NET_CLIENT_ID_VALID(id);
 
@@ -1304,7 +1495,7 @@ int at_net_client_is_connected(int id)
     return 0;
 }
 
-int at_net_client_set_remote(int id, uint32_t ip, uint16_t port)
+int at_net_client_set_remote(int id, ip_addr_t *ipaddr, uint16_t port)
 {
     CHECK_NET_CLIENT_ID_VALID(id);
 
@@ -1314,27 +1505,43 @@ int at_net_client_set_remote(int id, uint32_t ip, uint16_t port)
     if (g_at_client_handle[id].type != NET_CLIENT_UDP)
         return -1;
 
-    g_at_client_handle[id].remote_ip = ip;
+    g_at_client_handle[id].remote_ip = *ipaddr;
     g_at_client_handle[id].remote_port = port;
-    AT_NET_PRINTF("net set id: %d remote_ip: 0x%x remote_port: %d\r\n", id, ip, port);
+    AT_NET_PRINTF("net set id: %d remote_ip: %s remote_port: %d\r\n", id, ipaddr_ntoa(ipaddr), port);
     return 0;
 }
 
-int at_net_client_get_info(int id, char *type, uint32_t *remote_ip, uint16_t *remote_port, uint16_t *local_port, uint8_t *tetype)
+int at_net_client_get_info(int id, char *type, ip_addr_t *remote_ipaddr, uint16_t *remote_port, uint16_t *local_port, uint8_t *tetype)
 {
     CHECK_NET_CLIENT_ID_VALID(id);
 
     if (g_at_client_handle[id].valid) {
         if (type) {
-            if (g_at_client_handle[id].type == NET_CLIENT_TCP)
-                strlcpy(type, "TCP", sizeof(type));
-            else if (g_at_client_handle[id].type == NET_CLIENT_UDP)
-                strlcpy(type, "UDP", sizeof(type));
-            if (g_at_client_handle[id].type == NET_CLIENT_SSL)
-                strlcpy(type, "SSL", sizeof(type));
+            if (g_at_client_handle[id].type == NET_CLIENT_TCP) {
+#if CFG_IPV6
+                if (IP_IS_V6(&g_at_client_handle[id].remote_ip)) {
+                    strlcpy(type, "TCPv6", sizeof(type));
+                } else 
+#endif
+                    strlcpy(type, "TCP", sizeof(type));
+            } else if (g_at_client_handle[id].type == NET_CLIENT_UDP) {
+#if CFG_IPV6
+                if (IP_IS_V6(&g_at_client_handle[id].remote_ip)) {
+                    strlcpy(type, "UDPv6", sizeof(type));
+                } else 
+#endif
+                    strlcpy(type, "UDP", sizeof(type));
+            } else if (g_at_client_handle[id].type == NET_CLIENT_SSL) {
+#if CFG_IPV6
+                if (IP_IS_V6(&g_at_client_handle[id].remote_ip)) {
+                    strlcpy(type, "SSLv6", sizeof(type));
+                } else 
+#endif
+                    strlcpy(type, "SSL", sizeof(type));
+            }
         }
-        if (remote_ip)
-            *remote_ip = g_at_client_handle[id].remote_ip;
+        if (remote_ipaddr)
+            *remote_ipaddr = g_at_client_handle[id].remote_ip;
         if (remote_port)
             *remote_port = g_at_client_handle[id].remote_port;
         if (local_port)
@@ -1350,10 +1557,10 @@ int at_net_client_get_recvsize(int id)
 {
     CHECK_NET_CLIENT_ID_VALID(id);
 
-    if (g_at_client_handle[id].valid && g_at_client_handle[id].fd >= 0)
-        return so_recvsize_get(g_at_client_handle[id].fd);
+    if (g_at_client_handle[id].valid && g_at_client_handle[id].fd >= 0 && g_at_client_handle[id].recv_buf)
+        return xStreamBufferBytesAvailable(g_at_client_handle[id].recv_buf);
     else
-        return -1;
+        return 0;
 }
 
 int at_net_client_send(int id, void * buffer, int length)
@@ -1390,7 +1597,7 @@ int at_net_server_id_is_valid(int id)
         return 1;
 }
 
-int at_net_server_udp_create(uint16_t port, int max_conn,  int timeout)
+int at_net_server_udp_create(uint16_t port, int max_conn,  int timeout, uint8_t is_ipv6)
 {
     int id = 0;
     int fd;
@@ -1400,7 +1607,7 @@ int at_net_server_udp_create(uint16_t port, int max_conn,  int timeout)
         return -1;
     }
 
-    fd = udp_server_create(port, max_conn);
+    fd = udp_server_create(port, max_conn, is_ipv6);
     if (fd < 0) {
         AT_NET_PRINTF("create failed\r\n");
         return -1;
@@ -1408,8 +1615,10 @@ int at_net_server_udp_create(uint16_t port, int max_conn,  int timeout)
 
     net_lock();
     g_at_server_handle[id].valid = 1;
+    xSemaphoreGive(net_reconnect_ref);
     g_at_server_handle[id].type = NET_SERVER_UDP;
     g_at_server_handle[id].fd = fd;
+    g_at_server_handle[id].is_ipv6 = is_ipv6;
     g_at_server_handle[id].port = port;
     g_at_server_handle[id].recv_timeout = timeout;
     g_at_server_handle[id].ca_enable = 0;
@@ -1419,7 +1628,7 @@ int at_net_server_udp_create(uint16_t port, int max_conn,  int timeout)
     return 0;
 }
 
-int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout)
+int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout, uint8_t is_ipv6)
 {
     int id = 0;
     int fd;
@@ -1429,7 +1638,7 @@ int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout)
         return -1;
     }
 
-    fd = tcp_server_create(port, max_conn);
+    fd = tcp_server_create(port, max_conn, is_ipv6);
     if (fd < 0) {
         AT_NET_PRINTF("create failed\r\n");
         return -1;
@@ -1437,8 +1646,10 @@ int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout)
 
     net_lock();
     g_at_server_handle[id].valid = 1;
+    xSemaphoreGive(net_reconnect_ref);
     g_at_server_handle[id].type = NET_SERVER_TCP;
     g_at_server_handle[id].fd = fd;
+    g_at_server_handle[id].is_ipv6 = is_ipv6;
     g_at_server_handle[id].port = port;
     g_at_server_handle[id].recv_timeout = timeout;
     g_at_server_handle[id].ca_enable = 0;
@@ -1448,7 +1659,7 @@ int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout)
     return 0;
 }
 
-int at_net_server_ssl_create(uint16_t port, int max_conn,  int timeout, int ca_enable)
+int at_net_server_ssl_create(uint16_t port, int max_conn,  int timeout, int ca_enable, uint8_t is_ipv6)
 {
     int id = 0;
     int fd;
@@ -1458,7 +1669,7 @@ int at_net_server_ssl_create(uint16_t port, int max_conn,  int timeout, int ca_e
         return -1;
     }
 
-    fd = tcp_server_create(port, max_conn);
+    fd = tcp_server_create(port, max_conn, is_ipv6);
     if (fd < 0) {
         AT_NET_PRINTF("create failed\r\n");
         return -1;
@@ -1466,8 +1677,10 @@ int at_net_server_ssl_create(uint16_t port, int max_conn,  int timeout, int ca_e
 
     net_lock();
     g_at_server_handle[id].valid = 1;
+    xSemaphoreGive(net_reconnect_ref);
     g_at_server_handle[id].type = NET_SERVER_SSL;
     g_at_server_handle[id].fd = fd;
+    g_at_server_handle[id].is_ipv6 = is_ipv6;
     g_at_server_handle[id].port = port;
     g_at_server_handle[id].recv_timeout = timeout;
     g_at_server_handle[id].ca_enable = 0;
@@ -1514,6 +1727,7 @@ int at_net_server_close(void)
 
     net_lock();
     g_at_server_handle[id].valid = 0;
+    xSemaphoreTake(net_reconnect_ref, 0);
     net_unlock();
 
     if (type == NET_SERVER_TCP || type == NET_SERVER_SSL)
@@ -1584,6 +1798,7 @@ int at_net_start(void)
 
     at_net_init();
 
+    net_init_save_link();
 
     ret = xTaskCreate(net_main_task, (char*)"net_main_task", AT_NET_TASK_STACK_SIZE, NULL, AT_NET_TASK_PRIORITY, NULL);
     if (ret != pdPASS) {
@@ -1597,6 +1812,7 @@ int at_net_stop(void)
 {
     at_net_client_close_all();
     if (g_at_net_task_is_start) {
+        xSemaphoreGive(net_reconnect_ref);
         g_at_net_task_is_start = 2;
         while(g_at_net_task_is_start != 0)
             vTaskDelay(100);
@@ -1618,6 +1834,25 @@ int at_net_recvbuf_size_set(int linkid, uint32_t size)
 int at_net_recvbuf_size_get(int linkid)
 {
     return g_at_client_handle[linkid].recvbuf_size;
+}
+
+int at_net_recvbuf_read(int linkid, ip_addr_t *remote_ipaddr, uint16_t *remote_port, uint8_t *buf, uint32_t size)
+{
+    int read_size = 0;
+
+    if (!g_at_client_handle[linkid].recv_buf) {
+        return 0;
+    }
+
+    if (remote_ipaddr) {
+        *remote_ipaddr = g_at_client_handle[linkid].remote_ip;
+    }
+    if (remote_port) {
+        *remote_port = g_at_client_handle[linkid].remote_port;
+    }
+    read_size = xStreamBufferReceive(g_at_client_handle[linkid].recv_buf, buf, size, 0);
+
+    return (read_size >= 0) ? read_size : 0;
 }
 
 int at_net_ssl_path_set(int linkid, const char *ca, const char *cert, const char *key)
@@ -1698,10 +1933,10 @@ char **at_net_ssl_alpn_get(int linkid, int *alpn_num)
 
 int at_net_ssl_psk_set(int linkid, char *psk, int psk_len, char *pskhint, int pskhint_len)
 {
-    memcpy(g_at_client_handle[linkid].ssl_psk, psk, psk_len);
+    strlcpy(g_at_client_handle[linkid].ssl_psk, psk, sizeof(g_at_client_handle[linkid].ssl_psk));
     g_at_client_handle[linkid].ssl_psklen = psk_len;
     
-    memcpy(g_at_client_handle[linkid].ssl_pskhint, pskhint, pskhint_len);
+    strlcpy(g_at_client_handle[linkid].ssl_pskhint, pskhint, sizeof(g_at_client_handle[linkid].ssl_pskhint));
     g_at_client_handle[linkid].ssl_pskhint_len = pskhint_len;
     return 0;
 }
@@ -1724,3 +1959,27 @@ int at_net_ssl_psk_get(int linkid, char **psk, int *psk_len, char **pskhint, int
     return 0;
 }
 
+int at_string_host_to_ip(char *host, ip_addr_t *ip)
+{
+    struct hostent *hostinfo = gethostbyname(host);
+    if (hostinfo) {
+        *ip = *(ip_addr_t *)hostinfo->h_addr;
+        return 0;
+    }
+
+    return -1;
+}
+
+int at_net_dns_load(void)
+{
+    if (!ip_addr_isany(&at_net_config->dns[0])) {
+        dns_setserver(0, &at_net_config->dns[0]);
+    }
+    if (!ip_addr_isany(&at_net_config->dns[1])) {
+        dns_setserver(1, &at_net_config->dns[1]);
+    }
+    if (!ip_addr_isany(&at_net_config->dns[2])) {
+        dns_setserver(2, &at_net_config->dns[2]);
+    }
+    return 0;
+}

@@ -34,13 +34,15 @@ int at_wifi_ap_get_sta_ip(uint8_t *mac, char *ip, uint32_t ipbuf_size, int check
 
 int at_wifi_ap_set_dhcp_range(int start, int end);
 
-int at_wifi_sniffer_start(int min_pkt_len);
+int at_wifi_sniffer_start(void);
 
-int at_wifi_sniffer_set_channel(int channel);
+int at_wifi_sniffer_set_channel(int channel, void *cb, void *arg);
 
 int at_wifi_sniffer_stop(void);
 
 int at_wifi_state_get(void);
+
+int at_wifi_hostname_set(char *hostname);
 
 #ifdef __cplusplus
 }

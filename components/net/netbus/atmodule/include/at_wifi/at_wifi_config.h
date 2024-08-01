@@ -28,6 +28,8 @@ extern "C" {
 #define AT_CONFIG_KEY_WIFI_AP_IP            "WIFIAPIP"
 #define AT_CONFIG_KEY_WIFI_STA_IP           "WIFISTAIP"
 #define AT_CONFIG_KEY_WIFI_COUNTRY_CODE     "WIFICOUNTRY"
+#define AT_CONFIG_KEY_WIFI_HOSTNAME         "WIFIHOSTNAME"
+#define AT_CONFIG_KEY_WIFI_LAPOPT           "WIFILAPOPT"
 
 #define IP_SET_ADDR(a,b,c,d) (((uint32_t)((a) & 0xff)) | \
                                             ((uint32_t)((b) & 0xff) << 8) | \
@@ -70,6 +72,7 @@ typedef struct {
 typedef struct {
     uint8_t sort_enable;
     int8_t rssi_filter;
+    uint8_t max_count;
     uint16_t print_mask;
     uint16_t authmode_mask;
 } wifi_scan_option;
@@ -113,7 +116,6 @@ typedef struct {
     uint32_t ip;
     uint32_t gateway;
     uint32_t netmask;
-    uint32_t dns;
 } wifi_ip;
 
 typedef enum {

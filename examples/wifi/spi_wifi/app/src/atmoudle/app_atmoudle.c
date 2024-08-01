@@ -10,6 +10,8 @@
 #include "at_main.h"
 #include "qcc74x_dma.h"
 
+static void __spisync_gpio_init(void *arg);
+
 const struct spisync_config spisync_config = {
     .spi_name = "spi0",
     .spi_tx_dmach = "dma0_ch0",
@@ -17,14 +19,30 @@ const struct spisync_config spisync_config = {
 
     .spi_port = 0,
     .spi_mode = 0,
+#ifdef CONFIG_SPI_3PIN_MODE_ENABLE
+    .spi_3pin_mode = 1,
+#else
+    .spi_3pin_mode = 0,
+#endif
     .spi_speed = 80000000,
 
     .spi_dma_req_tx = DMA_REQUEST_SPI0_TX,
     .spi_dma_req_rx = DMA_REQUEST_SPI0_RX,
     .spi_dma_tdr = DMA_ADDR_SPI0_TDR,
     .spi_dma_rdr = DMA_ADDR_SPI0_RDR,
+    .reset_cb = __spisync_gpio_init,
+    .reset_arg = NULL,
 };
 spisync_t    *at_spisync = NULL;
+
+static void __spisync_gpio_init(void *arg)
+{
+#if CONFIG_SPI_3PIN_MODE_ENABLE
+    board_spi0_gpio_3pin_init();
+#else
+    board_spi0_gpio_init();
+#endif
+}
 
 static void atspisync_fakepush_forpop_cmd(int argc, char **argv)
 {
@@ -65,8 +83,8 @@ static void atspisync_fakepush_forpop_cmd(int argc, char **argv)
     }
     msg_len = cmd_len;
 
-    extern struct at_struct *at;
-    at->fakeoutput = 1;
+    //extern struct at_struct *at;
+    //at->fakeoutput = 1;
     msg_len = spisync_fakewrite_forread(at_spisync, msg, msg_len, 0);
 
     printf("fakewrite len:%d, hascrlf:%d\r\n", msg_len, hascrlf);

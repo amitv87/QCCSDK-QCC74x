@@ -2137,10 +2137,42 @@ u8_t bt_gatt_check_perm(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 		}
 	}
 
-	if ((mask & BT_GATT_PERM_ENCRYPT_MASK)) {
+	/*
+	 * Core Specification 5.4 Vol. 3 Part C 10.3.1
+	 *
+	 * If neither an LTK nor an STK is available, the service
+	 * request shall be rejected with the error code
+	 * “Insufficient Authentication”.
+	 * Note: When the link is not encrypted, the error code
+	 * “Insufficient Authentication” does not indicate that
+	 *  MITM protection is required.
+	 *
+	 * If an LTK or an STK is available and encryption is
+	 * required (LE security mode 1) but encryption is not
+	 * enabled, the service request shall be rejected with
+	 * the error code “Insufficient Encryption”.
+	 */
+	
+	if (mask & (BT_GATT_PERM_ENCRYPT_MASK | BT_GATT_PERM_AUTHEN_MASK | BT_GATT_PERM_LESC_MASK)) {
 #if defined(CONFIG_BT_SMP)
 		if (!conn->encrypt) {
-			return BT_ATT_ERR_INSUFFICIENT_ENCRYPTION;
+			if (bt_conn_ltk_present(conn)) {
+				return BT_ATT_ERR_INSUFFICIENT_ENCRYPTION;
+			} else {
+				return BT_ATT_ERR_AUTHENTICATION;
+			}
+		}
+
+		if (mask & BT_GATT_PERM_AUTHEN_MASK) {
+			if (bt_conn_get_security(conn) < BT_SECURITY_L3) {
+				return BT_ATT_ERR_AUTHENTICATION;
+			}
+		}
+		if (mask & BT_GATT_PERM_LESC_MASK) {
+			const struct bt_keys *keys = conn->le.keys;
+			if (!keys || (keys->flags & BT_KEYS_SC) == 0) {
+				return BT_ATT_ERR_AUTHENTICATION;
+			}
 		}
 #else
 		return BT_ATT_ERR_INSUFFICIENT_ENCRYPTION;
@@ -2452,6 +2484,12 @@ static void remove_subscriptions(struct bt_conn *conn)
 	struct bt_gatt_subscribe_params *params, *tmp;
 	sys_snode_t *prev = NULL;
 
+	#if defined(QCC74x_BLE_AVOID_REMOVE_GATT_SUBSCRIPTION_RISK)
+	if(conn && atomic_test_bit(conn->flags, BT_CONN_GATT_REMOVE_SUBSCRIPTION_GOING))
+	{
+		return;
+	}
+	#endif
 	/* Lookup existing subscriptions */
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&subscriptions, params, tmp, node) {
 		if (bt_conn_addr_le_cmp(conn, &params->_peer)) {
@@ -2755,7 +2793,7 @@ static u16_t parse_include(struct bt_conn *conn, const void *pdu,
 			   struct bt_gatt_discover_params *params,
 			   u16_t length)
 {
-	const struct bt_att_read_type_rsp *rsp = pdu;
+	const struct bt_att_read_type_rsp *rsp;
 	u16_t handle = 0U;
 	struct bt_gatt_include value;
 	union {
@@ -2764,6 +2802,12 @@ static u16_t parse_include(struct bt_conn *conn, const void *pdu,
 		struct bt_uuid_128 u128;
 	} u;
 
+	if (length < sizeof(*rsp)) {
+		BT_ERR("Parse err");
+		goto done;
+	}
+
+	rsp = pdu;
 	/* Data can be either in UUID16 or UUID128 */
 	switch (rsp->len) {
 	case 8: /* UUID16 */
@@ -2854,7 +2898,7 @@ static u16_t parse_characteristic(struct bt_conn *conn, const void *pdu,
 				  struct bt_gatt_discover_params *params,
 				  u16_t length)
 {
-	const struct bt_att_read_type_rsp *rsp = pdu;
+	const struct bt_att_read_type_rsp *rsp;
 	u16_t handle = 0U;
 	union {
 		struct bt_uuid uuid;
@@ -2862,6 +2906,12 @@ static u16_t parse_characteristic(struct bt_conn *conn, const void *pdu,
 		struct bt_uuid_128 u128;
 	} u;
 
+	if (length < sizeof(*rsp)) {
+		BT_ERR("Parse err");
+		goto done;
+	}
+
+	rsp = pdu;
 	/* Data can be either in UUID16 or UUID128 */
 	switch (rsp->len) {
 	case 7: /* UUID16 */
@@ -3001,13 +3051,20 @@ static u16_t parse_service(struct bt_conn *conn, const void *pdu,
 				  struct bt_gatt_discover_params *params,
 				  u16_t length)
 {
-	const struct bt_att_read_group_rsp *rsp = pdu;
+	const struct bt_att_read_group_rsp *rsp;
 	u16_t start_handle, end_handle = 0U;
 	union {
 		struct bt_uuid uuid;
 		struct bt_uuid_16 u16;
 		struct bt_uuid_128 u128;
 	} u;
+
+	if (length < sizeof(*rsp)) {
+		BT_ERR("Parse err");
+		goto done;
+	}
+
+	rsp = pdu;
 	struct bt_uuid* primary = BT_UUID_GATT_PRIMARY;
 	struct bt_uuid* secondary = BT_UUID_GATT_SECONDARY;
 
@@ -3144,7 +3201,7 @@ static void gatt_find_info_rsp(struct bt_conn *conn, u8_t err,
 			       const void *pdu, u16_t length,
 			       void *user_data)
 {
-	const struct bt_att_find_info_rsp *rsp = pdu;
+	const struct bt_att_find_info_rsp *rsp;
 	struct bt_gatt_discover_params *params = user_data;
 	u16_t handle = 0U;
 	u16_t len;
@@ -3169,7 +3226,12 @@ static void gatt_find_info_rsp(struct bt_conn *conn, u8_t err,
 	if (err) {
 		goto done;
 	}
+	if (length < sizeof(*rsp)) {
+		BT_ERR("Parse err");
+		goto done;
+	}
 
+	rsp = pdu;
 	/* Data can be either in UUID16 or UUID128 */
 	switch (rsp->format) {
 	case BT_ATT_INFO_16:
@@ -3406,7 +3468,9 @@ static void parse_read_by_uuid(struct bt_conn *conn,
 	if (bt_gatt_read(conn, params) < 0) {
 		params->func(conn, BT_ATT_ERR_UNLIKELY, params, NULL, 0);
 	}
+
 }
+
 
 static void gatt_read_rsp(struct bt_conn *conn, u8_t err, const void *pdu,
 			  u16_t length, void *user_data)
@@ -3698,7 +3762,14 @@ static void gatt_prepare_write_rsp(struct bt_conn *conn, u8_t err,
 	}
 
 #if defined(QCC74x_BLE_AUTO_CANCEL_RELIABLE_WRITE_CHARACTERISTIC)
-	const struct bt_att_prepare_write_rsp *rsp = pdu;
+	const struct bt_att_prepare_write_rsp *rsp;
+
+	if (length < sizeof(*rsp)) {
+		BT_ERR("Parse err");
+		goto fail;
+	}
+
+	rsp = pdu;
 
 	size_t len = length - sizeof(*rsp);
 	if (len > params->length) {
@@ -4655,11 +4726,21 @@ static int sc_clear_by_addr(u8_t id, const bt_addr_le_t *addr)
 	return 0;
 }
 
+#if defined(QCC74x_BLE_AVOID_REMOVE_GATT_SUBSCRIPTION_RISK)
+static void bt_gatt_clear_subscriptions(u8_t id, const bt_addr_le_t *addr)
+#else
 static void bt_gatt_clear_subscriptions(const bt_addr_le_t *addr)
+#endif
 {
 #if defined(CONFIG_BT_GATT_CLIENT)
 	struct bt_gatt_subscribe_params *params, *tmp;
 	sys_snode_t *prev = NULL;
+
+	#if defined(QCC74x_BLE_AVOID_REMOVE_GATT_SUBSCRIPTION_RISK)
+	struct bt_conn *conn  = bt_conn_lookup_addr_le(id, addr);
+	if(conn)
+		atomic_set_bit(conn->flags, BT_CONN_GATT_REMOVE_SUBSCRIPTION_GOING);
+	#endif
 
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&subscriptions, params, tmp, node) {
 		if (bt_addr_le_cmp(addr, &params->_peer)) {
@@ -4669,6 +4750,13 @@ static void bt_gatt_clear_subscriptions(const bt_addr_le_t *addr)
 		params->value = 0U;
 		gatt_subscription_remove(NULL, prev, params);
 	}
+
+    #if defined(QCC74x_BLE_AVOID_REMOVE_GATT_SUBSCRIPTION_RISK)
+    if(conn){
+		atomic_clear_bit(conn->flags, BT_CONN_GATT_REMOVE_SUBSCRIPTION_GOING);
+		bt_conn_unref(conn);
+    }
+    #endif
 #endif /* CONFIG_BT_GATT_CLIENT */
 }
 
@@ -4691,7 +4779,11 @@ int bt_gatt_clear(u8_t id, const bt_addr_le_t *addr)
 		return err;
 	}
 
+	#if defined(QCC74x_BLE_AVOID_REMOVE_GATT_SUBSCRIPTION_RISK)
+	bt_gatt_clear_subscriptions(id, addr);
+	#else
 	bt_gatt_clear_subscriptions(addr);
+	#endif
 
 	return 0;
 }

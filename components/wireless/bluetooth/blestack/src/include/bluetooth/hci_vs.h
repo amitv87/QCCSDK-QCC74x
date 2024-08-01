@@ -345,6 +345,12 @@ struct hci_vsc_ble_conn_window_setting_cmd
     uint8_t percentage;
 }__packed;
 
+#define HCI_VS_BT_SET_TX_PWR   BT_OP(BT_OGF_VS, 0x007a)
+struct hci_vsc_bt_tx_pwr_cmd
+{
+    int8_t br_power;
+    int8_t edr_power;
+}__packed;
 
 
 #ifdef __cplusplus

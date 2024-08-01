@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#define AT_CORE_VERSION 0x01000000
+#define AT_CORE_VERSION 0x01000001
 
 #define AT_CMD_HEAD "AT"
 
@@ -125,6 +125,10 @@ int at_cmd_register(const at_cmd_struct *cmds, int num_cmds);
 int at_cmd_unregister(const at_cmd_struct *cmds, int num_cmds);
 
 int at_cmd_input(uint8_t *data, int32_t len);
+
+int at_write_data(uint8_t *data, int32_t len);
+
+void at_write_string(const char *format, va_list args);
 
 int at_cmd_set_error(uint32_t error);
 

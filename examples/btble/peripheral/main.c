@@ -23,7 +23,9 @@
 
 #include "qcc74x_mtd.h"
 #include "easyflash.h"
-
+#if defined(CONFIG_BT_OAD_SERVER)
+#include "oad_main.h"
+#endif
 static struct qcc74x_device_s *uart0;
 
 extern void shell_init_with_task(struct qcc74x_device_s *shell);
@@ -85,6 +87,13 @@ static void ble_start_adv(void)
     printf("Start advertising success.\r\n");
 }
 
+#if defined(CONFIG_BT_OAD_SERVER)
+bool ble_check_oad(u32_t cur_file_ver, u32_t new_file_ver)
+{
+    return true;
+}
+#endif
+
 void bt_enable_cb(int err)
 {
     if (!err) {
@@ -95,7 +104,9 @@ void bt_enable_cb(int err)
 
         bt_conn_cb_register(&ble_conn_callbacks);
         ble_tp_init();
-
+#if defined(CONFIG_BT_OAD_SERVER)
+        oad_service_enable(ble_check_oad);
+#endif
         // start advertising
         ble_start_adv();
     }

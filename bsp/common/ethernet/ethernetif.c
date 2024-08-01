@@ -1,10 +1,16 @@
 /* Includes ------------------------------------------------------------------*/
 #include "lwip/opt.h"
+#include "lwip/tcpip.h"
 #include "lwip/timeouts.h"
 #include "lwip/netif.h"
 #if LWIP_DHCP
 #include "lwip/dhcp.h"
 #endif
+#if LWIP_IPV6
+#include "lwip/ethip6.h"
+#endif
+#include "lwip/netifapi.h"
+
 #include "netif/etharp.h"
 #include <string.h>
 
@@ -52,18 +58,21 @@ uint8_t DHCP_state = DHCP_OFF;
 
 /* Private function prototypes -----------------------------------------------*/
 struct qcc74x_device_s *emac0;
-struct qcc74x_emac_phy_cfg_s phy_cfg = {
+struct qcc74x_eth_phy_cfg_s phy_cfg = {
     .auto_negotiation = 1, /*!< Speed and mode auto negotiation */
     .full_duplex = 1,      /*!< Duplex mode */
     .speed = 100,            /*!< Speed mode */
 #ifdef PHY_8720
     .phy_address = 0x01,  /*!< PHY address */
-    .phy_id = 0x7c0f0, /*!< PHY OUI, masked */
-#else
-#ifdef PHY_8201F
-    .phy_address = 0, /*!< PHY address */
-    .phy_id = 0x120,  /*!< PHY OUI, masked */
+    .phy_id = 0x0007c0f0, /*!< PHY OUI, masked */
 #endif
+#ifdef PHY_BL3011
+    .phy_address = 0, /*!< PHY address */
+    .phy_id = 0x937c4020,  /*!< PHY OUI, masked */
+#endif
+#ifdef PHY_AR8032
+    .phy_address = 0x5,  /*!< PHY address */
+    .phy_id = 0x004dd020, /*!< PHY OUI, masked */
 #endif
     .phy_state = PHY_STATE_DOWN,
 };
@@ -74,7 +83,10 @@ SemaphoreHandle_t emac_rx_sem = NULL;
 static StackType_t emac_rx_stack[256];
 static StaticTask_t emac_rx_handle;
 #if LWIP_DHCP
-static StackType_t emac_dhcp_stack[256];
+#ifndef EMAC_DHCP_STACK_SIZE
+#define EMAC_DHCP_STACK_SIZE 256
+#endif
+static StackType_t emac_dhcp_stack[EMAC_DHCP_STACK_SIZE];
 static StaticTask_t emac_dhcp_handle;
 #endif
 static uint8_t emac_rx_buffer[ETH_RX_BUFFER_SIZE] __attribute__((aligned(16))) = { 0 };
@@ -93,9 +105,9 @@ LWIP_MEMPOOL_DECLARE(RX_POOL, 10, sizeof(struct pbuf_custom), "Zero-copy RX PBUF
   *        for this ethernetif
   */
 extern void emac_init_txrx_buffer(struct qcc74x_device_s *emac);
-// extern int ethernet_phy_init(struct qcc74x_device_s *emac, struct qcc74x_emac_phy_cfg_s *emac_phy_cfg);
+// extern int ethernet_phy_init(struct qcc74x_device_s *emac, struct qcc74x_eth_phy_cfg_s *eth_phy_cfg);
 void emac_rx_done_callback_app(void);
-void dhcp_thread(void const *argument);
+void dhcp_thread(void *argument);
 
 void emac_isr(int irq, void *arg)
 {
@@ -203,6 +215,10 @@ void low_level_init(struct netif *netif)
     /* device capabilities */
     /* don't set NETIF_FLAG_ETHARP if this device is not an ethernet one */
     netif->flags |= NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP;
+#if LWIP_IPV6
+    netif->flags |= (NETIF_FLAG_ETHERNET | NETIF_FLAG_IGMP | NETIF_FLAG_MLD6);
+    netif->output_ip6 = ethip6_output;
+#endif
 
     /* Initialize the RX POOL */
     LWIP_MEMPOOL_INIT(RX_POOL);
@@ -216,7 +232,7 @@ void low_level_init(struct netif *netif)
     xTaskCreateStatic(ethernetif_input, (char *)"emac_rx_task", sizeof(emac_rx_stack) / 4, netif, osPriorityRealtime, emac_rx_stack, &emac_rx_handle);
 #if LWIP_DHCP
     printf("[OS] Starting emac dhcp task...\r\n");
-    xTaskCreateStatic(dhcp_thread, (char *)"emac_dhcp_task", sizeof(emac_dhcp_stack) / 4, netif, osPriorityRealtime, emac_dhcp_stack, &emac_dhcp_handle);
+    xTaskCreateStatic((TaskFunction_t)dhcp_thread, (char *)"emac_dhcp_task", sizeof(emac_dhcp_stack) / 4, netif, osPriorityRealtime, emac_dhcp_stack, &emac_dhcp_handle);
 #endif
 
     if (ret == 0) {
@@ -432,9 +448,9 @@ static void ethernet_set_static_ip(struct netif *netif)
     ip_addr_t netmask;
     ip_addr_t gw;
 
-    IP4_ADDR(&ipaddr, IP_ADDR0, IP_ADDR1, IP_ADDR2, IP_ADDR3);
-    IP4_ADDR(&netmask, NETMASK_ADDR0, NETMASK_ADDR1, NETMASK_ADDR2, NETMASK_ADDR3);
-    IP4_ADDR(&gw, GW_ADDR0, GW_ADDR1, GW_ADDR2, GW_ADDR3);
+    IP_ADDR4(&ipaddr, IP_ADDR0, IP_ADDR1, IP_ADDR2, IP_ADDR3);
+    IP_ADDR4(&netmask, NETMASK_ADDR0, NETMASK_ADDR1, NETMASK_ADDR2, NETMASK_ADDR3);
+    IP_ADDR4(&gw, GW_ADDR0, GW_ADDR1, GW_ADDR2, GW_ADDR3);
     netif_set_addr(netif, ip_2_ip4(&ipaddr), ip_2_ip4(&netmask), ip_2_ip4(&gw));
 }
 
@@ -449,7 +465,7 @@ void ethernet_link_status_updated(struct netif *netif)
 #if LWIP_DHCP
         /* Update DHCP state machine */
         DHCP_state = DHCP_START;
-        printf("DHCP Start\n");
+        printf("DHCP Start\r\n");
 #else
         /* IP address default setting */
         ethernet_set_static_ip(netif);
@@ -473,40 +489,40 @@ void ethernet_link_status_updated(struct netif *netif)
   */
 void ethernet_link_check_state(struct netif *netif)
 {
-    emac_phy_status_t phy_state;
+    eth_phy_status_t phy_state;
 
     uint32_t linkchanged = 0;
-    uint32_t speed = 0, duplex = 0;
+    uint32_t speed __attribute__((unused)) = 0, duplex __attribute__((unused)) = 0;
 
     phy_state = ethernet_phy_status_get();
 
-    if (netif_is_link_up(netif) && (phy_state <= EMAC_PHY_STAT_LINK_DOWN)) {
+    if (netif_is_link_up(netif) && (phy_state <= ETH_PHY_STAT_LINK_DOWN)) {
         printf("Link Down!\r\n");
         // qcc74x_emac_stop(emac0);
         netif_set_down(netif);
         netif_set_link_down(netif);
-    } else if (!netif_is_link_up(netif) && (phy_state > EMAC_PHY_STAT_LINK_UP)) {
+    } else if (!netif_is_link_up(netif) && (phy_state > ETH_PHY_STAT_LINK_UP)) {
         printf("Link Up!\r\n");
         switch (phy_state) {
-            case EMAC_PHY_STAT_100MBITS_FULLDUPLEX:
+            case ETH_PHY_STAT_100MBITS_FULLDUPLEX:
                 duplex = 1;
                 speed = 100;
                 linkchanged = 1;
                 break;
 
-            case EMAC_PHY_STAT_100MBITS_HALFDUPLEX:
+            case ETH_PHY_STAT_100MBITS_HALFDUPLEX:
                 duplex = 0;
                 speed = 100;
                 linkchanged = 1;
                 break;
 
-            case EMAC_PHY_STAT_10MBITS_FULLDUPLEX:
+            case ETH_PHY_STAT_10MBITS_FULLDUPLEX:
                 duplex = 1;
                 speed = 10;
                 linkchanged = 1;
                 break;
 
-            case EMAC_PHY_STAT_10MBITS_HALFDUPLEX:
+            case ETH_PHY_STAT_10MBITS_HALFDUPLEX:
                 duplex = 0;
                 speed = 10;
                 linkchanged = 1;
@@ -530,12 +546,11 @@ void ethernet_link_check_state(struct netif *netif)
   * @param  argument: network interface
   * @retval None
   */
-void dhcp_thread(void const *argument)
+void dhcp_thread(void *argument)
 {
     struct netif *netif = (struct netif *)argument;
-    ip_addr_t ipaddr;
-    ip_addr_t netmask;
-    ip_addr_t gw;
+    ip4_addr_t ip_zero;
+
     struct dhcp *dhcp;
     uint8_t iptxt[20];
 
@@ -547,12 +562,12 @@ void dhcp_thread(void const *argument)
             }
             break;
             case DHCP_START: {
-                ip_addr_set_zero_ip4(&netif->ip_addr);
-                ip_addr_set_zero_ip4(&netif->netmask);
-                ip_addr_set_zero_ip4(&netif->gw);
+                ip4_addr_set_zero(&ip_zero);
+                netifapi_netif_set_addr(netif, &ip_zero, &ip_zero, &ip_zero);
                 DHCP_state = DHCP_WAIT_ADDRESS;
-                printf("  State: Looking for DHCP server ...\r\n");
-                dhcp_start(netif);
+
+                printf("State: Looking for DHCP server ...\r\n");
+                netifapi_dhcp_start(netif);
             } break;
             case DHCP_WAIT_ADDRESS: {
                 if (dhcp_supplied_address(netif)) {
@@ -575,11 +590,11 @@ void dhcp_thread(void const *argument)
                 }
             } break;
             case DHCP_ADDRESS_ASSIGNED: {
-                netif->state = DHCP_ADDRESS_ASSIGNED;
+                netif->state = (void*) DHCP_ADDRESS_ASSIGNED;
             } break;
             case DHCP_TIMEOUT: {
                 printf("DHCP TIMEOUT!\r\n");
-                netif->state = DHCP_LINK_DOWN;
+                netif->state = (void*) DHCP_LINK_DOWN;
             }
             break;
             case DHCP_LINK_DOWN: {

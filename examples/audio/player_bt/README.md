@@ -19,6 +19,14 @@ make
 ## Flashing
 make flash CHIP=qcc743 COMX=/dev/ttyACM0
 
+## Hardware connectivity
+
+![](picture/hard.png)
+
+The hardware connection is shown in the figure above: GPIO27 of QCC74x is connected to the Negative Pin of the audio board, GPIO28 is connected to the Positive Pin of the audio board. GPIO30 is connected to the PA Pin of the audio board. The figure below is the schematic circuit of the audio board: Negative Pin corresponds to SPK_2NN in the circuit, Positive Pin corresponds to SPK_2PP in the circuit. PA Pin corresponds to PA_SHDN in the circuit.
+
+![](picture/speaker.png)
+
 ## Run
 
 ### Enable Bluetooth Advertising on the Device

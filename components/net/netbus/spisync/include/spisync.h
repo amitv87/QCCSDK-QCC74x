@@ -137,6 +137,7 @@ typedef struct __spisync {
     uint32_t                rxpattern_checked;
     uint32_t                rxread_continue;
     uint32_t                clamp[3];
+    uint32_t                ps_status;// 0:active, 1:sleeping
 
     /* slot */
     /* Because the cache is aligned to 32 bytes, both the beginning and end
@@ -179,6 +180,13 @@ typedef struct __spisync {
 
 int spisync_init        (spisync_t *spisync, const spisync_config_t *config);
 int spisync_wakeup      (spisync_t *spisync);
+/*
+ * 0-idle 1-busy
+ * */
+int spisync_status_get  (spisync_t *spisync);
+int spisync_ps_enter    (spisync_t *spisync);
+int spisync_ps_exit     (spisync_t *spisync);
+
 int spisync_deinit      (spisync_t *spisync);
 int spisync_read        (spisync_t *spisync, uint8_t type, void *buf, uint32_t len, uint32_t timeout_ms);
 int spisync_write       (spisync_t *spisync, uint8_t type, void *buf, uint32_t len, uint32_t timeout_ms);

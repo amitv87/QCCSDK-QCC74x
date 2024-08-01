@@ -1,7 +1,9 @@
 if(CONFIG_ETHERNET)
 target_sources(app PRIVATE ethernet/ethernet_phy.c)
 target_sources(app PRIVATE ethernet/phy_8720.c)
-target_sources(app PRIVATE ethernet/phy_8201f.c)
+target_sources(app PRIVATE ethernet/phy_bl3011.c)
+target_sources(app PRIVATE ethernet/phy_ar8032.c)
+
 if(CONFIG_LWIP)
 target_sources(app PRIVATE ethernet/ethernetif.c)
 endif()

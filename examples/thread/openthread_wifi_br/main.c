@@ -56,7 +56,7 @@
 static struct qcc74x_device_s *uart0;
 static TaskHandle_t wifi_fw_task;
 static wifi_conf_t conf = {
-    .country_code = "CN",
+    .country_code = "US",
 };
 
 static char otbr_wifi_ssid[33];

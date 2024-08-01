@@ -38,6 +38,7 @@
 #include "at_base_config.h"
 #include "at_wifi_config.h"
 #include "at_wifi_main.h"
+#include "at_net_main.h"
 
 #define DBG_TAG "MAIN"
 #include "log.h"
@@ -249,7 +250,12 @@ void wifiopt_sta_connect(void)
         wifi_mgmr_set_listen_interval(listen_interval);
         wifi_mgmr_sta_connect_ext(g_wifi_sta_interface, ssid, psk, &ext_param);
     }
-#else
+#else 
+    if (!dhcp_en) {
+        wifi_mgmr_sta_ip_set(ip, mask, gateway, 0);
+    }
+
+    at_wifi_hostname_set(hostname);
     wifi_sta_connect(ssid, psk, NULL, at_wifi_config->sta_info.wep_en?"WEP":NULL, pmf_cfg, freq, freq, dhcp_en);
 #endif
 }
@@ -306,7 +312,7 @@ static void reconnect_event(void *arg)
         vTaskDelay(pdMS_TO_TICKS(interval));
 
         state = at_wifi_state_get();
-        if (at_wifi_config->wifi_mode != WIFI_STATION_MODE || state == FHOST_STA_CONNECTED) {
+        if (at_wifi_config->wifi_mode != WIFI_STATION_MODE || state == FHOST_STA_CONNECTED || (!at_wifi_config->reconn_cfg.repeat_count)) {
             break;
         }
         printf("xxxxxxxxxxxxx %d %d\r\n", state, wifi_mgmr_sta_state_get());
@@ -334,17 +340,19 @@ static void wifi_sta_enable_reconnect(int enable)
 
 static void _wifi_ap_status_callback(struct netif *netif)
 {
-    wifi_ap_update_sta_ip((uint8_t *)netif->hwaddr, netif->ip_addr.addr);
+    wifi_ap_update_sta_ip((uint8_t *)netif->hwaddr, ip_addr_get_ip4_u32(&netif->ip_addr));
 
     if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
-        at_response_string("+EVT:DIST_STA_IP \"%02x:%02x:%02x:%02x:%02x:%02x\",\"%s\"\r\n",
-                netif->hwaddr[0],
-                netif->hwaddr[1],
-                netif->hwaddr[2],
-                netif->hwaddr[3],
-                netif->hwaddr[4],
-                netif->hwaddr[5],
-                ip4addr_ntoa(&netif->ip_addr));
+        if (at_wifi_config->wevt_enable) {
+            at_response_string("+CW:DIST_STA_IP \"%02x:%02x:%02x:%02x:%02x:%02x\",\"%s\"\r\n",
+                    netif->hwaddr[0],
+                    netif->hwaddr[1],
+                    netif->hwaddr[2],
+                    netif->hwaddr[3],
+                    netif->hwaddr[4],
+                    netif->hwaddr[5],
+                    ip4addr_ntoa(&netif->ip_addr));
+        }
     }
 }
 
@@ -374,6 +382,8 @@ static int wifi_ap_start(void)
 
 static int wifiopt_ap_stop(int force)
 {
+
+    dhcpd_stop_with_netif(fhost_to_net_if(MGMR_VIF_AP));
     wifi_mgmr_ap_stop();
 
     return 0;
@@ -509,7 +519,7 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             if (g_wifi_sta_is_connected) {
                 if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
                     if (at_wifi_config->wevt_enable) {
-                        at_response_string("+EVT:WIFI DISCONNECT\r\n");
+                        at_response_string("+CW:DISCONNECT\r\n");
                     }
                 }
                 g_wifi_sta_is_connected = 0;
@@ -519,12 +529,23 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             g_wifi_waiting_connect_result = 0;
         }
         break;
+        case CODE_WIFI_ON_SCAN_DONE: {
+            extern void at_scan_done_event_tigger(void);
+            at_scan_done_event_tigger();
+
+            if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
+                if (at_wifi_config->wevt_enable) {
+                    at_response_string("+CW:SCAN_DONE\r\n");
+                }
+            }
+        }
+        break;
  
         case CODE_WIFI_ON_CONNECTED: {
             if (!g_wifi_sta_is_connected) {
                 if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
                     if (at_wifi_config->wevt_enable) {
-                        at_response_string("+EVT:WIFI CONNECTED\r\n");
+                        at_response_string("+CW:CONNECTED\r\n");
                     }
                 }
                 g_wifi_sta_is_connected = 1;
@@ -552,13 +573,14 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             if (g_wifi_sta_is_connected) {
                 if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
                     if (at_wifi_config->wevt_enable) {
-                        at_response_string("+EVT:WIFI GOT IP\r\n");
+                        at_response_string("+CW:GOTIP\r\n");
                     }
                 }
 
                 g_wifi_sta_disconnect_reason = 0;
                 g_wifi_waiting_connect_result = 0;
             }
+            at_net_dns_load();
         }
         break;
 
@@ -568,7 +590,7 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             wifi_mgmr_ap_sta_info_get(&sta_info, idx);
             if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
                 if (at_wifi_config->wevt_enable) {
-                    at_response_string("+EVT:STA_CONNECTED \"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n",
+                    at_response_string("+CW:STA_CONNECTED \"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n",
                             sta_info.sta_mac[0],
                             sta_info.sta_mac[1],
                             sta_info.sta_mac[2],
@@ -585,7 +607,7 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             wifi_ap_delete_sta_info(sta_mac);
             if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
                 if (at_wifi_config->wevt_enable) {
-                    at_response_string("+EVT:STA_DISCONNECTED \"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n",
+                    at_response_string("+CW:STA_DISCONNECTED \"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n",
                             sta_mac[0],
                             sta_mac[1],
                             sta_mac[2],
@@ -639,8 +661,7 @@ void wifi_event_handler(uint32_t code)
         } break;
         case CODE_WIFI_ON_SCAN_DONE: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_SCAN_DONE\r\n", __func__);
-            extern void at_scan_done_event_tigger(void);
-            at_scan_done_event_tigger();
+            wifi_event_start(code);
         } break;
         case CODE_WIFI_ON_CONNECTED: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_CONNECTED\r\n", __func__);
@@ -777,43 +798,49 @@ int at_wifi_ap_set_dhcp_range(int start, int end)
     return 0;
 }
 
-int at_wifi_sniffer_start(int min_pkt_len)
+int at_wifi_sniffer_start(void)
 {
     if (g_wifi_sniffer_is_start) {
         return -1;
     }
-
-#if 0
+    
     wifiopt_ap_stop(0);
     wifiopt_sta_disconnect(0);
 
-    wifi_mgmr_sniffer_register((void *)min_pkt_len, wifi_sniffer_data_recv);
-    wifi_mgmr_sniffer_enable();
-#endif
     g_wifi_sniffer_is_start = 1;
     return 0;
 }
 
-int at_wifi_sniffer_set_channel(int channel)
+int at_wifi_sniffer_set_channel(int channel, void *cb, void *arg)
 {
+    wifi_mgmr_sniffer_item_t sniffer_item;
+
     if (!g_wifi_sniffer_is_start) {
         return -1;
     }
-#if 0
+    memset(&sniffer_item, 0, sizeof(sniffer_item));
 
-    wifi_mgmr_channel_set(channel, 0);
-#endif
+    sniffer_item.itf = "wl1";
+    sniffer_item.prim20_freq = phy_channel_to_freq(0, channel);
+    sniffer_item.cb = cb;
+    sniffer_item.cb_arg = arg;
+
+    printf("set channel %d\r\n", channel);
+    wifi_mgmr_sniffer_enable(&sniffer_item);
     return 0;
 }
 
 int at_wifi_sniffer_stop(void)
 {
+    wifi_mgmr_sniffer_item_t sniffer_item;
+
     if (!g_wifi_sniffer_is_start) {
         return -1;
     }
+    memset(&sniffer_item, 0, sizeof(sniffer_item));
+    sniffer_item.itf = "wl1";
 
-    //wifi_mgmr_sniffer_disable();
-    //wifi_mgmr_sniffer_unregister(NULL);
+    wifi_mgmr_sniffer_disable(&sniffer_item);
 
     g_wifi_sniffer_is_start = 0;
     return 0;
@@ -843,5 +870,11 @@ int at_wifi_stop(void)
     wifiopt_sta_disconnect(1);
 
     return 0;
+}
+
+int at_wifi_hostname_set(char *hostname)
+{
+    struct netif *netif = (struct netif *)net_if_find_from_name("wl1");
+    netif_set_hostname(netif, hostname);
 }
 

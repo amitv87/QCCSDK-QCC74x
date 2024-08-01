@@ -1,9 +1,7 @@
 SDK_DEMO_PATH ?= .
 QCC74x_SDK_BASE ?= $(SDK_DEMO_PATH)/../../..
-CONFIG_BOARD_CONFIG_8M ?= config_8M
 
 export QCC74x_SDK_BASE
-export CONFIG_BOARD_CONFIG_8M
 
 CHIP ?= qcc743
 BOARD ?= qcc744dk

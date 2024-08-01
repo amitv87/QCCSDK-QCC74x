@@ -106,18 +106,21 @@ int main(void)
         .mac_addr[5] = 0x56,
     };
 
-    struct qcc74x_emac_phy_cfg_s phy_cfg = {
+    struct qcc74x_eth_phy_cfg_s phy_cfg = {
         .auto_negotiation = 1, /*!< Speed and mode auto negotiation */
         .full_duplex = 0,      /*!< Duplex mode */
         .speed = 0,            /*!< Speed mode */
 #ifdef PHY_8720
-        .phy_address = 1,  /*!< PHY address */
-        .phy_id = 0x7c0f0, /*!< PHY OUI, masked */
-#else
-#ifdef PHY_8201F
-        .phy_address = 0, /*!< PHY address */
-        .phy_id = 0x120,  /*!< PHY OUI, masked */
+        .phy_address = 0x01,  /*!< PHY address */
+        .phy_id = 0x0007c0f0, /*!< PHY OUI, masked */
 #endif
+#ifdef PHY_BL3011
+        .phy_address = 0, /*!< PHY address */
+        .phy_id = 0x937c4020,  /*!< PHY OUI, masked */
+#endif
+#ifdef PHY_AR8032
+        .phy_address = 0x5,  /*!< PHY address */
+        .phy_id = 0x004dd020, /*!< PHY OUI, masked */
 #endif
         .phy_state = PHY_STATE_DOWN,
     };

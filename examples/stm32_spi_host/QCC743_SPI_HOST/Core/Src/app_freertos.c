@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "spisync.h"
+#include "app_atmodule.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,25 +49,14 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
 osThreadId_t spi_taskhandle;
-const osThreadAttr_t spi_tsk_attr = {
-  .name = "spi-dma",
-  .priority = (osPriority_t) osPriorityRealtime7,
-  .stack_size = 4096
-};
 
 osThreadId_t console_taskhandle;
 const osThreadAttr_t console_tsk_attr = {
   .name = "console",
   .priority = (osPriority_t) osPriorityRealtime7,
-  .stack_size = 128 * 8
+  .stack_size = 1024*4,
 };
 
-osThreadId_t at_taskhandle;
-const osThreadAttr_t at_tsk_attr = {
-  .name = "at",
-  .priority = (osPriority_t) osPriorityRealtime7,
-  .stack_size = 4096
-};
 
 StreamBufferHandle_t uart_strm_buffer;
 
@@ -79,18 +69,12 @@ const osThreadAttr_t defaultTask_attributes = {
   .stack_size = 128 * 4
 };
 
-
-extern int at_iperf_udp_tx_start(spisync_t *p_spisync, char ip_addr[20], int port);
-extern int at_iperf_tcp_tx_start(spisync_t *p_spisync, char ip_addr[20], int port);
-extern int at_iperf_udp_rx_start(spisync_t *p_spisync, char ip_addr[20], int port);
-extern int at_iperf_tcp_rx_start(spisync_t *p_spisync, char ip_addr[20], int port);
-extern void at_wifi_connect(spisync_t *p_spisync, char ssid[32], char pswd[64]);
-extern void at_qcc74x_ota_start(spisync_t *p_spisync, char ip_addr[20], int port);
-extern int at_qcc74x_ota_finish(spisync_t *p_spisync);
+#define UART_STRM_BUFFER_SIZE     (3*1024)
+#define CONSOLE_AT_ENABLE         (1)
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-spisync_t spisync_ctx;
+
 uint8_t uart_rxbyte;
 extern UART_HandleTypeDef huart1;
 
@@ -98,136 +82,9 @@ struct at_desc {
 	const char *cmd;
 	int post_delay_ms;
 };
-
-int spisync_ready = 0;
-
+static at_host_handle_t g_at_handle;
 static volatile uint32_t g_send_flag = 0;
 static volatile uint32_t g_send_tick = 0;
-
-void spisync_perf_tx_task2(void *arg)
-{
-	int err;
-	uint8_t byte = 1;
-	unsigned char txdata[SPISYNC_PAYLOADBUF_LEN];
-
-	while (!spisync_ready) {
-		printf("waiting spisync to become ready\r\n");
-		osDelay(1000);
-	}
-	printf("spisync perf tx start\r\n");
-
-	while (1) {
-		if (1 || g_send_flag) {
-			if (((int)(xTaskGetTickCount()) - (int)g_send_tick) >= g_send_flag) {
-				//spisync_iperf(&spisync_ctx, 0);// for iperf log
-				g_send_flag = 0;
-			}
-			err = spisync_write(&spisync_ctx, 1, txdata, sizeof txdata, portMAX_DELAY);
-			if (err < 0) {
-				//printf("spisync write failed, %d\r\n", err);
-			} else {
-				memset(txdata, byte++, SPISYNC_PAYLOADBUF_LEN);
-			}
-		} else {
-			osDelay(500);
-		}
-	}
-}
-
-void spisync_perf_tx_task(void *arg)
-{
-	int err;
-	uint8_t byte = 1;
-	int count = 0;
-	unsigned char txdata[SPISYNC_PAYLOADBUF_LEN];
-
-	while (!spisync_ready) {
-		printf("waiting spisync to become ready\r\n");
-		osDelay(1000);
-	}
-	printf("spisync perf tx start\r\n");
-
-	while (1) {
-		err = spisync_write(&spisync_ctx, 1, txdata, sizeof txdata, 1000);
-		if (err < 0) {
-			printf("spisync write failed, %d\r\n", err);
-		} else {
-			memset(txdata, byte++, SPISYNC_PAYLOADBUF_LEN);
-			count++;
-			if (count >= 10000) {
-				printf("tx work finished\r\n");
-				osDelay(100000000);
-			}
-		}
-	}
-}
-
-osThreadId_t spisync_tx_task;
-
-const osThreadAttr_t spisync_tx_task_attr = {
-  .name = "spisync_tx",
-  .priority = (osPriority_t) osPriorityRealtime7,
-  .stack_size = 8192
-};
-
-void spisync_start_perf_tx(void)
-{
-	printf("start perf tx\r\n");
-	spisync_tx_task = osThreadNew(spisync_perf_tx_task, NULL, &spisync_tx_task_attr);
-	if (!spisync_tx_task) {
-		printf("failed to create spisync perf tx task\r\n");
-		return;
-	}
-}
-
-osThreadId_t spisync_rx_task;
-
-const osThreadAttr_t spisync_rx_task_attr = {
-  .name = "spisync_rx",
-  .priority = (osPriority_t) osPriorityRealtime7,
-  .stack_size = 8192
-};
-
-void spisync_perf_rx_task(void *arg)
-{
-	int err;
-	char rxbuf[SPISYNC_PAYLOADBUF_LEN];
-	uint32_t count = 0, diff = 0;
-	uint32_t len = 0;
-	printf("spisync perf rx start\r\n");
-	while (1) {
-		//memset(rxbuf, 0, sizeof rxbuf);
-		err = spisync_read(&spisync_ctx, 1, rxbuf, sizeof rxbuf, 1000);
-		if (err <= 0)
-			printf("failed to read from spisync, %d\r\n", err);
-		else {
-            //rxbuf[err] = '\0';
-            //printf("==%d==", err);
-			len += err;
-		}
-		diff = osKernelGetTickCount() - count;
-		if (diff >= 1000) {
-			count = osKernelGetTickCount();
-			printf("RX: %f Mbps\r\n", (float)len*8/1000/1000);
-			len = 0;
-			diff = 0;
-		}
-	}
-}
-
-static void spisync_start_perf_rx(void)
-{
-	printf("start perf tx\r\n");
-	while (!spisync_ready) {
-		printf("waiting spisync to become ready\r\n");
-		osDelay(1000);
-	}
-	spisync_rx_task = osThreadNew(spisync_perf_rx_task, NULL, &spisync_rx_task_attr);
-	if (!spisync_rx_task) {
-		printf("failed to create spisync perf rx task\r\n");
-		return;
-	}
-}
 
 static char *argc_parse(const char *argv)
 {
@@ -239,6 +96,14 @@ static char *argc_parse(const char *argv)
 	return s ? (s + 1) : NULL;
 }
 
+
+void qcc74x_lp_gpio_weakup()
+{
+    HAL_GPIO_WritePin(QCC74X_LP_WEAKUP_GPIO_Port, QCC74X_LP_WEAKUP_Pin, 1);
+	osDelay(1);
+    HAL_GPIO_WritePin(QCC74X_LP_WEAKUP_GPIO_Port, QCC74X_LP_WEAKUP_Pin, 0);
+}
+
 static int cli_handle_one(const char *argv)
 {
 	int ret;
@@ -246,81 +111,77 @@ static int cli_handle_one(const char *argv)
 
 	printf("executing command %s\r\n", argv);
 	if (strstr(argv, "ss_dump")) {
-		spisync_dump(&spisync_ctx);
-	} else if (strstr(argv, "ss_start_tx")) {
-		spisync_start_perf_tx();
-	} else if (strstr(argv, "ss_start_rx")) {
-		spisync_start_perf_rx();
-    } else if (strstr(argv, "ss_tx_once")) {
-   		ret = spisync_write(&spisync_ctx, 1, buf, sizeof(buf), 0);
+		spisync_dump(g_at_handle->arg);
+	} else if (strstr(argv, "ss_tx_once")) {
+   		ret = spisync_write(g_at_handle->arg, 1, buf, sizeof(buf), 0);
     	printf("spisync_write ret %d\r\n", ret);
 	} else if (strstr(argv, "at_iperftx")) {
-		spisync_iperf(&spisync_ctx, 1);// for log
+		spisync_iperf(g_at_handle->arg, 1);// for log
 		g_send_tick = xTaskGetTickCount();
 		g_send_flag = 20*1000;// default 20 s
 	} else if (strstr(argv, "at_iperf")) {
-		spisync_iperf(&spisync_ctx, 1);
+		spisync_iperf(g_at_handle->arg, 1);
     } else if (strstr(argv, "spisync_type")) {
 		int spisync_type_test(spisync_t *spisync, uint32_t per, uint32_t t);
-		spisync_type_test(&spisync_ctx, 1, 600);
+		spisync_type_test(g_at_handle->arg, 1, 600);
 	} else if (strstr(argv, "spisync_iperf 0 1")) {
 		int spisync_iperf_test(spisync_t *spisync, uint8_t tx_en, uint8_t type, uint32_t per, uint32_t t);
-		spisync_iperf_test(&spisync_ctx, 0, 1, 1, 60);
+		spisync_iperf_test(g_at_handle->arg, 0, 1, 1, 60);
 	} else if (strstr(argv, "spisync_iperf 1 1")) {
 		int spisync_iperf_test(spisync_t *spisync, uint8_t tx_en, uint8_t type, uint32_t per, uint32_t t);
-		spisync_iperf_test(&spisync_ctx, 1, 1, 1, 30);
-	} else if (strstr(argv, "spisync_read 0")) {
-		static uint8_t buf[1536];
-		int buf_len;
-		buf_len = spisync_read(&spisync_ctx, 0, buf, sizeof(buf), 0);
-		if (buf_len) {
-			printf("buf_len:%d\r\n", buf_len);
-		}
-	} else if (strstr(argv, "spisync_read 1")) {
-		int buf_len;
-		buf_len = spisync_read(&spisync_ctx, 1, buf, sizeof(buf), 0);
-		if (buf_len) {
-			printf("buf_len:%d\r\n", buf_len);
-		}
-	} else if (strstr(argv, "spisync_read 2")) {
-		int buf_len;
-		buf_len = spisync_read(&spisync_ctx, 2, buf, sizeof(buf), 0);
-//		if (buf_len) {
-		printf("buf_len:%d\r\n", buf_len);
-//		}
-	} else if (strstr(argv, "wifi_connect")) {
-		char *ssid = NULL;
-		char *pswd = NULL;
-		ssid = argc_parse(argv);
-		pswd = argc_parse(ssid);
-		at_wifi_connect(&spisync_ctx, ssid, pswd);
+		spisync_iperf_test(g_at_handle->arg, 1, 1, 1, 30);
 	} else if (strstr(argv, "ips")) {
 		char *ip_addr = NULL;
 		ip_addr = argc_parse(argv);
-		at_iperf_tcp_rx_start(&spisync_ctx, ip_addr, 5001); //port defaulf 5001
+		at_iperf_tcp_rx_start(g_at_handle->arg, ip_addr, 5001); //port defaulf 5001
 	} else if (strstr(argv, "ipus")) {
 		char *ip_addr = NULL;
 		ip_addr = argc_parse(argv);
-		at_iperf_udp_rx_start(&spisync_ctx, ip_addr, 5001); //port defaulf 5001
+		at_iperf_udp_rx_start(g_at_handle->arg, ip_addr, 5001); //port defaulf 5001
 	} else if (strstr(argv, "ipc")) {
 		char *ip_addr = NULL;
 		ip_addr = argc_parse(argv);
-		at_iperf_tcp_tx_start(&spisync_ctx, ip_addr, 5001); //port defaulf 8888
+		at_iperf_tcp_tx_start(g_at_handle->arg, ip_addr, 5001); //port defaulf 8888
 	} else if (strstr(argv, "ipu")) {
 		char *ip_addr = NULL;
 		ip_addr = argc_parse(argv);
-		at_iperf_udp_tx_start(&spisync_ctx, ip_addr, 5001); //port defaulf 8888
+		at_iperf_udp_tx_start(g_at_handle->arg, ip_addr, 5001); //port defaulf 8888
 	} else if (strstr(argv, "iperf_stop")) {
-		at_iperf_stop(&spisync_ctx); 
+		at_iperf_stop(g_at_handle->arg);
 	} else if (strstr(argv, "ota_start")) {
 		char *ip_addr = NULL;
 		ip_addr = argc_parse(argv);
-		at_qcc74x_ota_start(&spisync_ctx, ip_addr, 3365); //OTA port defaulf 3365
-	} else if (strstr(argv, "ota_reset")) {
-		at_qcc74x_ota_finish(&spisync_ctx);
-	}
+		at_ota_start(g_at_handle, ip_addr, 3365); //OTA port defaulf 3365
+	} else if (strstr(argv, "wakeup 28")) {
+        qcc74x_lp_gpio_weakup();
+    }
 	return 0;
 }
+
+static int _console_to_at(const char *buf, uint32_t len)
+{
+    int ret = at_host_send(g_at_handle, 0, (uint8_t *)buf, len);
+
+    if (ret < len) {
+        printf("%s send fail\r\n", __func__);
+    }
+    return 0;
+}
+
+#define HOSTCMD_KEYWORD "HOSTCMD "
+
+static int console_cli_run(const char *cmd)
+{
+    char *cmd_parse = NULL;
+
+    if (strstr(cmd, HOSTCMD_KEYWORD) != NULL) {
+        cmd_parse = (char *)cmd + strlen(HOSTCMD_KEYWORD);
+		cli_handle_one(cmd_parse);
+        return 0;
+    }
+    return -1;
+}
+
 
 static void uart_console_task(void *param)
 {
@@ -330,7 +191,7 @@ static void uart_console_task(void *param)
 	} input_state;
 
 	size_t ret;
-	char buf[256] = {0};
+	static char buf[512] = {0};
 	HAL_StatusTypeDef status;
 	unsigned int in = 0, out = 0;
 	input_state = CLI_INPUT_STATE_COMMON;
@@ -346,7 +207,14 @@ static void uart_console_task(void *param)
 		ret = xStreamBufferReceive(uart_strm_buffer, &buf[in],
 								BUF_SPACE(), portMAX_DELAY);
 		if (ret) {
-			/* echo */
+	
+#if CONSOLE_AT_ENABLE 
+            if (console_cli_run(&buf[in]) != 0) {
+            	_console_to_at(&buf[in], ret);
+            }
+            in = 0;
+#else 
+		    /* echo */
 			for (int i = 0; i < ret; i++) {
 				putchar(buf[in + i]);
 				fflush(stdout);
@@ -377,6 +245,7 @@ static void uart_console_task(void *param)
 					break;
 				}
 			}
+#endif
 		}
 	}
 }
@@ -393,7 +262,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		if (uart_strm_buffer) {
 			xStreamBufferSendFromISR(uart_strm_buffer,
 							&uart_rxbyte, 1, &pxHigherPriorityTaskWoken);
-			portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
+			//portYIELD_FROM_ISR(pxHigherPriorityTaskWoken);
 		}
 	}
 	/* set up next uart reception */
@@ -415,7 +284,7 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
   */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
-	uart_strm_buffer = xStreamBufferCreate(1024, 1);
+	uart_strm_buffer = xStreamBufferCreate(UART_STRM_BUFFER_SIZE, 1);
 	if (!uart_strm_buffer)
 		printf("failed to create stream buffer for uart\r\n");
   /* USER CODE END Init */
@@ -444,12 +313,8 @@ void MX_FREERTOS_Init(void) {
   if (!console_taskhandle)
 	  printf("failed to create console task\r\n");
 
-  int err = spisync_init(&spisync_ctx, 0);
-  if (err)
-	  printf("failed to init spisync context, %d\r\n", err);
-  else
-	  printf("spisync init is done\r\n");
-  spisync_ready = 1;
+  g_at_handle = at_spisync_init();
+
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */

@@ -83,7 +83,7 @@ build:Makefile
 
 ninja:Makefile
 	$(CMAKE) -S . -B build -G Ninja $(cmake_definition)
-	cd build && ninja && ninja combine
+	cd build && ninja && ninja combine && ninja post_build
 
 clean::
 	$(RM) build

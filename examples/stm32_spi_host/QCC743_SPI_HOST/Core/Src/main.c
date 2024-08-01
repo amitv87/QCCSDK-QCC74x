@@ -44,10 +44,9 @@
 
 /* Private variables ---------------------------------------------------------*/
 
+SPI_HandleTypeDef hspi1;
 DMA_HandleTypeDef handle_GPDMA1_Channel1;
 DMA_HandleTypeDef handle_GPDMA1_Channel0;
-
-SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart1;
 
@@ -247,34 +246,6 @@ static void MX_GPDMA1_Init(void)
   /* USER CODE BEGIN GPDMA1_Init 1 */
 
   /* USER CODE END GPDMA1_Init 1 */
-  handle_GPDMA1_Channel1.Instance = GPDMA1_Channel1;
-  handle_GPDMA1_Channel1.InitLinkedList.Priority = DMA_LOW_PRIORITY_MID_WEIGHT;
-  handle_GPDMA1_Channel1.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
-  handle_GPDMA1_Channel1.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
-  handle_GPDMA1_Channel1.InitLinkedList.TransferEventMode = DMA_TCEM_EACH_LL_ITEM_TRANSFER;
-  handle_GPDMA1_Channel1.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_CIRCULAR;
-  if (HAL_DMAEx_List_Init(&handle_GPDMA1_Channel1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel1, DMA_CHANNEL_NPRIV) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  handle_GPDMA1_Channel0.Instance = GPDMA1_Channel0;
-  handle_GPDMA1_Channel0.InitLinkedList.Priority = DMA_LOW_PRIORITY_MID_WEIGHT;
-  handle_GPDMA1_Channel0.InitLinkedList.LinkStepMode = DMA_LSM_FULL_EXECUTION;
-  handle_GPDMA1_Channel0.InitLinkedList.LinkAllocatedPort = DMA_LINK_ALLOCATED_PORT0;
-  handle_GPDMA1_Channel0.InitLinkedList.TransferEventMode = DMA_TCEM_EACH_LL_ITEM_TRANSFER;
-  handle_GPDMA1_Channel0.InitLinkedList.LinkedListMode = DMA_LINKEDLIST_CIRCULAR;
-  if (HAL_DMAEx_List_Init(&handle_GPDMA1_Channel0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel0, DMA_CHANNEL_NPRIV) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN GPDMA1_Init 2 */
 
 
@@ -357,7 +328,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -490,6 +461,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(SPI_SLAVE_DATA_RDY_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : QCC74X_LP_WEAKUP_Pin */
+  GPIO_InitStruct.Pin = QCC74X_LP_WEAKUP_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(QCC74X_LP_WEAKUP_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : UCPD_FLT_Pin */
   GPIO_InitStruct.Pin = UCPD_FLT_Pin;

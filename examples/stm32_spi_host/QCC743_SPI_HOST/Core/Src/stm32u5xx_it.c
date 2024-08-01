@@ -57,6 +57,7 @@
 /* External variables --------------------------------------------------------*/
 extern DMA_HandleTypeDef handle_GPDMA1_Channel1;
 extern DMA_HandleTypeDef handle_GPDMA1_Channel0;
+extern SPI_HandleTypeDef hspi1;
 extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim1;
 
@@ -216,6 +217,20 @@ void TIM1_UP_IRQHandler(void)
   /* USER CODE BEGIN TIM1_UP_IRQn 1 */
 
   /* USER CODE END TIM1_UP_IRQn 1 */
+}
+
+/**
+  * @brief This function handles SPI1 global interrupt.
+  */
+void SPI1_IRQHandler(void)
+{
+  /* USER CODE BEGIN SPI1_IRQn 0 */
+
+  /* USER CODE END SPI1_IRQn 0 */
+  HAL_SPI_IRQHandler(&hspi1);
+  /* USER CODE BEGIN SPI1_IRQn 1 */
+
+  /* USER CODE END SPI1_IRQn 1 */
 }
 
 /**

@@ -30,7 +30,7 @@
 /// Major version number
 #define NX_VERSION_MAJ      6
 /// Minor version number
-#define NX_VERSION_MIN      16
+#define NX_VERSION_MIN      18
 /// Release number
 #define NX_VERSION_REL      0
 /// Patch number
@@ -43,7 +43,7 @@
 /// Version string (global variable defined in src/build/build_version.c)
 extern const char nx_version_str[];
 /// Macro for previous variable. Do not use!
-#define NX_VERSION_STR      "v6.16.0.0"
+#define NX_VERSION_STR      "v6.18.0.0"
 
 /// Date at which the system is built (defined in build_version.c)
 extern const char nx_build_date[];

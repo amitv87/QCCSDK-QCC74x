@@ -16,6 +16,7 @@
 #include "export/rwnx.h"
 
 #include "board_rf.h"
+#include "spisync.h"
 
 //#define TICKLESS_DEBUG 0
 
@@ -81,10 +82,12 @@ static uint64_t get_mtime(void) {
   return current_mtime;
 }
 
-#define INTERVAL(ms) ({ \
+#define INTERVAL(ms,p) ({ \
   static uint64_t __attribute__((section(".lp_mon_ctx"))) __last_time = 0; \
   uint64_t __current_time; \
   int ret = 0;\
+  uint64_t *q = p;\
+  if(q) *q = &__last_time; \
   __current_time = get_mtime(); \
   if (__last_time == 0) {       \
     __last_time = __current_time; \
@@ -357,13 +360,19 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   if (likely(rw_main_task_hdl != 0)) {
     /* Get BLE sleep time */
     ble_sleep_rtc = btble_controller_sleep(0);
-
+    int64_t *p = NULL;
+    int status = INTERVAL(500,&p);
     if (ble_sleep_rtc < 0) {
-      if (INTERVAL(500)) {
+      if (status) {
         recovery_ble();
       }
+
       ___WFI();
       return;
+    }
+    else{
+      configASSERT(p!=NULL);
+      *p = 0;
     }
 
     tickless_info("ble sleep duration: %d", ble_sleep_rtc);
@@ -387,7 +396,7 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   }
 
   /* Check pm stauts */
-  if (qcc74x_pm_event_get()) {
+  if (qcc74x_pm_event_get() && spisync_status_get(NULL)) {
     portENABLE_INTERRUPTS();
     tickless_info("Sleep Abort! %d", __LINE__);
     ___WFI();
@@ -412,7 +421,7 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   if (likely(lpfw_cfg.tim_wakeup_en)) {
     /* check wifi PS state */
     if (rwnxl_ps_sleep_check() != 0) {
-      if (INTERVAL(5000)) {
+      if (INTERVAL(5000,NULL)) {
         tickless_error("!!! WiFi stuck again, Reset System !!!");
         /* TODO Reboot */
         configASSERT(0);
@@ -427,16 +436,19 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
       configASSERT(0); /* should not reach here */
     }
   }
+
+  spisync_ps_enter(NULL);
+
   rwnxl_regs_save_ops();
 
   /* How much time do we have to sleep? */
-  rtc_sleep_remain -= rtc_epilogue_time_max + QCC74x_US_TO_PDS_CNT(3350);
+  rtc_sleep_remain -= rtc_epilogue_time_max + QCC74x_US_TO_PDS_CNT(6350);
 
   tickless_info("rtc_sleep_remain: %" __PRI64(d), rtc_sleep_remain);
   configASSERT((signed)rtc_sleep_remain > 0);
 
   /* Convert to absolute time */
-  lpfw_cfg.rtc_wakeup_cmp_cnt = rtc_enter_tickless + rtc_sleep_remain - 200;
+  lpfw_cfg.rtc_wakeup_cmp_cnt = rtc_enter_tickless + rtc_sleep_remain;
   lpfw_cfg.mtimer_timeout_mini_us = 4500;
   lpfw_cfg.mtimer_timeout_max_us = 12000;
   lpfw_cfg.dtim_num = lpfw_cfg.dtim_origin;
@@ -478,6 +490,8 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
     }
   }
 
+  //TODO :
+  spisync_ps_exit(NULL);
   /* Call user init callback */
   qcc74x_lp_call_user_after_exit();
 

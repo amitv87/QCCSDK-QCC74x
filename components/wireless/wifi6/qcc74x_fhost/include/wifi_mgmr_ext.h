@@ -819,7 +819,7 @@ int wifi_mgmr_psk_cal(char *password, const uint8_t *ssid, int ssid_len, char *o
  *  -1 : Failed
  *  Others is Failed
  */
-int wifi_mgmr_wifi_pwr_off(void);
+int wifi_mgmr_rf_pwr_off(void);
 
 /**
  * wifi_mgmr_wifi_pwr_on
@@ -829,7 +829,16 @@ int wifi_mgmr_wifi_pwr_off(void);
  *  -1 : Failed
  *  Others is Failed
  */
-int wifi_mgmr_wifi_pwr_on(void);
+int wifi_mgmr_rf_pwr_on(void);
+
+/**
+ * wifi_mgmr_rf_auto_off_set
+ * set rf auto off
+ * return:
+ *  0 : Success
+ *  -1 : Failed 
+ */
+int wifi_mgmr_rf_pwr_check(void);
 
 /**
  * wifi_mgmr_rate_config

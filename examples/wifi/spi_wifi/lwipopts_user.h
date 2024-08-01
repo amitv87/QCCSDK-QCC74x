@@ -15,6 +15,7 @@
 #define LWIP_MULTICAST_PING           1
 #define LWIP_BROADCAST_PING           1
 
+#define DNS_MAX_SERVERS               3
 #define LWIP_NETIF_HOSTNAME           1
 #define TCPIP_MBOX_SIZE               64
 #define TCPIP_THREAD_STACKSIZE        1024
@@ -39,7 +40,7 @@
 
 #define IP_REASS_MAX_PBUFS            (2 * CONFIG_MAC_RXQ_DEPTH - 2)
 
-#define MEMP_NUM_NETBUF               32
+#define MEMP_NUM_NETBUF               28
 #define MEMP_NUM_NETCONN              16
 #define MEMP_NUM_UDP_PCB              16
 #define MEMP_NUM_REASSDATA            LWIP_MIN((IP_REASS_MAX_PBUFS), 5)
@@ -74,6 +75,10 @@
 #define MEM_SIZE 8192
 #endif
 #endif
+
+#if CONFIG_IPV6
+#define LWIP_IPV6 1
+#endif 
 
 #define LWIP_HOOK_FILENAME        "lwiphooks.h"
 

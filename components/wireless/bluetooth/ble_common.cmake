@@ -496,7 +496,6 @@ if("${CHIP}" STREQUAL "qcc74x_undefl")
 # CONFIG_LE_PING := 0
 # endif
 # 
-# endif
 	if("${PRIV_CONFIG_GEN_BLE}" STREQUAL "m0s2p")
 		set(CONFIG_BUILD_BLE_ROM_CODE 1)
 		set(CONFIG_BLE_PDS 1)
@@ -516,6 +515,41 @@ if("${CHIP}" STREQUAL "qcc74x_undefl")
 		set(CONFIG_CLK_ACC 0)
 		set(CONFIG_LE_PING 0)
 	endif()
+#
+#ifeq ($(PRIV_CONFIG_GEN_BLE),uarthci)
+#CONFIG_BUILD_BLE_ROM_CODE := 1
+#CONFIG_BLE_PDS := 1
+#CONFIG_BT_CONN := 1
+#CONFIG_BLE_TX_BUFF_DATA := 2
+#CONFIG_BLE_ACT_MAX := 5
+#CONFIG_BT_ALLROLES := 1
+#CONFIG_DISABLE_BT_HOST_PRIVACY := 1
+#CONFIG_DISABLE_BLE_CONTROLLER_TEST_MODE := 0
+#CONFIG_BLE_HOST_DISABLE:=1
+#CONFIG_EM_SIZE = 8
+#CONFIG_LONG_RANG := 0
+#CONFIG_CLK_ACC := 0
+#CONFIG_LE_PING := 0
+#endif
+#
+ 	if("${PRIV_CONFIG_GEN_BLE}" STREQUAL "uarthci")
+		set(CONFIG_BUILD_BLE_ROM_CODE 1)
+		set(CONFIG_BLE_PDS 1)
+		set(CONFIG_BT_CONN 1)
+		set(CONFIG_BLE_TX_BUFF_DATA 2)
+		set(CONFIG_BLE_ACT_MAX 5)
+		set(CONFIG_BT_ALLROLES 1)
+		set(CONFIG_DISABLE_BT_HOST_PRIVACY 1)
+		set(CONFIG_DISABLE_BLE_CONTROLLER_TEST_MODE 0)
+		set(CONFIG_DISABLE_CONTROLLER_BLE_PRIVACY 1)
+		set(CONFIG_BLE_HOST_DISABLE 1)
+		set(CONFIG_EM_SIZE 8)
+		set(CONFIG_LONG_RANG 0)
+		set(CONFIG_CLK_ACC 0)
+		set(CONFIG_LE_PING 0)
+	endif()
+#	
+# endif
 endif()
 # 
 # ifeq ($(CONFIG_CHIP_NAME),QCC743) //qcc74x_undef add for qcc74xsdk
@@ -898,6 +932,9 @@ sdk_add_compile_definitions(-DCFG_BLE)
 # ifeq ($(CONFIG_BT_HFP),1)
 # CFLAGS += -DCONFIG_BT_HFP
 # endif
+#ifeq ($(CONFIG_BT_SPP),1)
+#CFLAGS += -DCONFIG_BT_SPP
+#endif
 #ifeq($(CONFIG_BT_BREDR_PTS),1)
 #CFLAGS += -DBR_EDR_PTS_TEST
 #endif
@@ -914,14 +951,17 @@ else()
 	set(CONFIG_BT 1)
 	sdk_ifndef(CONFIG_BT_A2DP 1)
 	sdk_ifndef(CONFIG_BT_A2DP_SOURCE 1)
+	sdk_ifndef(CONFIG_BT_A2DP_SINK 1)
 	sdk_ifndef(CONFIG_BT_AVRCP 1)
 	sdk_ifndef(CONFIG_BT_HFP 0)
 	if(CONFIG_BT_A2DP)
 		sdk_add_compile_definitions(-DCONFIG_BT_A2DP)
 		sdk_add_compile_definitions_ifdef(CONFIG_BT_A2DP_SOURCE -DCONFIG_BT_A2DP_SOURCE)
+		sdk_add_compile_definitions_ifdef(CONFIG_BT_A2DP_SINK -DCONFIG_BT_A2DP_SINK)
 	endif()
 	sdk_add_compile_definitions_ifdef(CONFIG_BT_AVRCP -DCONFIG_BT_AVRCP)
 	sdk_add_compile_definitions_ifdef(CONFIG_BT_HFP -DCONFIG_BT_HFP)
+	sdk_add_compile_definitions_ifdef(CONFIG_BT_SPP -DCONFIG_BT_SPP)
 	sdk_add_compile_definitions_ifdef(CONFIG_BT_BREDR_PTS -DBR_EDR_PTS_TEST)
 	sdk_add_compile_definitions(
 		-DCONFIG_BT_BREDR
@@ -941,13 +981,13 @@ if(CONFIG_BT_TL)
 	set(CONFIG_BLE_HOST_DISABLE 1)
 endif()
 # 
-# ifeq ($(CONFIG_QCC74x_MCU_SDK),1)
-# CFLAGS += -DQCC74x_MCU_SDK
+# ifeq ($(CONFIG_QCC74x_SDK),1)
+# CFLAGS += -CONFIG_QCC74x_SDK
 # endif
 # ifneq ($(CONFIG_IOT_SDK_DISABLE),1)
 # CFLAGS   += -DCFG_IOT_SDK
 # endif
-# sdk_add_compile_definitions_ifdef(CONFIG_QCC74x_MCU_SDK -DQCC74x_MCU_SDK)
+sdk_add_compile_definitions_ifdef(CONFIG_QCC74x_SDK -DCONFIG_QCC74x_SDK)
 # sdk_add_compile_definitions_ifndef(CONFIG_IOT_SDK_DISABLE -DCFG_IOT_SDK)
 # 
 # CONFIG_EM_16K ?= 0
@@ -1395,9 +1435,6 @@ sdk_add_compile_definitions_ifdef(CONFIG_BT_SCPS_SERVER -DCONFIG_BT_SCPS_SERVER)
 # endif
 sdk_add_compile_definitions_ifdef(CONFIG_BT_DIS_SERVER -DCONFIG_BT_DIS_SERVER)
 # 
-# ifeq ($(CONFIG_BT_REMOTE_CONTROL),1)
-# CFLAGS += -DCONFIG_BT_REMOTE_CONTROL
-# endif
 sdk_add_compile_definitions_ifdef(CONFIG_BT_REMOTE_CONTROL -DCONFIG_BT_REMOTE_CONTROL)
 # 
 # ifneq ($(CONFIG_DISABLE_BT_HOST_PRIVACY), 1)
@@ -1405,18 +1442,7 @@ sdk_add_compile_definitions_ifdef(CONFIG_BT_REMOTE_CONTROL -DCONFIG_BT_REMOTE_CO
 # endif
 if(NOT CONFIG_DISABLE_BT_HOST_PRIVACY)
 	sdk_add_compile_definitions(-DCONFIG_BT_PRIVACY)
-endif()
-# 
-# #ifneq ($(CONFIG_BT_REMOTE_CONTROL),1)
-# #ifneq ($(CONFIG_BT_MESH),1)
-# #CFLAGS += -DCONFIG_BT_PRIVACY
-# #endif
-# #endif
-if(NOT CONFIG_BT_REMOTE_CONTROL)
-	if(NOT CONFIG_BT_MESH)
-		sdk_add_compile_definitions(-DCONFIG_BT_PRIVACY)
-	endif()
-endif()
+endif() 
 # 
 # ifeq ($(CONFIG_BLE_TP_TEST),1)
 # CFLAGS += -DCONFIG_BLE_TP_TEST
@@ -1474,6 +1500,11 @@ sdk_add_compile_definitions_ifdef(CONFIG_ZIGBEE_PROV -DCONFIG_ZIGBEE_PROV)
 # CFLAGS += -DCONFIG_AUTO_PTS
 # endif
 sdk_add_compile_definitions_ifdef(CONFIG_AUTO_PTS -DCONFIG_AUTO_PTS)
+
+#ifeq ($(CONFIG_DYNAMIC_GATTS),1)
+#CFLAGS += -DCONFIG_DYNAMIC_GATTS
+#endif
+sdk_add_compile_definitions_ifdef(CONFIG_DYNAMIC_GATTS -DCONFIG_DYNAMIC_GATTS)
 # 
 # ##########################################
 # ############## BLE MESH ##################

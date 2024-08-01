@@ -21,3 +21,9 @@ make CHIP=qcc743 BOARD=qcc743dk
 ```
 make flash CHIP=chip_name COMX=xxx # xxx is your com name
 ```
+
+## Generate BlE OTA file
+
+```
+python components/wireless/bluetooth/tools/GenerateOAD.py FW.bin FW.bin.sha256
+```

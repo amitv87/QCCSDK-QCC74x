@@ -132,10 +132,8 @@ SECTIONS
         LONG(LENGTH(nocache_ram_memory));
         LONG(ORIGIN(ram_wifi));
         LONG(LENGTH(ram_wifi));
-        /*
         LONG(ORIGIN(ram_psram));
         LONG(LENGTH(ram_psram));
-         */
         LONG(0x28010000); /* bt memory */
         LONG(__EM_SIZE);
         LONG(0xffffffff);

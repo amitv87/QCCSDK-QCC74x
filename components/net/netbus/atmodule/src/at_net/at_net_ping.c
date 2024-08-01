@@ -43,16 +43,14 @@
 #include <lwip/netdb.h>
 #include <lwip/inet.h>
 #include <utils_list.h>
-//#include <utils_log.h>
 #include <stdlib.h>
 #include <time.h>
+#include "at_net_ping.h"
 #include <utils_getopt.h>
-//#include <cli.h>
-#include <at_net_ping.h>
 #include <at_utils.h>
-//#include <utils_memp.h>
-
-#include <qcc74x_sec_trng.h>
+#if CFG_IPV6
+#include <lwip/prot/icmp6.h>
+#endif
 
 #define LOG_DISP       0
 
@@ -82,6 +80,31 @@ static void ping_prepare_echo(struct icmp_echo_hdr *iecho, u16_t len, void *arg)
     iecho->chksum = inet_chksum(iecho, len);
 }
 
+#if CFG_IPV6
+static void ping6_prepare_echo(struct pbuf *p, u16_t len, void *arg)
+{
+    size_t i;
+    size_t data_len = len - sizeof(struct icmp_echo_hdr);
+    struct icmp_echo_hdr *iecho = (struct icmp_echo_hdr *)p->payload;
+    struct ping_var *env = (struct ping_var *)arg;
+
+    ICMPH_TYPE_SET(iecho, ICMP6_TYPE_EREQ);
+
+    ICMPH_CODE_SET(iecho, 0);
+    iecho->chksum = 0;
+    iecho->id     = env->id;
+    iecho->seqno  = lwip_htons(++env->seq_num);
+
+    for(i = 0; i < data_len; i++) {
+        ((char*)iecho)[sizeof(struct icmp_echo_hdr) + i] = (char)i;
+    }    
+
+    // do checksum in stack
+    env->pcb->chksum_reqd = 1;
+    env->pcb->chksum_offset = 2;
+}
+#endif
+
 /* Ping using the raw ip */
 static u8_t ping_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *addr)
 {
@@ -99,19 +122,33 @@ static u8_t ping_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p, const ip_a
     log_info("recv addr %s\r\n", ipaddr_ntoa(addr));
 #endif
 
-    if ((p->tot_len == (PBUF_IP_HLEN + sizeof(struct icmp_echo_hdr)) + env->data_size) && ip_addr_cmp(&env->dest, addr)) {
-        memcpy(&echo_hdr, p->payload + PBUF_IP_HLEN, sizeof(struct icmp_echo_hdr));
+    if (ip_addr_cmp(&env->dest, addr)) {
+        if (p->tot_len == (IP_HLEN + sizeof(struct icmp_echo_hdr)) + env->data_size){
+            memcpy(&echo_hdr, p->payload + IP_HLEN, sizeof(struct icmp_echo_hdr));
+        #if CFG_IPV6
+        }else if (p->tot_len == (IP6_HLEN + sizeof(struct icmp_echo_hdr)) + env->data_size){
+            memcpy(&echo_hdr, p->payload + IP6_HLEN, sizeof(struct icmp_echo_hdr));
+        #endif
+        }else{
+            return 0;
+        }
         iecho = &echo_hdr;
-
-        if ((iecho->type == 0) && (iecho->code == 0) && (iecho->id == env->id) && env->node_num > 0) {
+        if ((iecho->type == 0
+            #if CFG_IPV6
+             || iecho->type == ICMP6_TYPE_EREP
+            #endif
+            ) && (iecho->code == 0) && (iecho->id == env->id) && env->node_num > 0) {
             find_hdr = find_and_extract(&env->req_list, iecho->seqno);
 
             if (find_hdr) {
-                printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%lu ms\r\n ", p->tot_len, ipaddr_ntoa(&env->dest), ntohs(iecho->seqno), *((uint8_t *)p->payload + 8), (sys_now() - find_hdr->send_time));
+                env->ping_time = sys_now() - find_hdr->send_time;
+                if (env->cb) {
+                    env->cb(env->ping_time);
+                }
+                printf("%" PRId16 " bytes from %s: icmp_seq=%d ttl=%d time=%" PRId32 " ms\r\n ", p->tot_len, ipaddr_ntoa(&env->dest), ntohs(iecho->seqno), *((uint8_t *)p->payload + 8), (sys_now() - find_hdr->send_time));
 
                 utils_memp_free(env->pool, find_hdr);
                 env->node_num--;
-                env->ping_time = sys_now() - find_hdr->send_time;
                 pbuf_free(p);
                 return 1; /* eat the packet */
             }
@@ -143,7 +180,13 @@ static void ping_send(struct ping_var *env)
         log_info("env-adress %p\r\n", env);
         log_info("env--dest %s\r\n", ipaddr_ntoa(&env->dest));
 #endif
-        ping_prepare_echo(iecho, (u16_t)ping_size, env);
+        #if CFG_IPV6
+        if(IP_IS_V6(&env->dest)){
+            ping6_prepare_echo(p, (u16_t)ping_size, env);
+        }
+        else
+        #endif
+            ping_prepare_echo(iecho, (u16_t)ping_size, env);
         time_hdr->ping_seq = iecho->seqno;
 
         raw_sendto(env->pcb, p, &env->dest);
@@ -151,7 +194,6 @@ static void ping_send(struct ping_var *env)
         utils_list_push_back(&env->req_list, (struct utils_list_hdr*)time_hdr);
         env->node_num++;
         env->requests_count++;
-        env->ping_time = 0;
     }
 
 clean:
@@ -173,6 +215,10 @@ static void ping_timeout(void *arg)
         printf("The sequence number %d timed out\r\n", ntohs(((struct t_hdr*)(env->req_list.first))->ping_seq));
         utils_memp_free(env->pool, (struct t_hdr*)(utils_list_pop_front(&env->req_list)));
         env->node_num--;
+        env->ping_time = -1;
+        if (env->cb) {
+            env->cb(env->ping_time);
+        }
     }
     if (env->node_num == PING_TOTAL_NODE_LIMIT) {
         utils_memp_free(env->pool, (struct t_hdr*)(utils_list_pop_front(&env->req_list)));
@@ -200,7 +246,7 @@ static void ping_timeout(void *arg)
     }
 
 }
-
+#define IP_PROTO_ICMPV6 58
 static void ping_free(void *arg)
 {
     struct ping_var *env = (struct ping_var*)arg;
@@ -229,7 +275,12 @@ static int ping_init(void *arg)
 #endif
 
     LOCK_TCPIP_CORE();
-    pcb = raw_new(IP_PROTO_ICMP);
+#if CFG_IPV6
+    if(IP_IS_V6(&env->dest))
+        pcb = raw_new(IP_PROTO_ICMPV6);
+    else
+#endif
+        pcb = raw_new(IP_PROTO_ICMP);
 
     if (!pcb) {
         UNLOCK_TCPIP_CORE();
@@ -238,21 +289,30 @@ static int ping_init(void *arg)
     }
     env->pcb = pcb;
     raw_recv(pcb, ping_recv, env);
-    raw_bind(pcb, IP_ADDR_ANY);
+    #if CFG_IPV6
+    if(IP_IS_V6(&env->dest))
+    {
+        raw_bind(pcb, IP6_ADDR_ANY);
+    }
+    else
+    #endif
+        raw_bind(pcb, IP_ADDR_ANY);
     sys_timeout(0, ping_timeout, env);
     UNLOCK_TCPIP_CORE();
 
     return 0;
 }
 
-struct ping_var *ping_api_init(u16_t interval, u16_t size, u32_t count, u16_t timeout, ip_addr_t *dest)
+struct ping_var *ping_api_init(u16_t interval, u16_t size, u32_t count, u16_t timeout, ip_addr_t *dest, at_ping_cb_t cb)
 {
     struct ping_var *env = NULL;
     env = (struct ping_var*)pvPortMalloc(sizeof(struct ping_var));
-    if (!env) {
+    if (!env){
         printf("mem malloc failed!\r\n");
         return NULL;
     }
+    memset(env, 0, sizeof(struct ping_var));
+    env->cb = cb;
     env->total_count = count;
     env->requests_count = 0;
     env->interval = interval;
@@ -269,7 +329,7 @@ struct ping_var *ping_api_init(u16_t interval, u16_t size, u32_t count, u16_t ti
     return env;
 }
 
-static void ping_cmd(char *buf, int len, int argc, char **argv)
+static void ping_cmd(int argc, char **argv)
 {
     //
     // -i interval
@@ -324,7 +384,7 @@ static void ping_cmd(char *buf, int len, int argc, char **argv)
         else
         {
             dest = (ip_addr_t *)hostinfo->h_addr;
-            ping_api_init(interval, data_size, total_count, timeout, dest);
+            ping_api_init(interval, data_size, total_count, timeout, dest, NULL);
         }
     } else {
         printf("Need target address\r\n");
@@ -338,18 +398,22 @@ static struct t_hdr* find_and_extract(struct utils_list *list, u32_t seq)
     struct t_hdr *scan_list;
     struct t_hdr *find= NULL;
     scan_list = (struct t_hdr*)list->first;
-    if (scan_list == NULL || scan_list->ping_seq > seq) {
+    if (scan_list == NULL || scan_list->ping_seq > seq)
         return NULL;
-    }
-    if (scan_list->ping_seq == seq) {
+    if (scan_list->ping_seq == seq){
         find = scan_list;
         list->first = (struct utils_list_hdr*)scan_list->next;
-    } else {
-        while ((scan_list->next != NULL) && (scan_list->next->ping_seq < seq)) {
+    }
+    else
+    {
+        while ((scan_list->next != NULL) && (scan_list->next->ping_seq < seq))
+        {
             scan_list = scan_list->next;
         }
-        if (scan_list->next != NULL && scan_list->next->ping_seq == seq) {
-            if (list->last == (struct utils_list_hdr*)scan_list->next) {
+        if (scan_list->next != NULL && scan_list->next->ping_seq == seq)
+        {
+            if (list->last == (struct utils_list_hdr*)scan_list->next)
+            {
                 list->last = (struct utils_list_hdr*)scan_list;
             }
             find = scan_list->next;

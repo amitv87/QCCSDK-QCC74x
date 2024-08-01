@@ -72,6 +72,18 @@ enum {
 	 *  passed to write callback.
 	 */
 	BT_GATT_PERM_PREPARE_WRITE = BIT(6),
+	
+	/** @brief Attribute read permission with LE Secure Connection encryption.
+	 *
+	 *  If set, requires that LE Secure Connections is used for read access.
+	 */
+	BT_GATT_PERM_READ_LESC = BIT(7),
+
+	/** @brief Attribute write permission with LE Secure Connection encryption.
+	 *
+	 *  If set, requires that LE Secure Connections is used for write access.
+	 */
+	BT_GATT_PERM_WRITE_LESC = BIT(8),
 };
 
 /**  @def BT_GATT_ERR

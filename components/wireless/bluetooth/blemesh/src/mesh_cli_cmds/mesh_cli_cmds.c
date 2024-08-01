@@ -627,7 +627,19 @@ static qcc74x_ble_mesh_light_xyl_srv_t light_xyl_server = {
     .rsp_ctrl.set_auto_rsp = QCC74x_BLE_MESH_SERVER_AUTO_RSP,
     .state = &light_xyl_state,
 };
-
+QCC74x_BLE_MESH_MODEL_PUB_DEFINE(light_lc_pub, MESH_MSG_LEN, ROLE_NODE);
+qcc74x_ble_mesh_light_control_t light_control;
+static qcc74x_ble_mesh_light_lc_srv_t light_lc_server = {
+    .rsp_ctrl.get_auto_rsp = QCC74x_BLE_MESH_SERVER_AUTO_RSP,
+    .rsp_ctrl.set_auto_rsp = QCC74x_BLE_MESH_SERVER_AUTO_RSP,
+    .lc = &light_control,
+};
+QCC74x_BLE_MESH_MODEL_PUB_DEFINE(light_lc_setup_pub, MESH_MSG_LEN, ROLE_NODE);
+static qcc74x_ble_mesh_light_lc_setup_srv_t light_lc_setup_server = {
+    .rsp_ctrl.get_auto_rsp = QCC74x_BLE_MESH_SERVER_AUTO_RSP,
+    .rsp_ctrl.set_auto_rsp = QCC74x_BLE_MESH_SERVER_AUTO_RSP,
+    .lc = &light_control,
+};
 QCC74x_BLE_MESH_MODEL_PUB_DEFINE(level_cli_pub, MESH_MSG_LEN, ROLE_NODE);
 static qcc74x_ble_mesh_client_t level_client;
 QCC74x_BLE_MESH_MODEL_PUB_DEFINE(def_trans_time_cli_pub, MESH_MSG_LEN, ROLE_NODE);
@@ -802,6 +814,9 @@ static struct bt_mesh_model second_models[] = {
 	QCC74x_BLE_MESH_MODEL_GEN_ONOFF_SRV(&onoff_pub_2, &onoff_server_2),
 	QCC74x_BLE_MESH_MODEL_GEN_LEVEL_SRV(&level_pub_2, &level_server_2),
 	QCC74x_BLE_MESH_MODEL_LIGHT_CTL_TEMP_SRV(&light_ctl_temp_pub, &light_ctl_temp_server),
+	/* Need this mode to pass MMDL/SR/MLTEL/BV-01-C*/
+	//QCC74x_BLE_MESH_MODEL_LIGHT_LC_SRV(&light_lc_pub, &light_lc_server),
+	//QCC74x_BLE_MESH_MODEL_LIGHT_LC_SETUP_SRV(&light_lc_setup_pub, &light_lc_setup_server),
 };
 static struct bt_mesh_model second_vnd_models[0] = {
 };

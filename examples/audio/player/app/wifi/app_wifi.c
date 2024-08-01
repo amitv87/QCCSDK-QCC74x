@@ -44,7 +44,7 @@ static struct qcc74x_device_s *uart0;
 static TaskHandle_t wifi_fw_task;
 
 static wifi_conf_t conf = {
-    .country_code = "CN",
+    .country_code = "US",
 };
 
 extern void shell_init_with_task(struct qcc74x_device_s *shell);

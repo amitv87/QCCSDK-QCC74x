@@ -58,7 +58,6 @@ typedef struct {
     base_systime_stamp systime_stamp;
     base_sleep_mode sleep_mode;
     base_sleepwk_cfg sleepwk_cfg;
-    void* ota_handle;
 }base_config;
 
 extern base_config *at_base_config;

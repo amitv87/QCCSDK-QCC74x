@@ -57,6 +57,13 @@ int at_net_config_init(void)
 
     at_config_read(AT_CONFIG_KEY_NET_SSLCONF, &at_net_config->sslconf, sizeof(at_net_config->sslconf));
     
+    if (!at_config_read(AT_CONFIG_KEY_NET_IPV6_ENABLE, &at_net_config->ipv6_enable, sizeof(at_net_config->ipv6_enable))) {
+        at_net_config->ipv6_enable = 0;
+    }
+    if (!at_config_read(AT_CONFIG_KEY_NET_DNS, &at_net_config->dns, sizeof(at_net_config->dns))) {
+        ipaddr_aton(AT_CONFIG_DEFAULT_DNS1, &at_net_config->dns[0]);
+        ipaddr_aton(AT_CONFIG_DEFAULT_DNS2, &at_net_config->dns[1]);
+    }
     return 0;
 }
 
@@ -70,7 +77,11 @@ int at_net_config_save(const char *key)
         return at_config_write(key, &at_net_config->trans_link, sizeof(at_net_config->trans_link));
     else if (strcmp(key, AT_CONFIG_KEY_NET_SSLCONF) == 0)
         return at_config_write(key, &at_net_config->sslconf, sizeof(at_net_config->sslconf));
-    else
+    else if (strcmp(key, AT_CONFIG_KEY_NET_IPV6_ENABLE) == 0) {
+        return at_config_write(key, &at_net_config->ipv6_enable, sizeof(at_net_config->ipv6_enable));
+    } else if (strcmp(key, AT_CONFIG_KEY_NET_DNS) == 0) {
+        return at_config_write(key, &at_net_config->dns, sizeof(at_net_config->dns));
+    }
         return -1;
 }
 

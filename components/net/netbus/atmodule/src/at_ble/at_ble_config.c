@@ -18,6 +18,7 @@
 //#include <wifi_mgmr_ext.h>
 #include "at_config.h"
 #include "at_ble_config.h"
+#include "bluetooth.h"
 
 ble_config *at_ble_config = NULL;
 
@@ -29,13 +30,17 @@ int at_ble_config_init(void)
     }
 
     memset(at_ble_config, 0, sizeof(ble_config));
+    at_ble_config->work_role = BLE_DISABLE;
     if (!at_config_read(AT_CONFIG_KEY_BLE_NAME, &at_ble_config->ble_name, sizeof(at_ble_config->ble_name))) {
         strlcpy(at_ble_config->ble_name, "QCC743-AT", sizeof(at_ble_config->ble_name));
+        bt_set_name(at_ble_config->ble_name); 
     }
+    bt_set_name(at_ble_config->ble_name);
 
     at_ble_config->adv_param.adv_int_min = 0xA0;
     at_ble_config->adv_param.adv_int_max = 0xD0;
     at_ble_config->adv_param.adv_type = 0;
+    at_ble_config->adv_param.channel_map = 0x07;
 
     at_ble_config->scan_param.scan_type = 1;
     at_ble_config->scan_param.own_addr_type = 0;
@@ -49,7 +54,9 @@ int at_ble_config_init(void)
 int at_ble_config_save(const char *key)
 {
     if (strcmp(key, AT_CONFIG_KEY_BLE_NAME) == 0)
+    {
         return at_config_write(key, &at_ble_config->ble_name, sizeof(at_ble_config->ble_name));
+    }
     else
         return -1;
 }

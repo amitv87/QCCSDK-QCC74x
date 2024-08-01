@@ -55,7 +55,11 @@
 
 #ifndef CONFIG_BT_RX_STACK_SIZE
 #if defined(CONFIG_BT_MESH)
-#define CONFIG_BT_RX_STACK_SIZE  3072//2048//1536//1024
+#if defined(CONFIG_BT_MESH_MODEL) || defined(CONFIG_AUTO_PTS)
+#define CONFIG_BT_RX_STACK_SIZE  3072
+#else
+#define CONFIG_BT_RX_STACK_SIZE  2048
+#endif
 #else
 #if !defined(CONFIG_BT_CONN)
 #define CONFIG_BT_RX_STACK_SIZE  1024
@@ -599,6 +603,7 @@
 #endif
 
 #define PCM_PRINTF 0
+#define DISABLE_BREDR_INVALID_ENC_KEY_TEST 1
 #endif
 
 #if defined(CONFIG_BT_AUDIO)
@@ -777,4 +782,5 @@ then it does disconnected flow once more. This will cause hardfault issue becaus
 #define QCC74x_BLE_ENABLE_OR_DISABLE_SLAVE_PREF_CONN_PARAM_UDPATE
 #endif
 #define QCC74x_BLE_DO_DISCONNECT_WHEN_ATT_TIMEOUT
+#define QCC74x_BLE_AVOID_REMOVE_GATT_SUBSCRIPTION_RISK
 #endif /* BLE_CONFIG_H */

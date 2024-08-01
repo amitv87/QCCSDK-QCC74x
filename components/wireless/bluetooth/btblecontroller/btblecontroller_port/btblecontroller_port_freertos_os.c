@@ -60,6 +60,11 @@ __attribute__((weak)) void btblecontroller_task_delay(uint32_t ms)
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
+__attribute__((weak)) void * btblecontroller_task_get_current_task_handle(void)
+{
+    return xTaskGetCurrentTaskHandle();
+}
+
 __attribute__((weak)) void *btblecontroller_malloc(size_t xWantedSize)
 {
     return pvPortMalloc(xWantedSize);

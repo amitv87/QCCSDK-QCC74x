@@ -199,7 +199,7 @@ sdk_library_add_sources_ifdef(CONFIG_BT_OAD_SERVER
 # ble_stack_srcs   += src/services/spp.c
 # endif
 sdk_library_add_sources_ifdef(CONFIG_BT_SPP_SERVER 
-	src/services/spp.c
+	src/services/ble_spp.c
 )
 # 
 # 
@@ -273,6 +273,8 @@ sdk_library_add_sources_ifdef(CONFIG_BT_BREDR
 	src/host/keys_br.c
 	src/host/l2cap_br.c
 )
+sdk_library_add_sources_ifdef(CONFIG_DYNAMIC_GATTS src/host/dynamic_gatts.c)
+
 # 
 # sbc_codec_srcs := 	src/sbc/dec/alloc.c \
 # 					src/sbc/dec/bitalloc.c \

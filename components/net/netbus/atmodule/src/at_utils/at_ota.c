@@ -234,7 +234,7 @@ int at_ota_finish(at_ota_handle_t handle, uint8_t check_hash, uint8_t reboot)
     }
     printf("[OTA] Rebooting\r\n");
     if (reboot) {
-        GLB_SW_POR_Reset();
+        qcc74x_sys_reset_por();
     }
     return 0;
 }

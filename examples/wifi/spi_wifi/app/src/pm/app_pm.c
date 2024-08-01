@@ -36,41 +36,9 @@
 #include "hci_driver.h"
 #include "hci_core.h"
 
+#include "spisync.h"
+
 extern int enable_tickless;
-
-static void ble_connected(struct bt_conn *conn, u8_t err)
-{
-    if(err || conn->type != BT_CONN_TYPE_LE)
-    {
-        return;
-    }
-    printf("%s",__func__);
-}
-
-static void ble_disconnected(struct bt_conn *conn, u8_t reason)
-{
-    int ret;
-    if(conn->type != BT_CONN_TYPE_LE)
-    {
-        return;
-    }
-
-    printf("%s",__func__);
-}
-
-static struct bt_conn_cb ble_conn_callbacks = {
-    .connected  =   ble_connected,
-    .disconnected   =   ble_disconnected,
-};
-
-static void app_start_task(void *pvParameters)
-{
-    btble_controller_init(configMAX_PRIORITIES - 1);
-    hci_driver_init();
-    bt_enable(NULL);
-
-    vTaskDelete(NULL);
-}
 
 void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize)
 {
@@ -334,6 +302,72 @@ static void cmd_io_dbg(int argc, char **argv)
     }
 }
 
+static void lp_io_wakeup_callback(uint64_t wake_up_io_bits)
+{
+    enable_tickless = 0;
+
+     //TODO ;can not call in interupt context
+    //if (wifi_mgmr_sta_state_get()) {
+    //    wifi_mgmr_sta_ps_exit();
+    //}
+
+    //call resume spi
+    spisync_wakeup(NULL);
+}
+
+static qcc74x_lp_io_cfg_t lp_wake_io_cfg = {
+    .io_20_34_ie = QCC74x_LP_IO_INPUT_ENABLE,
+};
+
+int lp_set_wakeup_by_io(uint8_t io, uint8_t mode)
+{
+    if (io <28 || io > 29) {
+        printf("only support gpio 28, 29 now.\r\n");
+        return -1;
+    }
+    
+    if (mode > 1) {
+        printf("not support mode:%d\r\n", mode);
+        return -1;
+    } 
+
+    if (mode == 0) {
+        lp_wake_io_cfg.io_28_34_pds_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_HIGH_LEVEL;
+    } else if (mode == 1) {
+        lp_wake_io_cfg.io_28_34_pds_trig_mode = QCC74x_LP_AON_IO_TRIG_SYNC_RISING_FALLING_EDGE;
+    } else {
+    }
+
+#if 0
+    if (mode == 1) {
+        lp_wake_io_cfg.io_20_34_res = QCC74x_LP_IO_RES_PULL_UP;
+    } else {
+    }
+#endif
+
+    lp_wake_io_cfg.io_20_34_res = QCC74x_LP_IO_RES_PULL_DOWN;
+
+    lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << io);
+
+    qcc74x_lp_io_wakeup_cfg(&lp_wake_io_cfg);
+    qcc74x_lp_wakeup_io_int_register(lp_io_wakeup_callback);
+
+    return 0;
+
+}
+
+int lp_delete_wakeup_by_io(uint8_t io)
+{
+    if (io <28 || io > 29) {
+        printf("only support gpio 28, 29 now.\r\n");
+        return -1;
+    }
+
+    lp_wake_io_cfg.io_wakeup_unmask &= ~((uint64_t)1 << io);
+    
+    return 0;
+}
+
 SHELL_CMD_EXPORT_ALIAS(cmd_tickless, tickless, cmd tickless);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_lp, wifi_lp_test, wifi low power test);
 SHELL_CMD_EXPORT_ALIAS(test_tcp_keepalive, lpfw_tcp_keepalive, tcp keepalive test);
@@ -586,6 +620,11 @@ void timerCallback(TimerHandle_t xTimer)
 {
     enable_tickless = 0;
     xTimerDelete(xTimer, portMAX_DELAY);
+
+    //if (wifi_mgmr_sta_state_get()) {
+    //    wifi_mgmr_sta_ps_exit();
+    //}
+    spisync_wakeup(NULL);
 }
 
 void createAndStartTimer(const char* timerName, TickType_t timerPeriod)
@@ -610,24 +649,32 @@ void createAndStartTimer(const char* timerName, TickType_t timerPeriod)
     }
 }
 
-int app_pm_wakeup_by_timer(uint32_t ms, int dtim)
+static qcc74x_lp_hbn_fw_cfg_t hbn_test_cfg={
+    //.hbn_sleep_cnt = (32768 * ms) / 1000,
+    .hbn_sleep_cnt = 0,
+    .hbn_level=0, 
+};
+
+static uint32_t lp_timerouts_ms;
+
+int app_lp_timer_config(int mode, uint32_t ms)
 {
-    TickType_t timerPeriod = pdMS_TO_TICKS(ms);
+    if (0 == mode) {
+        lp_timerouts_ms = ms;
+    } else if (1 == mode){
+        hbn_test_cfg.hbn_sleep_cnt = (32768 * ms) / 1000;
+    } else {
+        printf("config lp level fail:%d\r\n", mode);
 
-    enable_tickless = 1;
-    char timerName[32];
-    snprintf(timerName, sizeof(timerName), "PwrTimer_%u", (unsigned int)timerPeriod);
-
-    createAndStartTimer(timerName, timerPeriod);
+        return -1;
+    } 
+    
+    return 0;
 }
 
-void app_pm_enter_hbn(uint32_t ms, int level)
+void app_pm_enter_hbn(int level)
 {
     qcc74x_lp_hbn_init(0,0,0,0);
-    qcc74x_lp_hbn_fw_cfg_t hbn_test_cfg={
-        .hbn_sleep_cnt = (32768 * ms) / 1000,
-        .hbn_level=0, 
-    };
 
     if (level > 0 && level < 3) {
         hbn_test_cfg.hbn_level=level;
@@ -636,6 +683,20 @@ void app_pm_enter_hbn(uint32_t ms, int level)
     qcc74x_lp_hbn_enter(&hbn_test_cfg);
 }
 
+void app_pm_enter_pds15(void)
+{
+    if (lp_timerouts_ms) {
+        TickType_t timerPeriod = pdMS_TO_TICKS(lp_timerouts_ms);
+
+        char timerName[32];
+        snprintf(timerName, sizeof(timerName), "PwrTimer_%u", (unsigned int)timerPeriod);
+
+        createAndStartTimer(timerName, timerPeriod);
+        lp_timerouts_ms = 0;
+    }
+
+    enable_tickless = 1;
+}
 
 int app_pm_init(void)
 {
@@ -656,13 +717,12 @@ int app_pm_init(void)
 #endif
 
     //xTaskCreate(hello_entry_task, (char*)"hello_check_entry", 512, NULL, 10, &hello_entry_task_hd);
-    app_start_task(NULL);
 
     /* coarse trim rc32k */
     puts("[OS] Create rc32k_coarse_trim task...\r\n");
-    xTaskCreate(rc32k_coarse_trim_task, (char*)"rc32k_coarse_trim", 512, NULL, 11, &rc32k_coarse_trim_task_hd);
+    xTaskCreate(rc32k_coarse_trim_task, (char*)"rc32k_coarse_trim", 512, NULL, 31, &rc32k_coarse_trim_task_hd);
 
     /* auto check xtal32k, only test */
     puts("[OS] Create xtal32k_check_entry task...\r\n");
-    xTaskCreate(xtal32k_check_entry_task, (char*)"xtal32k_check_entry", 512, NULL, 10, &xtal32k_check_entry_task_hd);
+    xTaskCreate(xtal32k_check_entry_task, (char*)"xtal32k_check_entry", 512, NULL, 31, &xtal32k_check_entry_task_hd);
 }

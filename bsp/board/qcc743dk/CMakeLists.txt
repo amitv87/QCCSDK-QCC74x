@@ -7,9 +7,7 @@ if(CONFIG_RF)
 target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/board_rf.c)
 endif()
 
-if(CONFIG_PSRAM_COPY_CODE)
-sdk_set_linker_script(qcc743_chip_psram.ld)
-elseif(CONFIG_LINK_FOR_MFGTEST)
+if(CONFIG_LINK_FOR_MFGTEST)
 sdk_set_linker_script(qcc743_chip_mfgtest.ld)
 elseif(CONFIG_LPAPP)
 sdk_set_linker_script(qcc743_lp.ld)
@@ -17,8 +15,15 @@ else()
 sdk_set_linker_script(qcc743_flash.ld)
 endif()
 
-if(CONFIG_PSRAM)
-sdk_add_compile_definitions(-DCONFIG_PSRAM)
+if(CONFIG_PSRAM_HEAP)
+message(FATAL_ERROR "
+FATAL: qcc743dk donot have psram, please disable CONFIG_PSRAM_HEAP.
+")
+endif()
+if(CONFIG_PSRAM_COPY_CODE)
+message(FATAL_ERROR "
+FATAL: qcc743dk donot have psram, please disable CONFIG_PSRAM_COPY_CODE.
+")
 endif()
 if(CONFIG_CONSOLE_WO)
 sdk_add_compile_definitions(-DCONFIG_CONSOLE_WO)

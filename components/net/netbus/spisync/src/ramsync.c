@@ -12,6 +12,7 @@
 #include <qcc74x_core.h>
 #include <qcc74x_dma.h>
 #include <qcc74x_spi.h>
+#include <hardware/spi_reg.h>
 
 /* ------------------- platform port ------------------- */
 #define rsl_malloc(x)          malloc_aligned_with_padding(x, 32)
@@ -62,6 +63,10 @@ static void _spi_hw_init(const spisync_config_t *config)
 
     spi_dev = qcc74x_device_get_by_name(config->spi_name);
     qcc74x_spi_init(spi_dev, &spi_cfg);
+    if (config->spi_3pin_mode) {
+        uint32_t regval = getreg32(spi_dev->reg_base + SPI_CONFIG_OFFSET);
+        putreg32(regval | SPI_CR_SPI_S_3PIN_MODE, spi_dev->reg_base + SPI_CONFIG_OFFSET);
+    }
     qcc74x_spi_link_txdma(spi_dev, true);
     qcc74x_spi_link_rxdma(spi_dev, true);
 }
@@ -174,7 +179,6 @@ int lramsync_clock_init(void)
     GLB_Set_SPI_CLK(ENABLE, GLB_SPI_CLK_MCU_MUXPLL_160M, 0);
     GLB_Set_DBI_CLK(ENABLE, GLB_SPI_CLK_MCU_MUXPLL_160M, 0);
 
-    board_spi0_gpio_init();
     GLB_Swap_MCU_SPI_0_MOSI_With_MISO(0);
 }
 
@@ -191,6 +195,11 @@ int lramsync_reset(lramsync_ctx_t *ctx)
 
     qcc74x_dma_channel_stop(ctx->dma_tx_chan);
     qcc74x_dma_channel_stop(ctx->dma_rx_chan);
+
+    if (ctx->reset_signal_cb) {
+        ctx->reset_signal_cb(ctx->reset_signal_arg);
+    }
+    GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_SPI);
 
     spi_dev = qcc74x_device_get_by_name(ctx->config->spi_name);
     qcc74x_spi_deinit(spi_dev);

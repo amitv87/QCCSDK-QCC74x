@@ -15,30 +15,47 @@
 #include "at_core.h"
 
 #ifdef LP_APP
+int lp_set_wakeup_by_io(uint8_t io, uint8_t mode);
+int lp_delete_wakeup_by_io(uint8_t io);
+void app_pm_enter_hbn(int level);
+int app_lp_timer_config(int mode, uint32_t ms);
+
 static int at_pwr_cmd_pwrmode(int argc, const char **argv)
 {
     int pwr_mode;
-    uint32_t timeout_ms = 0xffffffff;
     int pwr_valid;
-    int timeout_valid;
-    int level;
+    int level = 0;
     int level_valid = 0;
 
 
     AT_CMD_PARSE_NUMBER(0, &pwr_mode);
-    AT_CMD_PARSE_OPT_NUMBER(1, &timeout_ms, timeout_valid);
-    AT_CMD_PARSE_OPT_NUMBER(2, &level, level_valid);
+    AT_CMD_PARSE_OPT_NUMBER(1, &level, level_valid);
 
     if (pwr_mode  == 0) {
     } else if (pwr_mode == 1) {
-        void app_pm_enter_hbn(uint32_t ms, int level);
-        app_pm_enter_hbn(timeout_ms, level);
+        app_pm_enter_hbn(level);
     } else if (pwr_mode == 2) {
-        int app_pm_wakeup_by_timer(uint32_t ms);
-        app_pm_wakeup_by_timer(timeout_ms);
+        app_pm_enter_pds15();
     } else {
         return AT_RESULT_CODE_ERROR;
     }
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_wakeup_timer_cmd(int argc, const char **argv)
+{
+    int mode;
+    uint32_t timeouts_ms;
+
+    AT_CMD_PARSE_NUMBER(0, &mode);
+    AT_CMD_PARSE_NUMBER(1, &timeouts_ms);
+
+    if (mode < 0 || mode > 2) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    app_lp_timer_config(mode, timeouts_ms);
 
     return AT_RESULT_CODE_OK;
 }
@@ -55,9 +72,36 @@ static int at_dtim_cmd(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int at_wkio_cmd(int argc, const char **argv)
+{
+    int wkio;
+    int mode;
+
+    AT_CMD_PARSE_NUMBER(0, &wkio);
+    AT_CMD_PARSE_NUMBER(1, &mode);
+
+    lp_set_wakeup_by_io(wkio, mode);
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_dewkio_cmd(int argc, const char **argv)
+{
+    int wkio;
+
+    AT_CMD_PARSE_NUMBER(0, &wkio);
+
+    lp_delete_wakeup_by_io(wkio);
+
+    return AT_RESULT_CODE_OK;
+}
+
 static const at_cmd_struct at_pwr_cmd[] = {
     {"+PWR", NULL, NULL, at_pwr_cmd_pwrmode, NULL, 1, 3},
     {"+SLWKDTIM", NULL, NULL, at_dtim_cmd, NULL, 1, 1},
+    {"+SLWKIO", NULL, NULL, at_wkio_cmd, NULL, 2, 2},
+    {"+DEWKIO", NULL, NULL, at_dewkio_cmd, NULL, 1, 1},
+    {"+SLWKTIMER", NULL, NULL, at_wakeup_timer_cmd, NULL, 2, 2},
 };
 
 bool at_pwr_cmd_regist(void)

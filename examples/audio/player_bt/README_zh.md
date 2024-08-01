@@ -23,6 +23,14 @@ make
 make flash CHIP=qcc743 COMX=/dev/ttyACM0
 ```
 
+## 硬件连接
+
+![](picture/hard.png)
+
+硬件连接如上图所示：其中QCC74x的GPIO27与音频板的Negative Pin脚连接，GPIO28与音频板的Positive Pin脚连接。GPIO30与音频板的PA Pin脚连接。下图是音频板的示意电路：Negative Pin对应电路中的SPK_2NN，Positive Pin对应电路中的SPK_2PP。PA Pin对应电路中的PA_SHDN。
+
+![](picture/speaker.png)
+
 ## 运行
 
 ### 启动蓝牙广播

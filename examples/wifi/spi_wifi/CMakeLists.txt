@@ -16,7 +16,7 @@ if (CONFIG_LPAPP)
     sdk_add_compile_definitions(-DCFG_QCC74x_WIFI_PS_ENABLE)
     sdk_add_compile_definitions(-DCFG_PS)
     sdk_add_compile_definitions(-DCONFIG_RWNX_LWIP)
-    sdk_add_compile_definitions(-DconfigEXPECTED_IDLE_TIME_BEFORE_SLEEP=40)
+    #sdk_add_compile_definitions(-DconfigEXPECTED_IDLE_TIME_BEFORE_SLEEP=40)
     sdk_add_compile_definitions(-DWPA_SUPPLICANT_CLEANUP_INTERVAL=1800)
     sdk_add_compile_definitions(-DQCC74x_RA_EN=1)
     sdk_add_compile_definitions(-DPM_PDS_LDO_LEVEL_SOC_DEFAULT=10)
@@ -38,7 +38,7 @@ if (CONFIG_LPAPP)
                        app/src/pm/tickless.c
                        )
 else ()
-    if(NOT CONFIG_LINK_IN_PSRAM)
+    if(NOT CONFIG_PSRAM_COPY_CODE)
         sdk_add_compile_definitions(-DCFG_LINK_ALL_IN_FLASH=1)
         sdk_add_compile_definitions(-DCONFIG_HIGH_PERFORMANCE=1)
     endif()
@@ -55,6 +55,14 @@ target_sources(app PRIVATE
                    # app/src/system/app_msgbuffer.c
                    # app/src/useruart/app_useruart.c
                    )
+endif()
+
+if (CONFIG_SPI_3PIN_MODE_ENABLE)
+    sdk_add_compile_definitions(-DCONFIG_SPI_3PIN_MODE_ENABLE=1)
+endif()
+
+if (CONFIG_IPV6)
+    sdk_add_compile_definitions(-DCONFIG_IPV6=1)
 endif()
 
 sdk_add_include_directories(.)

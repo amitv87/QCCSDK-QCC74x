@@ -56,10 +56,6 @@ void app_init_entry(void *param)
 {
     app_spiwifi_init();
 
-#ifdef LP_APP
-    app_pm_init();
-#endif
-
     vTaskDelete(NULL);
 }
 
@@ -67,11 +63,20 @@ int main(void)
 {
     board_init();
 
+#ifdef LP_APP
+    app_pm_init();
+#endif
+
     uart0 = qcc74x_device_get_by_name("uart0");
     shell_init_with_task(uart0);
 
-    board_uartx_gpio_init();
+    // UART1 GPIO conflicts with SPI pins, only one can be used
+    //board_uartx_gpio_init();
+#if CONFIG_SPI_3PIN_MODE_ENABLE
+    board_spi0_gpio_3pin_init();
+#else
     board_spi0_gpio_init();
+#endif 
 
     xTaskCreate(app_init_entry, (char *)"init", INIT_STACK_SIZE, NULL, TASK_PRIORITY_INIT, NULL);
 

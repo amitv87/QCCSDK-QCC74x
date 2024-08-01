@@ -15,7 +15,7 @@
 //#ifdef EASYFLASH_ENABLE
 #include <easyflash.h>
 //#endif
-//#include <wifi_mgmr_ext.h>
+#include <wifi_mgmr.h>
 #include "at_config.h"
 #include "at_wifi_config.h"
 
@@ -52,10 +52,13 @@ int at_wifi_config_init(void)
         at_wifi_config->reconn_cfg.interval_second = 0;
         at_wifi_config->reconn_cfg.repeat_count = 0;
     }
-    at_wifi_config->scan_option.sort_enable = 1;
-    at_wifi_config->scan_option.rssi_filter = -100;
-    at_wifi_config->scan_option.print_mask = 0x7FF;
-    at_wifi_config->scan_option.authmode_mask = 0xFFFF;
+    if (!at_config_read(AT_CONFIG_KEY_WIFI_LAPOPT, &at_wifi_config->scan_option, sizeof(at_wifi_config->scan_option))) {
+        at_wifi_config->scan_option.sort_enable = 1;
+        at_wifi_config->scan_option.max_count = WIFI_MGMR_SCAN_ITEMS_MAX;
+        at_wifi_config->scan_option.rssi_filter = -100;
+        at_wifi_config->scan_option.print_mask = 0x7FF;
+        at_wifi_config->scan_option.authmode_mask = 0xFF;
+    }
     at_wifi_config->wevt_enable = 1;
     if (!at_config_read(AT_CONFIG_KEY_WIFI_AP_INFO, &at_wifi_config->ap_info, sizeof(wifi_ap_info))) {
         snprintf(at_wifi_config->ap_info.ssid, sizeof(at_wifi_config->ap_info.ssid), "AP_%02X%02X%02X", at_wifi_config->ap_mac.addr[3], at_wifi_config->ap_mac.addr[4], at_wifi_config->ap_mac.addr[5]);
@@ -92,7 +95,6 @@ int at_wifi_config_init(void)
         at_wifi_config->sta_ip.ip = IP_SET_ADDR(0, 0, 0, 0);
         at_wifi_config->sta_ip.gateway = IP_SET_ADDR(0, 0, 0, 0);
         at_wifi_config->sta_ip.netmask = IP_SET_ADDR(0, 0, 0, 0);
-        at_wifi_config->sta_ip.dns = IP_SET_ADDR(0, 0, 0, 0);
     }
     if (!at_config_read(AT_CONFIG_KEY_WIFI_COUNTRY_CODE, &at_wifi_config->wifi_country, sizeof(wifi_country_code))) {
         at_wifi_config->wifi_country.country_policy = 1;
@@ -100,7 +102,9 @@ int at_wifi_config_init(void)
         at_wifi_config->wifi_country.start_channel = 1;
         at_wifi_config->wifi_country.total_channel_count = 13;
     }
-    //strlcpy(at_wifi_config->hostname, "qcc74x", sizeof(at_wifi_config->hostname));
+    if (!at_config_read(AT_CONFIG_KEY_WIFI_HOSTNAME, at_wifi_config->hostname, sizeof(at_wifi_config->hostname))) {
+        strlcpy(at_wifi_config->hostname, "qcc74xWlan", sizeof(at_wifi_config->hostname));
+    }
 
     return 0;
 }
@@ -135,7 +139,12 @@ int at_wifi_config_save(const char *key)
         return at_config_write(key, &at_wifi_config->sta_ip, sizeof(wifi_ip));
     else if (strcmp(key, AT_CONFIG_KEY_WIFI_COUNTRY_CODE) == 0)
         return at_config_write(key, &at_wifi_config->wifi_country, sizeof(wifi_country_code));
+    else if (strcmp(key, AT_CONFIG_KEY_WIFI_HOSTNAME) == 0)
+        return at_config_write(key, at_wifi_config->hostname, sizeof(at_wifi_config->hostname));
+    else if (strcmp(key, AT_CONFIG_KEY_WIFI_LAPOPT) == 0)
+        return at_config_write(key, &at_wifi_config->scan_option, sizeof(at_wifi_config->scan_option));
     else
+
         return -1;
 }
 

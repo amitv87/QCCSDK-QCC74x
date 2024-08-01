@@ -10,9 +10,7 @@ CROSS_COMPILE ?= riscv64-unknown-elf-
 # add custom cmake definition
 #cmake_definition+=-Dxxx=sss
 
-CONFIG_LINK_IN_PSRAM ?= 0
-
-cmake_definition+=-DCONFIG_LINK_IN_PSRAM=$(CONFIG_LINK_IN_PSRAM)
+CONFIG_USE_LPAPP ?= 0
+cmake_definition+=-DCONFIG_USE_LPAPP=$(CONFIG_USE_LPAPP)
 
 include $(QCC74x_SDK_BASE)/project.build 
-$(shell ./tools/genromfs -d romfs/ -f ./build/build_out/romfs.bin)

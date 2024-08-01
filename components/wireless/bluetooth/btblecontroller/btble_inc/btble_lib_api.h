@@ -167,6 +167,11 @@ void btble_controller_sleep_restore();
 void btble_controller_reset(void);
 #endif
 
+/* key: 32 bytes ecdh private key. This key shall be malloced and passed to btblecontroller_set_private_key api,
+ * and when encrypt is done shall call btblecontroller_del_private_key to delete key and then free malloced key.*/
+void btblecontroller_set_private_key(uint8_t* key);
+void btblecontroller_del_private_key(void);
+
 char *btble_controller_get_lib_ver(void);
 
 void btble_controller_remaining_mem(uint8_t** addr, int* size);
@@ -194,7 +199,11 @@ void btble_set_sleep_aborted_callback(btble_sleep_aborted_cb_t cb);
 #if defined (CONFIG_BLE_MFG) || defined (CONFIG_BT_MFG) 
 int bt_mfg_cli_register(void);
 int reset_cmd_handler(void);
+int rd_bd_addr_cmd_handler(void);
+
 #if defined (CONFIG_BLE_MFG)
+int hci_le_tx_test_v1_cmd_handler(struct hci_le_tx_test_v1_cmd const *param, uint16_t opcode, bool from_hci);
+int hci_le_rx_test_v1_cmd_handler(struct hci_le_rx_test_v1_cmd const *param, uint16_t opcode, bool from_hci);
 int hci_le_tx_test_v2_cmd_handler(struct hci_le_tx_test_v2_cmd const *param, uint16_t opcode, bool from_hci);
 int hci_le_tx_test_v4_cmd_handler(struct hci_le_tx_test_v4_cmd const *param, uint16_t opcode,bool from_hci);
 int hci_le_rx_test_v2_cmd_handler(struct hci_le_rx_test_v2_cmd const *param, uint16_t opcode, bool from_hci);

@@ -4,8 +4,7 @@
 #include <string.h>
 #include "ethernet_phy.h"
 
-/* LAN8720 PHY Address*/
-#define EMAC_PHY_ADDRESS          0x00U
+
 #define PHY_8720_LINK_TO               ((uint32_t)0x00000FFFU)
 #define PHY_8720_AUTONEGO_COMPLETED_TO ((uint32_t)0x00000FFFU)
 /* Section 3: Common PHY Registers */
@@ -76,7 +75,7 @@
 #define PHY_8720_ISFR                                ((uint16_t)0x1DU)   /*!< PHY Interrupt Source Flag register Offset       */
 #define PHY_8720_ISFR_INT4                           ((uint16_t)0x0010U) /*!< PHY Link down inturrupt                         */
 
-int phy_8720_init(struct qcc74x_device_s *emac, struct qcc74x_emac_phy_cfg_s *cfg);
-emac_phy_status_t phy_8720_status_get(void);
+int phy_8720_init(struct qcc74x_device_s *emac, struct qcc74x_eth_phy_cfg_s *cfg);
+eth_phy_status_t phy_8720_status_get(void);
 
 #endif /* __PHY_8720_H__ */

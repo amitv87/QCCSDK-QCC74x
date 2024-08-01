@@ -218,6 +218,14 @@ __attribute__((weak)) uint8_t btblecontrolller_get_chip_version()
 }
 #endif
 
+#if defined(QCC74x_undefL) || defined(QCC743)
+__attribute__((weak)) void btblecontroller_sys_reset(void)
+{
+    __disable_irq();
+    GLB_SW_POR_Reset();
+}
+#endif
+
 #if defined(CONFIG_BT_MFG_HCI_CMD) || defined(CONFIG_BLE_MFG_HCI_CMD)
 __attribute__((weak)) int btblecontroller_putchar(int c)
 {

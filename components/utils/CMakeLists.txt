@@ -71,7 +71,13 @@ sdk_add_include_directories(qcc74x_timestamp)
 sdk_library_add_sources(getopt/utils_getopt.c)
 sdk_add_include_directories(getopt)
 
-if(CONFIG_COREDUMP)
+if(CONFIG_COREDUMP_V2)
+sdk_add_compile_definitions(-DCONFIG_COREDUMP)
+sdk_library_add_sources(coredump/coredump.c)
+sdk_library_add_sources(coredump/encoder_v2.c)
+sdk_library_add_sources(coredump/bin_fmt_v2.c)
+sdk_add_include_directories(coredump)
+elseif(CONFIG_COREDUMP)
 sdk_add_compile_definitions(-DCONFIG_COREDUMP)
 sdk_library_add_sources(coredump/coredump.c)
 sdk_library_add_sources(coredump/encoder_v1.c)
@@ -96,12 +102,12 @@ sdk_library_add_sources(cjson/cJSON.c)
 sdk_add_include_directories(cjson)
 
 # math
-sdk_library_add_sources(math/src/utils_base64.c math/src/utils_crc.c math/src/utils_hex.c)
+sdk_library_add_sources(math/src/utils_base64.c math/src/utils_sha256.c math/src/utils_crc.c math/src/utils_hex.c)
 sdk_add_include_directories(math/include)
 
 # ota
 if(CONFIG_QCC74x_OTA)
-sdk_library_add_sources(qcc74x_ota/qcc74x_ota.c qcc74x_ota/utils_sha256.c)
+sdk_library_add_sources(qcc74x_ota/qcc74x_ota.c)
 sdk_add_include_directories(qcc74x_ota)
 endif()
 

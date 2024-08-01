@@ -342,8 +342,13 @@ static void __ramsync_low_tx_cb(void *arg)
     //_spisync_setevent(spisync, EVT_SPISYNC_POLL);
 }
 
-static void __ramsync_low_reset_cb(void *spisync)
+static void __ramsync_low_reset_cb(void *arg)
 {
+    spisync_t *spisync = (spisync_t *)arg;
+
+    if (spisync->config && spisync->config->reset_cb) {
+        spisync->config->reset_cb(spisync->config->reset_arg);
+    }
 }
 
 void spisync_reset_timer_callback(TimerHandle_t xTimer)
@@ -738,7 +743,7 @@ void _write_process(spisync_t *spisync)
 
     // CRC check
     utils_crc32_stream_init(&crc_ctx);
-    utils_crc32_stream_feed_block(&crc_ctx
+    utils_crc32_stream_feed_block(&crc_ctx,
                                   (uint8_t *)&spisync->p_tx->slot[empty_slot].payload, 
                                   spisync->p_tx->slot[empty_slot].payload.len);
     spisync->p_tx->slot[empty_slot].payload.crc = utils_crc32_stream_results(&crc_ctx);
@@ -822,7 +827,7 @@ static void _read_process(spisync_t *spisync)
 
             // check crc 
             utils_crc32_stream_init(&crc_ctx);
-            utils_crc32_stream_feed_block(&crc_ctx
+            utils_crc32_stream_feed_block(&crc_ctx,
                                   (uint8_t *)&spisync->p_rxcache->len, 
                                   spisync->p_rxcache->len);
             if (spisync->p_rxcache->crc != utils_crc32_stream_results(&crc_ctx)) {

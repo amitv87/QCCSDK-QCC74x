@@ -4,6 +4,9 @@
 #include "qcc74x_uart.h"
 #endif
 #include "stdarg.h"
+#if CONFIG_ATMOUDLE 
+#include "FreeRTOS.h"
+#endif
 
 struct qcc74x_device_s *console = NULL;
 
@@ -85,6 +88,12 @@ int printf(const char *fmt, ...)
 
     len = (len > sizeof(print_buf)) ? sizeof(print_buf) : len;
 
+#if CONFIG_ATMOUDLE 
+    if (!xPortIsInsideInterrupt() && at_output_is_redirect()) {
+        at_write_data((uint8_t *)print_buf, len);
+    }
+#endif 
+
 #ifdef CONFIG_CONSOLE_WO
     qcc74x_wo_uart_put(console, (uint8_t *)print_buf, len);
 #else
@@ -105,6 +114,13 @@ int printf(const char *fmt, ...)
     }
 
     va_start(ap, fmt);
+    
+#if CONFIG_ATMOUDLE
+    if (!xPortIsInsideInterrupt() && at_output_is_redirect()) {
+        at_write_string(fmt, ap);
+    }
+#endif 
+
     len = console_vsnprintf(fmt, ap);
     va_end(ap);
 
