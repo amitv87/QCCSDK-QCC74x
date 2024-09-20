@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include "FreeRTOS.h"
+#include "task.h"
 
 /**
  * Type by which tasks are referenced.
@@ -13,7 +15,7 @@ typedef void *        rtos_task_t;
 
 
 
-typedef void *        rtos_task_handle;
+typedef TaskHandle_t  rtos_task_handle;
 
 /// RTOS priority
 typedef uint32_t      rtos_prio;

@@ -2,6 +2,7 @@
 #define __WL_API_H__
 
 #include <stdint.h>
+#include <stdarg.h>
 
 #ifndef WL_API_RMEM_EN
 #define WL_API_RMEM_EN (1)
@@ -217,7 +218,7 @@ struct wl_cfg_t
     /* platform api to get capcode register */
     void (*capcode_get)(uint8_t* capcode_in, uint8_t* capcode_out);
     /* platform logging api */
-    void (*log_printf)(const char *format, ...);
+    int (*log_printf)(const char *format, va_list ap);
 
     uint8_t     log_level;
     uint8_t     device_info; // QFN40,QFN40M,QFN56

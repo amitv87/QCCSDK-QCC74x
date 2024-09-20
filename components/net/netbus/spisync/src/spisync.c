@@ -1,4 +1,4 @@
-
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -11,52 +11,108 @@
 
 #include <utils_crc.h>
 #include <spisync.h>
+#include <spisync_config.h>
 #include <ramsync.h>
 #include <spisync_port.h>
 
-#define UINT32_DIFF(a, b) ((uint32_t)((int32_t)(a) - (int32_t)(b)))
-#define INT32_DIFF(a, b)  (( int32_t)((int32_t)(a) - (int32_t)(b)))
+#include "mem.h"
+#include <shell.h>
 
 spisync_t *g_spisync_current = NULL;// for dump
 
-/*--------------------- internal process module ----------------------*/
+/* a<b ? */
+#define SEQ_LT(a,b)     ((int16_t)((uint16_t)(a) - (uint16_t)(b)) < 0)
+/* a<=b ? */
+#define SEQ_LEQ(a,b)    ((int16_t)((uint16_t)(a) - (uint16_t)(b)) <= 0)
+/* a>b ? */
+#define SEQ_GT(a,b)     ((int16_t)((uint16_t)(a) - (uint16_t)(b)) > 0)
+/* a>=b ? */
+#define SEQ_GEQ(a,b)    ((int16_t)((uint16_t)(a) - (uint16_t)(b)) >= 0)
 
-#if SPISYNC_MASTER_ENABLE
-#else
-void spisync_s2m_init()
+/* a<b ? */
+#define CLAMP_LT(a,b)     ((int32_t)((uint32_t)(a) - (uint32_t)(b)) < 0)
+/* a<=b ? */
+#define CLAMP_LEQ(a,b)    ((int32_t)((uint32_t)(a) - (uint32_t)(b)) <= 0)
+/* a>b ? */
+#define CLAMP_GT(a,b)     ((int32_t)((uint32_t)(a) - (uint32_t)(b)) > 0)
+/* a>=b ? */
+#define CLAMP_GEQ(a,b)    ((int32_t)((uint32_t)(a) - (uint32_t)(b)) >= 0)
+
+#define UINT32_MIN(a, b)  ((a>b)?b:a)
+
+#define CALC_CLAMP_THRESHOLD  (((((1U << 32) - 1) / (6)) - 6)) // 32bit, clamp_tot_cnt=6
+#define CALC_ACKSEQ_THRESHOLD (((((1U << 16) - 1) / (SPISYNC_RXSLOT_COUNT)) - SPISYNC_RXSLOT_COUNT)) // uint16, rx_slat_cnt=SPISYNC_RXSLOT_COUNT
+
+/* enum EVT */
+#define EVT_SPISYNC_RESET_BIT       (1<<1)
+#define EVT_SPISYNC_CTRL_BIT        (1<<2)
+#define EVT_SPISYNC_WRITE_BIT       (1<<3)
+#define EVT_SPISYNC_READ_BIT        (1<<4)
+#define EVT_SPISYNC_RSYNC_BIT       (1<<5)
+#define EVT_SPISYNC_WAKEUP_BIT      (1<<6)
+#define EVT_SPISYNC_DUMP_BIT        (1<<7)
+#define EVT_SPISYNC_ALL_BIT         (EVT_SPISYNC_RESET_BIT | \
+                                     EVT_SPISYNC_CTRL_BIT  | \
+                                     EVT_SPISYNC_WRITE_BIT | \
+                                     EVT_SPISYNC_READ_BIT  | \
+                                     EVT_SPISYNC_RSYNC_BIT | \
+                                     EVT_SPISYNC_WAKEUP_BIT | \
+                                     EVT_SPISYNC_DUMP_BIT)
+
+/* hardcode */
+#define D_STREAM_OFFSET             (3)
+#define D_QUEUE_OFFSET              (0)
+#define PAYLOADBUF0_SEG_OFFSET      (4)
+
+void spisync_s2m_init(int pin)
 {
     struct qcc74x_device_s *gpio;
 
     gpio = qcc74x_device_get_by_name("gpio");
-    qcc74x_gpio_init(gpio, SPISYNC_CTRL_PIN, GPIO_OUTPUT | GPIO_INPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0);
+    qcc74x_gpio_init(gpio, pin, GPIO_OUTPUT | GPIO_INPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0);
 
-    qcc74x_gpio_set(gpio, SPISYNC_CTRL_PIN);
+    qcc74x_gpio_set(gpio, pin);
 }
-
-void spisyn_s2m_set()
+void spisyn_s2m_set(int pin)
 {
     struct qcc74x_device_s *gpio;
 
     gpio = qcc74x_device_get_by_name("gpio");
-    qcc74x_gpio_set(gpio, SPISYNC_CTRL_PIN);
+    qcc74x_gpio_set(gpio, pin);
+    spisync_trace("spisyn_s2m_set\r\n");
 }
-
-void spisync_s2m_reset()
+void spisync_s2m_reset(int pin)
 {
     struct qcc74x_device_s *gpio;
 
     gpio = qcc74x_device_get_by_name("gpio");
-    qcc74x_gpio_reset(gpio, SPISYNC_CTRL_PIN);
+    qcc74x_gpio_reset(gpio, pin);
+    spisync_trace("spisyn_s2m_reset\r\n");
 }
-
-bool spisync_s2m_get()
+bool spisync_s2m_get(int pin)
 {
     struct qcc74x_device_s *gpio;
 
     gpio = qcc74x_device_get_by_name("gpio");
-    return qcc74x_gpio_read(gpio, SPISYNC_CTRL_PIN);
+    return qcc74x_gpio_read(gpio, pin);
 }
-#endif
+
+static int _is_streamtype(uint8_t type)
+{
+    if ((3 == type) || (4 == type) || (5 == type)) {
+        return 1;
+    }
+
+    return 0;
+}
+static int _is_msgtype(uint8_t type)
+{
+    if ((0 == type) || (1 == type) || (2 == type)) {
+        return 1;
+    }
+
+    return 0;
+}
 
 static void spisync_task(void *arg);
 static void _spisync_setevent(spisync_t *spisync, uint32_t evt)
@@ -71,7 +127,6 @@ static void _spisync_setevent(spisync_t *spisync, uint32_t evt)
         xEventGroupSetBits(spisync->event, evt);
     }
 }
-
 static void _spisync_pattern_process(spisync_t *spisync)
 {
     int res;
@@ -91,89 +146,169 @@ static void _spisync_pattern_process(spisync_t *spisync)
     }
 }
 
-static void debug_init_reset(spisync_t *spisync, char init)// 1 init, 0 reset
+int _spisync_reset_clamp(spisync_t *spisync)
 {
-    /* debug */
-    spisync->isr_rxcnt        = 0;
-    spisync->isr_txcnt        = 0;
+    // FIXME: hardcode 11.
+    for (int i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
+        //spisync->p_tx->slot[i].tag.clamp[0] = SPISYNC_RXMSG_PBUF_ITEMS;
+        spisync->p_tx->slot[i].tag.clamp[1] = SPISYNC_RXMSG_SYSCTRL_ITEMS;
+        spisync->p_tx->slot[i].tag.clamp[2] = SPISYNC_RXMSG_USER1_ITEMS;
+        spisync->p_tx->slot[i].tag.clamp[3] = SPISYNC_RXSTREAM_AT_BYTES;
+        spisync->p_tx->slot[i].tag.clamp[4] = SPISYNC_RXSTREAM_USER1_BYTES;
+        spisync->p_tx->slot[i].tag.clamp[5] = SPISYNC_RXSTREAM_USER2_BYTES;
+    }
+
+    return 0;
+}
+int _spisync_update_clamp(spisync_t *spisync, uint8_t type, uint16_t cnt)
+{
+    spisync_trace("-------- update clamp type:%d, cnt:%d\r\n", type, cnt);
+
+    for (int i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
+        if (_is_streamtype(type)) {
+            spisync->p_tx->slot[i].tag.clamp[type] += cnt;
+        } else if (_is_msgtype(type)) {
+            spisync->p_tx->slot[i].tag.clamp[type] += cnt;
+        } else {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+int spisync_set_clamp(spisync_t *spisync, uint8_t type, uint32_t cnt)
+{
+    spisync_trace("-------- update clamp type:%d, cnt:%d\r\n", type, cnt);
+
+    for (int i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
+        if (_is_streamtype(type)) {
+            spisync->p_tx->slot[i].tag.clamp[type] = cnt;
+        } else if (_is_msgtype(type)) {
+            spisync->p_tx->slot[i].tag.clamp[type] = cnt;
+        } else {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+int _spisync_reset_localvar(spisync_t *spisync, char init)
+{
+    /* global val */
+    spisync->tx_seq             = 0;
+    spisync->rxtag_errtimes     = 0;
+    spisync->rxpattern_checked  = 0;
+
+    for (int i = 0; i < 6; i++) {
+        spisync->clamp[i]       = 0;
+    }
+
+    /* global debug */
+    if (init) {
+        spisync->isr_rxcnt        = 0;
+        spisync->isr_txcnt        = 0;
+    }
+    spisync->rxcrcerr_cnt     = 0;
     if (init) {
         spisync->tsk_rstcnt   = 0;
     }
-    spisync->tsk_ctrlcnt      = 0;
     spisync->tsk_writecnt     = 0;
     spisync->tsk_readcnt      = 0;
-    spisync->tsk_rsttick      = xTaskGetTickCount();
 
-    spisync->iperf            = 0;
-    spisync->dbg_tick_old     = xTaskGetTickCount();
-    spisync->isr_txcnt_old    = 0;
-    spisync->isr_rxcnt_old    = 0;
-    spisync->tsk_writecnt_old = 0;
-    spisync->tsk_readcnt_old  = 0;
-}
-
-static void debug_iperf_print(spisync_t *spisync)
-{
-    uint32_t diff_tick;
-    uint32_t cur_tick     = xTaskGetTickCount();
-    uint32_t isr_rxcnt    = spisync->isr_rxcnt;
-    uint32_t isr_txcnt    = spisync->isr_txcnt;
-    uint32_t tsk_writecnt = spisync->tsk_writecnt;
-    uint32_t tsk_readcnt  = spisync->tsk_readcnt;
-
-    if (!spisync->iperf) {
-        return;
+    spisync->dbg_write_slotblock         = 0;
+    for (int i = 0; i < 6; i++) {
+        spisync->dbg_write_clampblock[i] = 0;
+        spisync->dbg_read_flowblock[i]   = 0;
     }
 
-    diff_tick = UINT32_DIFF(cur_tick, spisync->dbg_tick_old);
-    if (diff_tick >= 1000) {
-        spisync_log("RX(tsk:%f bps, usage:%d, %d pak, %d ms)    TX(tsk:%f bps, usage:%d, %d pak, %d ms)\r\n",
-                ((float)((tsk_readcnt - spisync->tsk_readcnt_old)*SPISYNC_PAYLOADBUF_LEN*8))/(((float)diff_tick)/1000),
-                ((tsk_readcnt - spisync->tsk_readcnt_old) * 100)/(isr_rxcnt - spisync->isr_rxcnt_old),
-                (tsk_readcnt - spisync->tsk_readcnt_old), diff_tick,
-                ((float)((tsk_writecnt - spisync->tsk_writecnt_old)*SPISYNC_PAYLOADBUF_LEN*8))/(((float)diff_tick)/1000),
-                ((tsk_writecnt - spisync->tsk_writecnt_old) * 100)/(isr_txcnt - spisync->isr_txcnt_old),
-                (tsk_writecnt - spisync->tsk_writecnt_old), diff_tick
-              );
-        spisync->dbg_tick_old     = cur_tick;
-        spisync->isr_rxcnt_old    = isr_rxcnt;
-        spisync->isr_txcnt_old    = isr_txcnt;
-        spisync->tsk_writecnt_old = tsk_writecnt;
-        spisync->tsk_readcnt_old  = tsk_readcnt;
+    /* global val */
+    if (init) {
+        spisync->ps_status      = 0;
+        spisync->enablerxtx     = 0;
+    } else {
+        spisync->enablerxtx     = 1;
     }
+
+    return 0;
+}
+static int _spisync_reset_tag(spisync_t *spisync, char init)
+{
+    /* set version */
+    for (int i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
+        spisync->p_tx->slot[i].tag.version = SPISYNC_SLOT_VERSION;
+        if (init) {
+            spisync->p_tx->slot[i].tag.flag |= SPISYNC_TAGFLAGBIT_RXERR;
+        }
+    }
+
+    return 0;
+}
+static int _spisync_reset_queuestream(spisync_t *spisync)
+{
+    printf("_spisync_reset_queuestream start\r\n");
+    /* Reset Queue */
+    for (int i = 0; i < 3; i++) {
+        while (uxQueueMessagesWaiting(spisync->prx_queue[i]) > 0) {
+            spisync_msg_t msg;
+            int res;
+            res = xQueueReceive(spisync->prx_queue[i], &msg, 0);
+            if ((res == pdTRUE) && (msg.cb)) {
+                // free all queue msg.
+                msg.cb(msg.cb_arg);
+            } else {
+                // This point should not be reached under normal circumstances
+                spisync_err("This point should not be reached under normal circumstances.\r\n");
+            }
+        }
+    }
+    for (int i = 0; i < 3; i++) {
+        while (uxQueueMessagesWaiting(spisync->ptx_queue[i]) > 0) {
+            spisync_msg_t msg;
+            int res;
+            res = xQueueReceive(spisync->ptx_queue[i], &msg, 0);
+            if ((res == pdTRUE) && (msg.cb)) {
+                // free all queue msg.
+                msg.cb(msg.cb_arg);
+            } else {
+                // This point should not be reached under normal circumstances
+                spisync_err("This point should not be reached under normal circumstances.\r\n");
+            }
+        }
+    }
+
+    /* Reset Stream */
+    xStreamBufferReset(spisync->prx_streambuffer[0]);
+    xStreamBufferReset(spisync->prx_streambuffer[1]);
+    xStreamBufferReset(spisync->prx_streambuffer[2]);
+    xStreamBufferReset(spisync->ptx_streambuffer[0]);
+    xStreamBufferReset(spisync->ptx_streambuffer[1]);
+    xStreamBufferReset(spisync->ptx_streambuffer[2]);
+
+    printf("_spisync_reset_queuestream end\r\n");
+
+    return 0;
 }
 
-static void _reset_spisync(spisync_t *spisync)
+static int _spisync_reset(spisync_t *spisync)
 {
+    if (spisync->reset_cb) {
+        spisync->reset_cb(spisync->reset_arg);
+    }
+    spisync_s2m_init(spisync->config->data_rdy_pin);
+    arch_delay_ms(5);
+    spisync_s2m_reset(spisync->config->data_rdy_pin);
+
     /* reset low */
-#if SPISYNC_MASTER_ENABLE
-#else
-	lramsync_reset(&spisync->hw);
-#endif
+    lramsync_reset(&spisync->hw);
 
-    /* slot */
+    /* clear slot */
     memset(spisync->p_tx, 0, sizeof(spisync_txbuf_t));
     memset(spisync->p_rx, 0, sizeof(spisync_rxbuf_t));
-    for (int i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
-        spisync->p_tx->slot[i].tag.magic = SPISYNC_SLOT_MAGIC;
-        spisync->p_tx->slot[i].tag.clamp[0] = SPISYNC_RX0_STREAMBUFFER_SIZE;
-        spisync->p_tx->slot[i].tag.clamp[1] = SPISYNC_RX1_STREAMBUFFER_SIZE;
-        spisync->p_tx->slot[i].tag.clamp[2] = SPISYNC_RX2_STREAMBUFFER_SIZE;
-    }
 
-    /* local sequence */
-    spisync->tx_seq             = 0;
-    spisync->txtag_errtimes     = 0;
-    spisync->txwrite_continue   = 0;
-    spisync->rxpattern_checked  = 0;
-    spisync->rxread_continue    = 0;
-    spisync->clamp[0]           = 0;
-    spisync->clamp[1]           = 0;
-    spisync->clamp[2]           = 0;
-#if SPISYNC_MASTER_ENABLE
-    spisync->printed_err_reason = 0;
-    spisync->reset_pending = 0;
-#endif
+    /* set tag */
+    _spisync_reset_tag(spisync, 0);
+    /* set clamp */
+    _spisync_reset_clamp(spisync);
 
     /* for rx notify */
     xEventGroupClearBits(spisync->event, EVT_SPISYNC_ALL_BIT);
@@ -189,30 +324,28 @@ static void _reset_spisync(spisync_t *spisync)
     //xTimerReset(spisync->timer, 0);
     //xTimerStop(spisync->timer, 0);
 
-    xStreamBufferReset(spisync->ptx_streambuffer[0]);
-    xStreamBufferReset(spisync->ptx_streambuffer[1]);
-    xStreamBufferReset(spisync->ptx_streambuffer[2]);
-    xStreamBufferReset(spisync->prx_streambuffer[0]);
-    xStreamBufferReset(spisync->prx_streambuffer[1]);
-    xStreamBufferReset(spisync->prx_streambuffer[2]);
+    /* Reset StreamBuffer */
+    _spisync_reset_queuestream(spisync);
 
-    /* calulate crc for rx */
-    memset(spisync->p_rxcache, 0, sizeof(spisync_slot_t));
+    /* local val sequence+debug */
+    _spisync_reset_localvar(spisync, 0);// 1 init, 0 reset
 
-    /* debug */
-    debug_init_reset(spisync, 0);// 1 init, 0 reset
+    //int spisync_clamp_update(void);
+    //spisync_clamp_update();
+
+    //int spisync_reset_dnldbuf(void);
+    //spisync_reset_dnldbuf();
 
     /* start low */
-#if SPISYNC_MASTER_ENABLE
-#else
     lramsync_start(&spisync->hw);
-#endif
+
+    return 0;
 }
 
 static int __check_tag(spisync_t *spisync)
 {
     for (int i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-        if (SPISYNC_SLOT_MAGIC != spisync->p_rx->slot[i].tag.magic) {
+        if (SPISYNC_SLOT_VERSION != spisync->p_rx->slot[i].tag.version) {
             return 1;
         }
     }
@@ -220,6 +353,7 @@ static int __check_tag(spisync_t *spisync)
 }
 static int __check_pattern(uint32_t *data, uint32_t data_len)
 {
+    spisync_trace("%08x,%08x,%08x,%08x,%08x,%08x\r\n", data[0], data[1], data[2], data[3], data[4], data[5]);
     if (((data[0] == 0x55555555) && (data[1] == 0x55555555) && (data[2] == 0x55555555) &&
          (data[3] == 0x55555555) && (data[4] == 0x55555555) && (data[5] == 0x55555555)) ||
         ((data[0] == 0xAAAAAAAA) && (data[1] == 0xAAAAAAAA) && (data[2] == 0xAAAAAAAA) &&
@@ -229,75 +363,29 @@ static int __check_pattern(uint32_t *data, uint32_t data_len)
     }
     return 0;
 }
-#if SPISYNC_MASTER_ENABLE
-static int process_slot_check(spisync_t *spisync)
-{
-    int i, error = 0;
-    char *reason = "unknown";
-
-    if (spisync->state != SPISYNC_STATE_NORMAL)
-    	return 0;
-
-    for (i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-        if (SPISYNC_SLOT_MAGIC != spisync->p_rx->slot[i].tag.magic) {
-        	spisync->txtag_errtimes++;
-            if (spisync->txtag_errtimes >= SPISYNC_TAGERR_TIMES) {
-            	error = 1;
-            	reason = "error magic";
-            	break;
-            }
-        } else if (spisync->p_rx->slot[i].tag.flag) {
-        	error = 1;
-        	reason = "slave set reset flag";
-        	break;
-        } else {
-        	//spisync->txtag_errtimes = 0;
-        }
-    }
-
-	if (error && !spisync->printed_err_reason) {
-		spisync->printed_err_reason = 1;
-		spisync_log("spisync needs reset, %s, slot %d magic 0x%x, flag 0x%lx, err time %d\r\n",
-				reason, i, spisync->p_rx->slot[i].tag.magic,
-				spisync->p_rx->slot[i].tag.flag, spisync->txtag_errtimes);
-	}
-    return error;
-}
-static void spisync_start_reset(spisync_t *spisync)
-{
-	if (!spisync->master)
-		return;
-
-	/* test_and_set_bit is preferred to prevent repeated trigger */
-	if (spisync->reset_pending)
-		return;
-
-	spisync->reset_pending = 1;;
-	_spisync_setevent(spisync, EVT_SPISYNC_RESET_BIT);
-}
-#else
-static int process_slot_check(spisync_t *spisync)
+static int __check_slot(spisync_t *spisync)
 {
     int res = 0;
 
-    // tag check
+    /* tag check */
     if (__check_tag(spisync)) {
-        spisync->txtag_errtimes++;
-        if (spisync->txtag_errtimes > SPISYNC_TAGERR_TIMES) {
+        spisync->rxtag_errtimes++;
+        if (spisync->rxtag_errtimes > SPISYNC_TAGERR_TIMES) {
             for (int i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-                spisync->p_tx->slot[i].tag.flag |= 0x1;// set rx flag err by tx
+                spisync->p_tx->slot[i].tag.flag |= SPISYNC_TAGFLAGBIT_RXERR;
             }
             res = 1;
         }
     } else {
-        spisync->txtag_errtimes = 0;
+        spisync->rxtag_errtimes = 0;
     }
 
-    // pattern check
+    /* pattern check */
     if (__check_pattern((uint32_t *)(&spisync->p_rx->slot[0]), sizeof(spisync_slot_t))) {
         spisync->rxpattern_checked++;
         spisync_trace("pattern_checked:%d\r\n", spisync->rxpattern_checked);
         if (spisync->rxpattern_checked == SPISYNC_PATTERN_TIMES) {
+            spisync->enablerxtx           = 0;
             spisync_log("check pattern times:%ld, delay to %ld ms reset\r\n",
                 spisync->rxpattern_checked, SPISYNC_PATTERN_DELAYMS);
             _spisync_pattern_process(spisync);
@@ -313,8 +401,6 @@ static int process_slot_check(spisync_t *spisync)
 
     return res;
 }
-#endif
-
 static void __ramsync_low_rx_cb(spisync_t *spisync)
 {
     /* debug */
@@ -322,30 +408,13 @@ static void __ramsync_low_rx_cb(spisync_t *spisync)
         spisync->isr_rxcnt++;
     }
 
-    if (process_slot_check(spisync)) {
-#if SPISYNC_MASTER_ENABLE
-		spisync_start_reset(spisync);
-#endif
-        return;// todo : need?
-    }
-#if 1
-    // Trigger a read event every time
-    _spisync_setevent(spisync, EVT_SPISYNC_READ_BIT);
-#else
-    // Trigger a read event by (continue || (rseq == seq) )
-    if ((spisync->rxread_continue)) {// todo: add ||read vaild ?
-        _spisync_setevent(spisync, EVT_SPISYNC_READ_BIT);
+    if (__check_slot(spisync)) {
         return;
     }
-    for (int i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-        if ((spisync->p_tx->slot[i].tag.rseq + 1) == spisync->p_rx->slot[i].payload.seq) {
-            _spisync_setevent(spisync, EVT_SPISYNC_READ_BIT);
-            return;
-        }
-    }
-#endif
-}
 
+    /* Trigger a read event every time */
+    _spisync_setevent(spisync, EVT_SPISYNC_READ_BIT);
+}
 static void __ramsync_low_tx_cb(void *arg)
 {
     spisync_t *spisync = (spisync_t *)arg;
@@ -356,48 +425,44 @@ static void __ramsync_low_tx_cb(void *arg)
     if (spisync) {
         spisync->isr_txcnt++;
     }
-#if 1
-    _spisync_setevent(spisync, EVT_SPISYNC_WRITE_BIT);
-#else
-    if (spisync->txwrite_continue) {
-        /* Check if there is an empty slot */
-        for (i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
-            if (0 < (SPISYNC_TXSLOT_COUNT -
-                    (UINT32_DIFF(spisync->p_tx->slot[i].payload.seq,
-                                spisync->p_rx->slot[i].tag.rseq)))) {
-                have_empty_slot = 1;
-                break;
-            }
-        }
 
-        if (have_empty_slot > 0) {
-            //_spisync_setevent(spisync, EVT_SPISYNC_WRITE_BIT);
-        }
-    }
+    /* Trigger a read event every time */
     _spisync_setevent(spisync, EVT_SPISYNC_WRITE_BIT);
-#endif
 }
-
-static void __ramsync_low_reset_cb(void *arg)
+static void __ramsync_low_reset_cb(void *spisync)
 {
-    spisync_t *spisync = (spisync_t *)arg;
-
-    if (spisync->config && spisync->config->reset_cb) {
-        spisync->config->reset_cb(spisync->config->reset_arg);
-    }
 }
 
 void timer_callback(TimerHandle_t xTimer)
 {
     spisync_t *spisync = (spisync_t *)pvTimerGetTimerID(xTimer);
 
-#if SPISYNC_MASTER_ENABLE
-    spisync_log("timer callback sets reset bit\r\n");
-#endif
     _spisync_setevent(spisync, EVT_SPISYNC_RESET_BIT);
 }
 
-int spisync_wakeup(spisync_t *spisync)
+int spisync_ps_enter(spisync_t *spisync)
+{
+    if ((NULL == spisync) && (NULL == g_spisync_current)) {
+        return -1;
+    } else if (NULL == spisync) {
+        spisync = g_spisync_current;
+    }
+
+    spisync->ps_status = 1;
+    return 0;
+}
+int spisync_ps_exit(spisync_t *spisync)
+{
+    if ((NULL == spisync) && (NULL == g_spisync_current)) {
+        return -1;
+    } else if (NULL == spisync) {
+        spisync = g_spisync_current;
+    }
+
+    spisync->ps_status = 2;
+    return 0;
+}
+int spisync_ps_wakeup(spisync_t *spisync)
 {
     if ((NULL == spisync) && (NULL == g_spisync_current)) {
         return -1;
@@ -413,10 +478,10 @@ int spisync_wakeup(spisync_t *spisync)
     spisync->ps_status = 0;
 
     _spisync_setevent(spisync, EVT_SPISYNC_WAKEUP_BIT);
+
     return 0;
 }
-
-int spisync_status_get(spisync_t *spisync)
+int spisync_ps_get(spisync_t *spisync)
 {
     if ((NULL == spisync) && (NULL == g_spisync_current)) {
         return -1;
@@ -424,33 +489,6 @@ int spisync_status_get(spisync_t *spisync)
         spisync = g_spisync_current;
     }
 
-    //SPISYNC_IDLE, // IDLE
-    //SPISYNC_BUSY, // BUSY
- 
-    return 0;
-}
-
-int spisync_ps_enter(spisync_t *spisync)
-{
-    if ((NULL == spisync) && (NULL == g_spisync_current)) {
-        return -1;
-    } else if (NULL == spisync) {
-        spisync = g_spisync_current;
-    }
-
-    spisync->ps_status = 1;
-    return 0;
-}
-
-int spisync_ps_exit(spisync_t *spisync)
-{
-    if ((NULL == spisync) && (NULL == g_spisync_current)) {
-        return -1;
-    } else if (NULL == spisync) {
-        spisync = g_spisync_current;
-    }
-
-    spisync->ps_status = 2;
     return 0;
 }
 
@@ -470,14 +508,16 @@ int spisync_init(spisync_t *spisync, const spisync_config_t *config)
 
     /* slot */
     memset(spisync, 0, sizeof(spisync_t));
-    spisync->config = config;
+    spisync->config = config->hw;
+    memcpy(spisync->sync_ops, config->ops, sizeof(config->ops));
     spisync->p_tx = (spisync_txbuf_t *)malloc_aligned_with_padding_nocache(sizeof(spisync_txbuf_t), 32);
     spisync->p_rx = (spisync_rxbuf_t *)malloc_aligned_with_padding_nocache(sizeof(spisync_rxbuf_t), 32);
-    spisync->p_rxcache = (slot_payload_t *)pvPortMalloc(sizeof(slot_payload_t));
+    spisync->p_rxcache = (slot_payload_t *)pvPortMalloc(sizeof(spisync_slot_t));
     memset(spisync->p_tx, 0, sizeof(spisync_txbuf_t));
     memset(spisync->p_rx, 0, sizeof(spisync_rxbuf_t));
-    memset(spisync->p_rxcache, 0, sizeof(slot_payload_t));
-    // dma node list update
+    memset(spisync->p_rxcache, 0, sizeof(spisync_slot_t));
+
+    /* dma node list update */
     for (i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
         node_txbuf[i].buf = &spisync->p_tx->slot[i];
         node_txbuf[i].len = sizeof(spisync_slot_t);
@@ -486,51 +526,40 @@ int spisync_init(spisync_t *spisync, const spisync_config_t *config)
         node_rxbuf[i].buf = &spisync->p_rx->slot[i];
         node_rxbuf[i].len = sizeof(spisync_slot_t);
     }
-    // update magic
-    for (i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
-        spisync->p_tx->slot[i].tag.magic = SPISYNC_SLOT_MAGIC;
-        spisync->p_tx->slot[i].tag.flag = 0x1;// for poweron reset
-        spisync->p_tx->slot[i].tag.clamp[0] = SPISYNC_RX0_STREAMBUFFER_SIZE;
-        spisync->p_tx->slot[i].tag.clamp[1] = SPISYNC_RX1_STREAMBUFFER_SIZE;
-        spisync->p_tx->slot[i].tag.clamp[2] = SPISYNC_RX2_STREAMBUFFER_SIZE;
-    }
+    // update version
+    _spisync_reset_tag(spisync, 1);
+    // spisync_reset_pbufclamp(spisync);
 
     /* global init*/
-    spisync->tx_seq             = 0;
-    spisync->txtag_errtimes     = 0;
-    spisync->txwrite_continue   = 0;
-    spisync->rxpattern_checked  = 0;
-    spisync->rxread_continue    = 0;
-    spisync->clamp[0]           = 0;
-    spisync->clamp[1]           = 0;
-    spisync->clamp[2]           = 0;
-#if SPISYNC_MASTER_ENABLE
-    spisync->state = SPISYNC_STATE_NORMAL;
-    spisync->master = 1;
-    spisync->reset_pending = 0;
-#endif
-    /* debug */
-    debug_init_reset(spisync, 1);// 1 init, 0 reset
+    _spisync_reset_localvar(spisync, 1);// 1 init, 0 reset
 
     /* sys hdl */
+    // FIXME: Add NULL check
     spisync->event         = xEventGroupCreate();
     spisync->timer         = xTimerCreate("delay_rst",
                                         pdMS_TO_TICKS(SPISYNC_PATTERN_DELAYMS), // per 10s
                                         pdFALSE,                                // auto reload
                                         (void *)spisync,
                                         timer_callback);
-    spisync->w_mutex       = xSemaphoreCreateMutex();
-#if SPISYNC_MASTER_ENABLE
-#else
-    spisync->pin_mutex     = xSemaphoreCreateMutex();
-#endif
-    spisync->ptx_streambuffer[0] = xStreamBufferCreate(SPISYNC_TX0_STREAMBUFFER_SIZE, 1);
-    spisync->ptx_streambuffer[1] = xStreamBufferCreate(SPISYNC_TX1_STREAMBUFFER_SIZE, 1);
-    spisync->ptx_streambuffer[2] = xStreamBufferCreate(SPISYNC_TX2_STREAMBUFFER_SIZE, 1);
+    spisync->write_lock     = xSemaphoreCreateMutex();
+    spisync->opspin_log     = xSemaphoreCreateMutex();
 
-    spisync->prx_streambuffer[0] = xStreamBufferCreate(SPISYNC_RX0_STREAMBUFFER_SIZE, 1);
-    spisync->prx_streambuffer[1] = xStreamBufferCreate(SPISYNC_RX1_STREAMBUFFER_SIZE, 1);
-    spisync->prx_streambuffer[2] = xStreamBufferCreate(SPISYNC_RX2_STREAMBUFFER_SIZE, 1);
+    // FIXME: Add NULL check
+    spisync->prx_queue[0] = xQueueCreate(SPISYNC_RXMSG_PBUF_ITEMS, sizeof(spisync_msg_t));
+    spisync->prx_queue[1] = xQueueCreate(SPISYNC_RXMSG_SYSCTRL_ITEMS, sizeof(spisync_msg_t));
+    spisync->prx_queue[2] = xQueueCreate(SPISYNC_RXMSG_USER1_ITEMS, sizeof(spisync_msg_t));
+    spisync->ptx_queue[0] = xQueueCreate(SPISYNC_TXMSG_PBUF_ITEMS, sizeof(spisync_msg_t));
+    spisync->ptx_queue[1] = xQueueCreate(SPISYNC_TXMSG_SYSCTRL_ITEMS, sizeof(spisync_msg_t));
+    spisync->ptx_queue[2] = xQueueCreate(SPISYNC_TXMSG_USER1_ITEMS, sizeof(spisync_msg_t));
+    spisync->prx_streambuffer[0] = xStreamBufferCreate(SPISYNC_RXSTREAM_AT_BYTES, 1);
+    spisync->prx_streambuffer[1] = xStreamBufferCreate(SPISYNC_RXSTREAM_USER1_BYTES, 1);
+    spisync->prx_streambuffer[2] = xStreamBufferCreate(SPISYNC_RXSTREAM_USER2_BYTES, 1);
+    spisync->ptx_streambuffer[0] = xStreamBufferCreate(SPISYNC_TXSTREAM_AT_BYTES, 1);
+    spisync->ptx_streambuffer[1] = xStreamBufferCreate(SPISYNC_TXSTREAM_USER1_BYTES, 1);
+    spisync->ptx_streambuffer[2] = xStreamBufferCreate(SPISYNC_TXSTREAM_USER2_BYTES, 1);
+
+    spisync->reset_cb = config->reset_cb;
+    spisync->reset_arg = config->reset_arg;
 
     ret = xTaskCreate(spisync_task,
                 (char*)"spisync",
@@ -538,8 +567,8 @@ int spisync_init(spisync_t *spisync, const spisync_config_t *config)
                 SPISYNC_TASK_PRI,
                 &spisync->taskhdr);
     if (ret != pdPASS) {
-    	printf("failed to create spisync task, %ld\r\n", ret);
-	}
+        printf("failed to create spisync task, %ld\r\n", ret);
+    }
 
     /* set type , and set name */
     lramsync_init(
@@ -551,246 +580,292 @@ int spisync_init(spisync_t *spisync, const spisync_config_t *config)
         __ramsync_low_rx_cb, spisync,
         __ramsync_low_reset_cb, spisync
         );
-#if SPISYNC_MASTER_ENABLE
-    /* master needs to reset for re-synchronization */
-    spisync->state = SPISYNC_STATE_INIT;
-    _spisync_setevent(spisync, EVT_SPISYNC_RESET_BIT);
-#endif
 
-#if SPISYNC_MASTER_ENABLE
-#else
-    spisync_s2m_init();
-    spisyn_s2m_set();
+    /* to notify host inited */
+    spisync_s2m_init(spisync->config->data_rdy_pin);
+    spisyn_s2m_set(spisync->config->data_rdy_pin);
     arch_delay_ms(10);
-    spisync_s2m_reset();
-#endif
+    spisync_s2m_reset(spisync->config->data_rdy_pin);
+
     return 0;
 }
 
 int spisync_deinit(spisync_t *spisync)
 {
-    lramsync_deinit(&spisync->hw);
-    //free_aligned_with_padding_nocache(spisync->p_tx);
-    //free_aligned_with_padding_nocache(spisync->p_rx);
-    // todo
+    /* NOT SUPPORT */
+
     return 0;
 }
 
-int spisync_read(spisync_t *spisync, uint8_t type, void *buf, uint32_t len, uint32_t timeout_ms)
+int spisync_read(spisync_t *spisync, spisync_msg_t *msg, uint32_t flags)
 {
-    int i;
-    int ret;
-    uint32_t clamp;
+    int ret = 0;
+    uint32_t clamp_offset;
 
-    if (NULL == spisync) {
-        spisync_log("arg err, spisync:%p\r\n",
-                spisync, len, SPISYNC_PAYLOADBUF_LEN);
+    if ((NULL == spisync) || (NULL == msg)) {
+        spisync_log("arg err, spisync:%p\r\n", spisync);
         return -1;
     }
-    ret = xStreamBufferReceive(spisync->prx_streambuffer[type], buf, len, timeout_ms);
 
-    // update to tx clamp
-    if ((ret > 0) && (ret <= len)) {
-        clamp = spisync->p_tx->slot[0].tag.clamp[type] + ret;
-        for (i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
-            spisync->p_tx->slot[i].tag.clamp[type] = clamp;
+    if (_is_streamtype(msg->type)) {
+        ret = xStreamBufferReceive(spisync->prx_streambuffer[msg->type-D_STREAM_OFFSET], msg->buf, msg->buf_len, msg->timeout);
+
+        // update clamp_offset arg
+        if ((ret > 0) && (ret <= msg->buf_len)) {
+            clamp_offset = ret;
+        } else {
+            clamp_offset = 0;
+        }
+    } else if (_is_msgtype(msg->type)) {
+        spisync_msg_t tmpmsg;
+        memcpy(&tmpmsg, msg, sizeof(tmpmsg));
+        ret = xQueueReceive(spisync->prx_queue[msg->type-D_QUEUE_OFFSET], &tmpmsg, msg->timeout);
+        spisync_trace("spisync1:%p, ret:%d, buf_len:%d\r\n", spisync, ret, tmpmsg.buf_len);
+        if ((ret == pdTRUE) && (msg->buf) && (msg->buf_len >= tmpmsg.buf_len)) {
+            msg->buf_len = tmpmsg.buf_len;
+            memcpy(msg->buf, tmpmsg.buf, msg->buf_len);
+      
+            if (tmpmsg.cb) {
+                spisync_trace("tmpmsg.cb_arg:%p\r\n", tmpmsg.cb_arg);
+                tmpmsg.cb(tmpmsg.cb_arg);
+            }
+
+            clamp_offset = 1;
+        } else {
+            spisync_trace("spisync2:%p, ret:%d, buf_len:%d\r\n", spisync, ret, tmpmsg.buf_len);
+
+            clamp_offset = 0;
         }
     }
+
+    /* update clamp */
+    _spisync_update_clamp(spisync, msg->type, clamp_offset);
 
     return ret;
 }
 
-int spisync_fakewrite_forread(spisync_t *spisync, void *buf, uint32_t len, uint32_t timeout_ms)
+int spisync_fakewrite_forread(spisync_t *spisync, spisync_msg_t *msg, uint32_t flags)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     int res;
 
-    if ((NULL == spisync) || (len > SPISYNC_PAYLOADBUF_LEN)) {
-        spisync_log("arg err, spisync:%p, len:%d, max_len:%d\r\n",
-                spisync, len, SPISYNC_PAYLOADBUF_LEN);
+    if ((NULL == spisync) || (NULL == msg) || (msg->buf_len > SPISYNC_PAYLOADBUF_LEN)) {
+        spisync_log("arg err, spisync:%p, buf_len:%d, max_len:%d\r\n",
+                spisync, msg->buf_len, SPISYNC_PAYLOADBUF_LEN);
         return -1;
     }
 
+    // FIXME: only support AT
     if (xPortIsInsideInterrupt()) {
-        res = xStreamBufferSendFromISR(spisync->prx_streambuffer[0], buf, len, &xHigherPriorityTaskWoken);
+        res = xStreamBufferSendFromISR(spisync->prx_streambuffer[3-D_STREAM_OFFSET], msg->buf, msg->buf_len, &xHigherPriorityTaskWoken);
         if (xHigherPriorityTaskWoken) {
             portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
         }
     } else {
-        res = xStreamBufferSend(spisync->prx_streambuffer[0], buf, len, timeout_ms);
+        res = xStreamBufferSend(spisync->prx_streambuffer[3-D_STREAM_OFFSET], msg->buf, msg->buf_len, msg->timeout);
     }
 
     return res;
 }
 
-static uint32_t get_latest_clamp(spisync_t *spisync, uint8_t type);
-int spisync_write(spisync_t *spisync, uint8_t type, void *buf, uint32_t len, uint32_t timeout_ms)
+static void _msg_free(void *p)
 {
-    int ret;
+    spisync_trace("----------> free:%p\r\n", p);
+    free(p);
+}
+static void *_msg_malloc(int len)
+{
+    void *p = malloc(len);
+    spisync_trace("++++++++++> malloc:%p, len:%d\r\n", p, len);
+
+    return p;
+}
+
+int spisync_write(spisync_t *spisync, spisync_msg_t *msg, uint32_t flags)
+{
+    uint8_t type = msg->type;
+    void *buf    = msg->buf;
+    uint32_t len = msg->buf_len;
+    uint32_t timeout_ms = msg->timeout;
+
+    if (!spisync->enablerxtx) {
+        //spisync_log("Spisync is resetting, do not write data\r\n");
+        return 0;
+    }
+    spisync_trace("spisync_write1 msg type:%d buf:%p buf_len:%d cb:%p cb_arg:%p\r\n",
+        msg->type, msg->buf, msg->buf_len, msg->cb, msg->cb_arg);
+
+    int ret = 0;
     uint32_t rclamp, clamp;
     int32_t diff;
-    if ((NULL == spisync) || (type > 3)) {
+    if ((NULL == spisync) || (type >= 6)) {
         spisync_err("arg error. spisync:%p, len:%d, type:%d\r\n", spisync, len, type);
         return -1;
     }
 
     if (spisync->ps_status) {
-        spisync_wakeup(spisync);
+        spisync_ps_wakeup(spisync);
         vTaskDelay(300);
         spisync->ps_status = 0;
     }
     // todo: add clamp here.
-#if 0
-    // compare
-    rclamp = get_latest_clamp(spisync, type);
-    diff = INT32_DIFF(rclamp, spisync->clamp[type]);
-    if ((diff <= 0) || (diff <= len)) {
-        spisync_log("no more buff???,diff:%d, rclamp:%d + %d = %d\r\n",
-            diff, spisync->clamp[type], len, (spisync->clamp[type] + len));
-        return 0;
-    }
-    // update
-    spisync_log("spisync write ---> local diff:%d, clamp:%d + %d = %d\r\n",
-            diff, spisync->clamp[type], len, (spisync->clamp[type] + len));
-    spisync->clamp[type] += len;
-#endif
-
-    if (xSemaphoreTake(spisync->w_mutex, timeout_ms) == pdTRUE) {
-        ret = xStreamBufferSend(spisync->ptx_streambuffer[type], buf, len, timeout_ms);
-        if (ret != len) {
-            spisync_trace("spisync_write ret:%d\r\n", ret);
+    
+    if (xSemaphoreTake(spisync->write_lock, timeout_ms) == pdTRUE) {
+        if (_is_streamtype(type)) {
+            ret = xStreamBufferSend(spisync->ptx_streambuffer[type-D_STREAM_OFFSET], buf, len, timeout_ms);
+            if (ret != len) {
+                spisync_trace("spisync_write ret:%d\r\n", ret);
+            }
+        } else if (_is_msgtype(type)) {
+            ret = xQueueSendToBack(spisync->ptx_queue[type-D_QUEUE_OFFSET], msg, timeout_ms);
+            spisync_trace("xQueueSendToBack MSG type:%d timeout:%d buf:%p buf_len:%d cb:%p cb_arg:%p, ret:%d\r\n",
+                msg->type, msg->timeout, msg->buf, msg->buf_len, msg->cb, msg->cb_arg, ret);
+            if (ret ==  pdPASS) {
+                ret = 1;
+            }
+        } else {
+            spisync_trace("never here.\r\n");
         }
-        _spisync_setevent(spisync, EVT_SPISYNC_WRITE_BIT);
-        xSemaphoreGive(spisync->w_mutex);
+        //_spisync_setevent(spisync, EVT_SPISYNC_WRITE_BIT);
+        xSemaphoreGive(spisync->write_lock);
     } else {
         spisync_log("take mutex error, so write NULL.");
         ret = -1;
     }
 
-#if SPISYNC_MASTER_ENABLE
-#else
-    if (xSemaphoreTake(spisync->pin_mutex, portMAX_DELAY) == pdTRUE) {
-        spisyn_s2m_set();
+    /* ops pin */
+    if (xSemaphoreTake(spisync->opspin_log, portMAX_DELAY) == pdTRUE) {
+        spisyn_s2m_set(spisync->config->data_rdy_pin);
     }
-    xSemaphoreGive(spisync->pin_mutex);
-#endif
+    xSemaphoreGive(spisync->opspin_log);
+    _spisync_setevent(spisync, EVT_SPISYNC_WRITE_BIT);
 
     return ret;
 }
-#if SPISYNC_MASTER_ENABLE
-static void _reset_master_spisync(spisync_t *spisync)
+int spisync_build_typecb(spisync_ops_t *msg, uint8_t type, spisync_opscb_cb_t *cb, void *cb_pri)
 {
-	BaseType_t ret;
-	int state = spisync->state;
+    if ((!msg) || (type >= 6)) {
+        return -1;
+    }
 
-	switch (state) {
-	case SPISYNC_STATE_INIT:
-	case SPISYNC_STATE_NORMAL:
-		memset(spisync->p_tx, SPISYNC_RESET_PATTERN, sizeof(spisync_txbuf_t));
-		ret = xTimerStart(spisync->timer, 1000);
-		if (ret != pdPASS)
-			spisync_err("failed to start timer in normal state, %ld\r\n", ret);
-		else
-			spisync_log("started timer in state %d\r\n", state);
+    memset(msg, 0, sizeof(spisync_ops_t));
+    msg->type   = type;
+    msg->cb     = cb;
+    msg->cb_pri = cb_pri;
 
-		spisync->state = SPISYNC_STATE_RESET_ANNOUNCE;
-		spisync_log("spisync state %s --> reset announce\r\n",
-					state == SPISYNC_STATE_INIT ? "init" : "normal");
-		break;
-
-	case SPISYNC_STATE_RESET_ANNOUNCE:
-		lramsync_reset(&spisync->hw);
-		ret = xTimerStart(spisync->timer, 1000);
-		if (ret != pdPASS)
-			spisync_err("failed to start timer when announce reset, %ld\r\n", ret);
-		else
-			spisync_log("started timer in rst ann\r\n");
-
-		spisync->state = SPISYNC_STATE_WAITING;
-		spisync_log("spisync state reset announce --> waiting\r\n");
-		break;
-
-	case SPISYNC_STATE_WAITING:
-		spisync->state = SPISYNC_STATE_NORMAL;
-		spisync_log("spisync state waiting --> normal\r\n");
-		_reset_spisync(spisync);
-		lramsync_start(&spisync->hw);
-		break;
-
-	default:
-		spisync_err("unknown spisync state 0x%x\r\n", state);
-		break;
-	}
+    return 0;
 }
-#endif
+int spisync_reg_typecb(spisync_t *spisync, spisync_ops_t *msg)
+{
+    if ((NULL == spisync) || (msg->type >= 6)) {
+        return -1;
+    }
+
+    spisync->sync_ops[msg->type].cb = msg->cb;
+    spisync->sync_ops[msg->type].cb_pri = msg->cb_pri;
+
+    return 0;
+}
 /*---------------------- moudule ------------------------*/
 static void _reset_process(spisync_t *spisync)
 {
-#if SPISYNC_MASTER_ENABLE
-	_reset_master_spisync(spisync);
-#else
-    _reset_spisync(spisync);
-#endif
+    _spisync_reset(spisync);
 }
-
 static void _ctrl_process(spisync_t *spisync)
 {
 }
-
-static uint32_t get_latest_rseq(spisync_t *spisync)
-{
-    uint32_t max_val = 0;
-
-    for (uint32_t i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-        if (spisync->p_rx->slot[i].tag.rseq > max_val) {
-            max_val = spisync->p_rx->slot[i].tag.rseq;
-        }
-    }
-    return max_val;
-}
-
-const uint32_t c_clamp_table[] = {
-SPISYNC_TX0_STREAMBUFFER_SIZE,
-SPISYNC_TX1_STREAMBUFFER_SIZE,
-SPISYNC_TX2_STREAMBUFFER_SIZE,
-};
 static uint32_t get_latest_clamp(spisync_t *spisync, uint8_t type)
 {
-#if 0
-    uint32_t max_val = 0;
+    uint32_t latest = spisync->p_rx->slot[0].tag.clamp[type];
 
-    for (uint32_t i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-        if (spisync->p_rx->slot[i].tag.rseq > max_val) {
-            max_val = spisync->p_rx->slot[i].tag.rseq;
+    for (uint32_t i = 1; i < SPISYNC_RXSLOT_COUNT; i++) {
+        if ((spisync->p_rx->slot[i].tag.clamp[type] > latest && (spisync->p_rx->slot[i].tag.clamp[type] - latest) <= CALC_CLAMP_THRESHOLD) ||
+            (spisync->p_rx->slot[i].tag.clamp[type] < latest && (latest - spisync->p_rx->slot[i].tag.clamp[type]) > CALC_CLAMP_THRESHOLD)) {
+            latest = spisync->p_rx->slot[i].tag.clamp[type];
         }
     }
-    return max_val;
-#else
-  #if 0// todo
-    uint32_t max_val = spisync->p_rx->slot[0].tag.clamp[type];
-    int diff;
 
-    for (uint32_t i = 1; i < 3; i++) {
-        diff = INT32_DIFF(spisync->p_rx->slot[i].tag.clamp[type], max_val);
-        if ((diff > 0) && (diff < c_clamp_table[type])) {
-            max_val = spisync->p_rx->slot[i].tag.clamp[type];
-        }
-    }
-    return max_val;
-  #else
-    return spisync->p_rx->slot[0].tag.clamp[type];
-  #endif
-#endif
+    return latest;
 }
+static uint16_t get_latest_ackseq(spisync_t *spisync)
+{
+    uint16_t latest = spisync->p_rx->slot[0].tag.ackseq;
 
+    for (uint32_t i = 1; i < SPISYNC_RXSLOT_COUNT; i++) {
+        if ((spisync->p_rx->slot[i].tag.ackseq > latest && (spisync->p_rx->slot[i].tag.ackseq - latest) <= CALC_ACKSEQ_THRESHOLD) ||
+            (spisync->p_rx->slot[i].tag.ackseq < latest && (latest - spisync->p_rx->slot[i].tag.ackseq) > CALC_ACKSEQ_THRESHOLD)) {
+            latest = spisync->p_rx->slot[i].tag.ackseq;
+        }
+    }
+
+    return latest;
+}
+int _build_msg(spisync_msg_t *msg,
+                        uint32_t type,
+                        uint32_t buf,
+                        uint32_t len,
+                        uint32_t timeout)
+{
+    memset(msg, 0, sizeof(spisync_msg_t));
+    msg->type       = type;
+    msg->buf_len    = len;
+    msg->timeout    = timeout;
+
+    if (_is_streamtype(msg->type)) {
+        // No need to malloc in the stream case
+        msg->buf    = buf;
+    } else {
+        // need to malloc in the stream case
+        /* malloc and copy */
+        msg->buf = _msg_malloc(msg->buf_len);
+        if (!msg->buf) {
+            return -1;
+        }
+        memcpy(msg->buf, buf, msg->buf_len);
+        /* for cb free */
+        msg->cb     = _msg_free;
+        msg->cb_arg = msg->buf;
+    }
+
+    return 0;
+}
+int spisync_build_msg(spisync_msg_t *msg,
+                        uint32_t type,
+                        uint32_t buf,
+                        uint32_t len,
+                        uint32_t timeout)
+{
+    memset(msg, 0, sizeof(spisync_msg_t));
+    msg->type       = type;
+    msg->buf        = buf;
+    msg->buf_len    = len;
+    msg->timeout    = timeout;
+
+    return 0;
+}
+#define BYTES_BEFOR_TO_WRITE    (512)
+int get_next_slot(uint32_t startaddr, uint32_t curraddr)
+{
+    // Calculate the DMA address after 500us
+    uint32_t future_dma_address = curraddr + BYTES_BEFOR_TO_WRITE;
+
+    // Calculate the overflow offset if the address exceeds the end address
+    uint32_t offset = (future_dma_address - startaddr) % (SPISYNC_TXSLOT_COUNT * sizeof(spisync_slot_t));
+
+    // Determine which slot the DMA will be in after 500us
+    uint32_t current_slot = offset / sizeof(spisync_slot_t);
+
+    // Calculate the next slot
+    int next_slot = (current_slot + 1) % SPISYNC_TXSLOT_COUNT;
+
+    return next_slot;
+}
 void _write_process(spisync_t *spisync)
 {
     int empty_slot, empty_flag;
-    uint32_t current;
-    uint32_t latest_rseq;
-    uint32_t s_txseq;
+    uint16_t current, latest_rseq, s_txseq;
 
-    int i, available_bytes;
+    int available_bytes;
     uint32_t data_len;
     StreamBufferHandle_t current_stream_buffer;
     uint32_t current_stream_len;
@@ -798,98 +873,158 @@ void _write_process(spisync_t *spisync)
     struct crc32_stream_ctx crc_ctx;
     uint32_t rclamp, clamp;
     int32_t diff;
-#if SPISYNC_MASTER_ENABLE
-#else
-    int stream_invalid = 0;
-#endif
+    int tx_invalid = 0;
+    uint8_t type;
+    spisync_msg_t msg;
+    int res;
+    int slot_start = 0;
+    uint32_t start_addr, curr_addr;
 
     /* Check if there is an empty slot */
     empty_slot = 0;
     empty_flag = 0;
-    for (i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
-        latest_rseq = get_latest_rseq(spisync);
-        s_txseq = spisync->p_tx->slot[i].payload.seq;
-        current = UINT32_DIFF(s_txseq, latest_rseq);
-        // ( current > SPISYNC_TXSLOT_COUNT) ===> w_seq too small and old
-        // (0 == current)                    ===> w_seq==r_seq
-        if (( current > SPISYNC_TXSLOT_COUNT) || (0 == current)) {
-            empty_slot = i;
+
+    lramsync_get_info(&spisync->hw, &start_addr, &curr_addr);
+    slot_start = get_next_slot(start_addr, curr_addr);
+
+    //spisync_log("start_addr:%08X, curr_addr:%08X, slot_start:%d\r\n", start_addr, curr_addr, slot_start);
+
+    for (int m = slot_start; m < (slot_start+SPISYNC_TXSLOT_COUNT); m++) {
+        latest_rseq = get_latest_ackseq(spisync);
+        s_txseq = spisync->p_tx->slot[m%SPISYNC_TXSLOT_COUNT].tag.seq;
+
+        if (SEQ_GEQ(latest_rseq, s_txseq)) {
+            empty_slot = m%SPISYNC_TXSLOT_COUNT;
             empty_flag = 1;
+            spisync_trace("latest_rseq:%d, s_txseq:%d, empty_slot:%d\r\n",
+                        latest_rseq, s_txseq, empty_slot);
             break;
         }
     }
     if (!empty_flag) {
+        // Refineme
+        spisync->dbg_write_slotblock++;
         return;
     }
 
     /* check if there is valid bytes */
-#if SPISYNC_MASTER_ENABLE
-#else
-    if (xSemaphoreTake(spisync->pin_mutex, portMAX_DELAY) == pdTRUE) {
-#endif
-        for (i = 0; i < 3; i++) {
-            available_bytes = xStreamBufferBytesAvailable(spisync->ptx_streambuffer[i]);
-            if (available_bytes <= 0) {
-#if SPISYNC_MASTER_ENABLE
-#else
-                stream_invalid++;
-#endif
+    if (xSemaphoreTake(spisync->opspin_log, portMAX_DELAY) == pdTRUE) {
+        for (type = 0; type < 6; type++) {
+            if (_is_streamtype(type)) {
+                available_bytes = xStreamBufferBytesAvailable(spisync->ptx_streambuffer[type-D_STREAM_OFFSET]);
+                if (available_bytes <= 0) {
+                    tx_invalid++;
+                    continue;
+                }
+
+                rclamp = get_latest_clamp(spisync, type);
+                spisync_trace("rclamp:%d, local_clamp:%d\r\n", rclamp, spisync->clamp[type]);
+                if (CLAMP_LEQ(rclamp, spisync->clamp[type])) {
+                    spisync->dbg_write_clampblock[type]++;
+                    continue;
+                }
+
+                diff = rclamp - spisync->clamp[type];
+                current_pack_type = type;
+                current_stream_buffer = spisync->ptx_streambuffer[type-D_STREAM_OFFSET];
+                current_stream_len = UINT32_MIN((UINT32_MIN(diff, available_bytes)), SPISYNC_PAYLOADBUF_LEN);
+
+                spisync_trace("type:%d, len:%ld, recv_clamp:%d, local_clamp:%d, available:%d\r\n", 
+                        current_pack_type, current_stream_len, rclamp, spisync->clamp[type], available_bytes);
+            } else if (_is_msgtype(type)) {
+                if (uxQueueMessagesWaiting(spisync->ptx_queue[type-D_QUEUE_OFFSET]) == 0) {
+                    tx_invalid++;
+                    continue;
+                }
+
+                rclamp = get_latest_clamp(spisync, type);
+                spisync_trace("rclamp:%d, local_clamp:%d\r\n", rclamp, spisync->clamp[type]);
+                if (CLAMP_LEQ(rclamp, spisync->clamp[type])) {
+                    spisync->dbg_write_clampblock[type]++;
+                    continue;
+                }
+
+                current_pack_type = type;
+            } else {
+                spisync_err("never here type:%d.\r\n", type);
                 continue;
             }
-            rclamp = get_latest_clamp(spisync, i);
-            diff = INT32_DIFF(rclamp, spisync->clamp[i]);
-            if (diff <= 0) {
-                continue;
-            }
-            current_pack_type = i;
-            current_stream_buffer = spisync->ptx_streambuffer[i];
-            current_stream_len = (diff < SPISYNC_PAYLOADBUF_LEN)?diff:SPISYNC_PAYLOADBUF_LEN;
-            spisync_trace("type:%d, len:%d, diff:%d\r\n", 
-                    current_pack_type, current_stream_len, diff);
             break;
         }
 
-#if SPISYNC_MASTER_ENABLE
-#else
-        if ((3 == stream_invalid) && (spisync->tx_seq == latest_rseq)) {
-            spisync_s2m_reset();
+        if ((6 == tx_invalid) && (spisync->tx_seq == latest_rseq)) {
+            spisync_s2m_reset(spisync->config->data_rdy_pin);
         }
     }
-    xSemaphoreGive(spisync->pin_mutex);
-#endif
+    xSemaphoreGive(spisync->opspin_log);
 
-    if (i == 3) {// can't write to slot
+    if (type == 6) {// can't write to slot
         return;
     }
 
     /* pop from msgbuffer to slot */
-    data_len = xStreamBufferReceive(
-            current_stream_buffer,
-            spisync->p_tx->slot[empty_slot].payload.buf,
-            current_stream_len,
-            0);
-    spisync_trace("write-> rseq:%d, seq:%d, slot:%d, len:%d, avail:%d, current:%d, oldseq:%d\r\n",
-            latest_rseq, (spisync->tx_seq + 1),
-            empty_slot, data_len, available_bytes,
-            current, s_txseq
-            );
-    if ((data_len <= 0) || (data_len > SPISYNC_PAYLOADBUF_LEN)) {
-        spisync_err("write process never here. except spi reset?\r\n", data_len);
+    if (_is_streamtype(current_pack_type)) {
+        data_len = xStreamBufferReceive(
+                current_stream_buffer,
+                spisync->p_tx->slot[empty_slot].payload.seg[0].buf,
+                current_stream_len,
+                0);
+        spisync_trace("------------- write-> ackseq:%d, seq:%d, slot:%d, len:%d, avail:%d, current:%d, oldseq:%d\r\n",
+                latest_rseq, (spisync->tx_seq + 1), empty_slot, data_len, available_bytes, current, s_txseq);
+        if ((data_len <= 0) || (data_len > SPISYNC_PAYLOADBUF_LEN)) {
+            spisync_err("write process never here. except spi reset?, data_len:%d\r\n", data_len);
+            return;
+        }
+        // update clamp
+        spisync->clamp[current_pack_type] += data_len;
+    } else if (_is_msgtype(current_pack_type)) {
+        res = xQueueReceive(spisync->ptx_queue[type-D_QUEUE_OFFSET], &msg, 0);
+        if (pdTRUE != res) {
+            spisync_err("never here type:%d.\r\n", type);
+            return;
+        }
+
+        spisync_trace("xQueueReceive res:%d, msg type:%d buf:%p buf_len:%d cb:%p cb_arg:%p\r\n",
+                res, msg.type, msg.buf, msg.buf_len, msg.cb, msg.cb_arg);
+        //return;
+#if 1
+        if ((msg.buf_len > 0) && (msg.buf_len <= SPISYNC_PAYLOADBUF_LEN)) {
+            memcpy(spisync->p_tx->slot[empty_slot].payload.seg[0].buf, msg.buf, msg.buf_len);
+        } else {
+            spisync_err("write process never here. pbuf too long?\r\n", data_len);
+            if (msg.cb) {
+                msg.cb(msg.cb_arg);
+            }
+            return;
+        }
+        if (msg.cb) {
+            msg.cb(msg.cb_arg);
+        }
+        data_len = msg.buf_len;
+        // update clamp
+        spisync->clamp[current_pack_type] += 1;
+#endif
+    } else {
+        spisync_err("never here type:%d.\r\n", type);
         return;
     }
     // update clamp
-    spisync->clamp[current_pack_type] += data_len;
     spisync->tx_seq++;
-    spisync->p_tx->slot[empty_slot].payload.len = SPISYNC_PAYLOADLENSEQ_LEN + data_len;
-    spisync->p_tx->slot[empty_slot].payload.seq = spisync->tx_seq;
-    spisync->p_tx->slot[empty_slot].payload.type = 
-        ((spisync->p_tx->slot[empty_slot].payload.type & 0xFFFFFF00) | current_pack_type);
+ 
+    spisync->p_tx->slot[empty_slot].tag.seq = spisync->tx_seq;
+    spisync->p_tx->slot[empty_slot].payload.tot_len = data_len + 4;// seg_len_type_res
+    spisync->p_tx->slot[empty_slot].payload.seg[0].len = data_len;
+    spisync->p_tx->slot[empty_slot].payload.seg[0].type = current_pack_type;
 
     // CRC check
     utils_crc32_stream_init(&crc_ctx);
+    spisync_trace("utils_crc32_stream_feed_block slot:%d, buf:%p, len:%d\r\n",
+            empty_slot,
+            (const uint8_t *)&spisync->p_tx->slot[empty_slot].payload, 
+            spisync->p_tx->slot[empty_slot].payload.seg[0].len);
     utils_crc32_stream_feed_block(&crc_ctx,
-                                  (const uint8_t *)&spisync->p_tx->slot[empty_slot].payload, 
-                                  spisync->p_tx->slot[empty_slot].payload.len);
+                                  (const uint8_t *)&spisync->p_tx->slot[empty_slot].payload.tot_len, 
+                                  spisync->p_tx->slot[empty_slot].payload.tot_len + 4);
     spisync->p_tx->slot[empty_slot].payload.crc = utils_crc32_stream_results(&crc_ctx);
 
     spisync->p_tx->slot[empty_slot].tail.seq_mirror = spisync->tx_seq;
@@ -897,20 +1032,16 @@ void _write_process(spisync_t *spisync)
     // debug
     spisync->tsk_writecnt += 1;
 
-    spisync_trace("write slot:%d, len:%d,  %d,%d,%d,%d,%d,%d,  %d,%d,%d,%d,%d,%d,\r\n",
-            empty_slot, data_len,
-            spisync->p_tx->slot[0].payload.seq,
-            spisync->p_tx->slot[1].payload.seq,
-            spisync->p_tx->slot[2].payload.seq,
-            spisync->p_tx->slot[3].payload.seq,
-            spisync->p_tx->slot[4].payload.seq,
-            spisync->p_tx->slot[5].payload.seq,
-            spisync->p_rx->slot[0].tag.rseq,
-            spisync->p_rx->slot[1].tag.rseq,
-            spisync->p_rx->slot[2].tag.rseq,
-            spisync->p_rx->slot[3].tag.rseq,
-            spisync->p_rx->slot[4].tag.rseq,
-            spisync->p_rx->slot[5].tag.rseq
+    spisync_trace("write slot:%d, latest_rseq:%d, Txseq:%d, len:%d,  %d-%d-%d-%d  %d-%d-%d-%d\r\n",
+            empty_slot, latest_rseq, spisync->tx_seq, data_len,
+            spisync->p_tx->slot[0].tag.seq,
+            spisync->p_tx->slot[1].tag.seq,
+            spisync->p_tx->slot[2].tag.seq,
+            spisync->p_tx->slot[3].tag.seq,
+            spisync->p_rx->slot[0].tag.ackseq,
+            spisync->p_rx->slot[1].tag.ackseq,
+            spisync->p_rx->slot[2].tag.ackseq,
+            spisync->p_rx->slot[3].tag.ackseq
             );
 }
 
@@ -918,65 +1049,56 @@ static void _read_process(spisync_t *spisync)
 {
     uint32_t lentmp;
     uint32_t crctmp;
-    uint32_t seqtmp;
-    uint32_t rseqtmp;
+    uint16_t seqtmp, rseqtmp;
     struct crc32_stream_ctx crc_ctx;
     int space_valid;
     int read_times = SPISYNC_RX_READTIMES;
     uint8_t pack_type;
 
-    debug_iperf_print(spisync);
     while (read_times) {
         for (int i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-            // check magic
-            if (SPISYNC_SLOT_MAGIC != spisync->p_rx->slot[i].tag.magic) {
+            // check version
+            if (SPISYNC_SLOT_VERSION != spisync->p_rx->slot[i].tag.version) {
                 continue;
             }
 
             // check seq
-            if (spisync->p_rx->slot[i].payload.seq != spisync->p_rx->slot[i].tail.seq_mirror) {
+            if (spisync->p_rx->slot[i].tag.seq != spisync->p_rx->slot[i].tail.seq_mirror) {
                 continue;
             }
 
             // update tmp
-            rseqtmp = spisync->p_tx->slot[i].tag.rseq;
-            seqtmp  = spisync->p_rx->slot[i].payload.seq;
-            lentmp  = spisync->p_rx->slot[i].payload.len;
-            pack_type = (spisync->p_rx->slot[i].payload.type)&0xFF;
+            rseqtmp = spisync->p_tx->slot[i].tag.ackseq;
+            seqtmp  = spisync->p_rx->slot[i].tag.seq;
+            lentmp  = spisync->p_rx->slot[i].payload.tot_len;
+            pack_type = (spisync->p_rx->slot[i].payload.seg[0].type)&0xFF;
 
             // check seq len valid
-            if ((lentmp > SPISYNC_PAYLOADLEN_MAX) || (seqtmp != (rseqtmp + 1)) || (pack_type >= 3)) {
-                if (i == (SPISYNC_RXSLOT_COUNT - 1)) {
-                    spisync->rxread_continue = 0;
-                }
+            if ((lentmp > SPISYNC_PAYLOADLEN_MAX) || ((uint16_t)seqtmp != (uint16_t)(rseqtmp + 1)) || (pack_type >= 6)) {
                 continue;
             }
 
             // Check available spaces in the buffer in for rx
-            space_valid = xStreamBufferSpacesAvailable(spisync->prx_streambuffer[pack_type]);
-            if (space_valid < (lentmp - SPISYNC_PAYLOADLENSEQ_LEN)) {
-                spisync->rxread_continue = 1;
-                spisync_trace("The stream buffer does not have enough space.\r\n");
-                break;
-            }
 
             // copy data and crc
-            memcpy(spisync->p_rxcache, &spisync->p_rx->slot[i].payload, lentmp);
-            spisync->p_rxcache->crc = spisync->p_rx->slot[i].payload.crc;
+            memcpy(spisync->p_rxcache, &spisync->p_rx->slot[i], lentmp+sizeof(slot_tag_t)+4);
+            spisync->p_rxcache->payload.crc = spisync->p_rx->slot[i].payload.crc;
             // Check if the relevant parameters are within the expected range
-            if ((spisync->p_rxcache->seq != seqtmp) ||
-                (spisync->p_rxcache->len != lentmp) ||
-                ((spisync->p_rxcache->type & 0xFF) != pack_type)) {
+            if ((spisync->p_rxcache->tag.seq != seqtmp) ||
+                (spisync->p_rxcache->payload.tot_len != lentmp) ||
+                ((spisync->p_rxcache->payload.seg[0].type & 0xFF) != pack_type)) {
                 continue;
             }
 
             // check crc 
             utils_crc32_stream_init(&crc_ctx);
             utils_crc32_stream_feed_block(&crc_ctx,
-                                  (const uint8_t *)&spisync->p_rxcache->len, 
-                                  spisync->p_rxcache->len);
-            if (spisync->p_rxcache->crc != utils_crc32_stream_results(&crc_ctx)) {
-                spisync_trace("crc err, 0x%08X != 0x%08X\r\n", crctmp, spisync->p_rxcache->crc);
+                                  (const uint8_t *)&spisync->p_rxcache->payload.tot_len, 
+                                  spisync->p_rxcache->payload.tot_len + 4);
+            crctmp = utils_crc32_stream_results(&crc_ctx);
+            if (spisync->p_rxcache->payload.crc != crctmp) {
+                spisync->rxcrcerr_cnt++;
+                spisync_trace("crc err, 0x%08X != 0x%08X\r\n", crctmp, spisync->p_rxcache->payload.crc);
                 continue;
             }
 
@@ -985,33 +1107,61 @@ static void _read_process(spisync_t *spisync)
 
             spisync_trace("recv slot %d rx seq:  %d,%d,%d,%d,%d,%d  %d,%d,%d,%d,%d,%d\r\n",
                     i,
-                    spisync->p_rx->slot[0].payload.seq,
-                    spisync->p_rx->slot[1].payload.seq,
-                    spisync->p_rx->slot[2].payload.seq,
-                    spisync->p_rx->slot[3].payload.seq,
-                    spisync->p_rx->slot[4].payload.seq,
-                    spisync->p_rx->slot[5].payload.seq,
-                    spisync->p_tx->slot[0].tag.rseq,
-                    spisync->p_tx->slot[1].tag.rseq,
-                    spisync->p_tx->slot[2].tag.rseq,
-                    spisync->p_tx->slot[3].tag.rseq,
-                    spisync->p_tx->slot[4].tag.rseq,
-                    spisync->p_tx->slot[5].tag.rseq
+                    spisync->p_rx->slot[0].tag.seq,
+                    spisync->p_rx->slot[1].tag.seq,
+                    spisync->p_rx->slot[2].tag.seq,
+                    spisync->p_rx->slot[3].tag.seq,
+                    spisync->p_rx->slot[4].tag.seq,
+                    spisync->p_rx->slot[5].tag.seq,
+                    spisync->p_tx->slot[0].tag.ackseq,
+                    spisync->p_tx->slot[1].tag.ackseq,
+                    spisync->p_tx->slot[2].tag.ackseq,
+                    spisync->p_tx->slot[3].tag.ackseq,
+                    spisync->p_tx->slot[4].tag.ackseq,
+                    spisync->p_tx->slot[5].tag.ackseq
                     );
 
-            if ((lentmp - SPISYNC_PAYLOADLENSEQ_LEN) != xStreamBufferSend(spisync->prx_streambuffer[pack_type],
-                        spisync->p_rxcache->buf, (lentmp - SPISYNC_PAYLOADLENSEQ_LEN), 0)) {
-                spisync_err("never here.except spi reset?\r\n");
+            /* handle by buf buf_len */
+            if (spisync->sync_ops[pack_type].cb && spisync->sync_ops[pack_type].cb) {
+                // zero copy
+                spisync_opscb_arg_t msg;
+                msg.buf     = spisync->p_rxcache->payload.seg[0].buf;
+                msg.buf_len = (lentmp > PAYLOADBUF0_SEG_OFFSET) ? (lentmp - PAYLOADBUF0_SEG_OFFSET) : 0;
+                spisync->sync_ops[pack_type].cb(spisync->sync_ops[pack_type].cb_pri, &msg);
+                // _spisync_update_clamp(spisync, pack_type, 1);// clamp++
+            } else {
+                // normal to stream or queue
+                if (_is_streamtype(pack_type)) {
+                    if ((lentmp - PAYLOADBUF0_SEG_OFFSET) != xStreamBufferSend(spisync->prx_streambuffer[pack_type-D_STREAM_OFFSET],
+                            spisync->p_rxcache->payload.seg[0].buf, (lentmp - PAYLOADBUF0_SEG_OFFSET), 0)) {
+                        spisync_err("flowctrl warning. except spi reset? buf_len:%d\r\n", (lentmp > PAYLOADBUF0_SEG_OFFSET));
+                        spisync->dbg_read_flowblock[pack_type]++;
+                        //spisync_status(spisync);
+                        //vTaskDelay(500);
+                        continue;
+                    }
+                } else {
+                    spisync_msg_t msg;
+                    if (_build_msg(&msg, pack_type, spisync->p_rxcache->payload.seg[0].buf,
+                        (lentmp - PAYLOADBUF0_SEG_OFFSET), 0) == 0) {
+                        if (xQueueSendToBack(spisync->prx_queue[pack_type-D_QUEUE_OFFSET], &msg, 0) != pdPASS) {
+                            spisync->dbg_read_flowblock[pack_type]++;
+                            // if (msg.cb) {
+                            //     msg.cb(msg.buf);
+                            // }
+                            continue;
+                        }
+                    } else {
+                        spisync->dbg_read_flowblock[pack_type]++;
+                        spisync_err("mem error --> drop msg %d\r\n", (lentmp - PAYLOADBUF0_SEG_OFFSET));
+                    }
+                }
             }
 
-            // update tx st rseq
+            /* update tx st ackseq */
             for (int m = 0; m < SPISYNC_TXSLOT_COUNT; m++) {
-                spisync->p_tx->slot[m].tag.rseq = spisync->p_rxcache->seq;
+                spisync->p_tx->slot[m].tag.ackseq = spisync->p_rxcache->tag.seq;
             }
-        }
-
-        if (xStreamBufferSpacesAvailable(spisync->prx_streambuffer[pack_type]) < SPISYNC_RX_STREAMBUFFER_LEVEL) {
-            break; // while (read_times)
         }
         read_times--;
     }
@@ -1019,111 +1169,54 @@ static void _read_process(spisync_t *spisync)
 
 static void _wakeup_process(spisync_t *spisync)
 {
-#if 1
     _spisync_setevent(spisync, EVT_SPISYNC_RESET_BIT);
-#else
-    for (int i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-        spisync->p_tx->slot[i].tag.flag |= 0x1;// set rx flag err by tx
-    }
-#endif
 }
 
 static void spisync_task(void *arg)
 {
-     spisync_t *spisync = (spisync_t *)arg;
-     EventBits_t eventBits;
+    spisync_t *spisync = (spisync_t *)arg;
+    EventBits_t eventBits;
 
-     while (1) {
-         eventBits = xEventGroupWaitBits(spisync->event,
-             EVT_SPISYNC_RESET_BIT|EVT_SPISYNC_CTRL_BIT|EVT_SPISYNC_WRITE_BIT| \
-             EVT_SPISYNC_READ_BIT|EVT_SPISYNC_WAKEUP_BIT| \
-             EVT_SPISYNC_DUMP_BIT,
-             pdTRUE, pdFALSE,
-             portMAX_DELAY);
-         if (eventBits  & EVT_SPISYNC_RESET_BIT) {
-             spisync_log("recv bit EVT_SPISYNC_RESET_BIT\r\n");
-             spisync->tsk_rstcnt++;
-             _reset_process(spisync);
-         }
-         if (eventBits  & EVT_SPISYNC_WAKEUP_BIT) {
-             spisync_log("recv bit EVT_SPISYNC_WAKEUP_BIT\r\n");
-             _wakeup_process(spisync);
-         }
-         if (eventBits  & EVT_SPISYNC_CTRL_BIT) {
-             spisync_log("recv bit EVT_SPISYNC_CTRL_BIT\r\n");
-             spisync->tsk_ctrlcnt++;
-             _ctrl_process(spisync);
-         }
-		 if (eventBits  & EVT_SPISYNC_DUMP_BIT) {
-            spisync_dump(spisync);
-         }
-		 
-		 // normal start
-#if SPISYNC_MASTER_ENABLE
-         if (spisync->state != SPISYNC_STATE_NORMAL) {
-		 	continue;
-		 }
-#endif
-		 if (eventBits  & EVT_SPISYNC_WRITE_BIT) {
-			 spisync_trace("recv bit EVT_SPISYNC_WRITE_BIT\r\n");
-			 _write_process(spisync);
-		 }
-		 if (eventBits  & EVT_SPISYNC_READ_BIT) {
-			 spisync_trace("recv bit EVT_SPISYNC_READ_BIT\r\n");
-				 _read_process(spisync);
-		 }
-		// normal end
-     }
+    while (1) {
+        eventBits = xEventGroupWaitBits(spisync->event,
+        EVT_SPISYNC_RESET_BIT|EVT_SPISYNC_CTRL_BIT|EVT_SPISYNC_WRITE_BIT| \
+        EVT_SPISYNC_READ_BIT|EVT_SPISYNC_WAKEUP_BIT| \
+        EVT_SPISYNC_DUMP_BIT,
+        pdTRUE, pdFALSE,
+        portMAX_DELAY);
+        if (eventBits  & EVT_SPISYNC_RESET_BIT) {
+            spisync_log("recv bit EVT_SPISYNC_RESET_BIT\r\n");
+            spisync->tsk_rstcnt++;
+            _reset_process(spisync);
+        }
+        if (eventBits  & EVT_SPISYNC_WAKEUP_BIT) {
+            spisync_log("recv bit EVT_SPISYNC_WAKEUP_BIT\r\n");
+            _wakeup_process(spisync);
+        }
+        if (eventBits  & EVT_SPISYNC_CTRL_BIT) {
+            spisync_log("recv bit EVT_SPISYNC_CTRL_BIT\r\n");
+            _ctrl_process(spisync);
+        }
+        if (eventBits  & EVT_SPISYNC_DUMP_BIT) {
+            spisync_status(spisync);
+        }
+        if (!spisync->enablerxtx) {
+            continue;
+        }
+        if (eventBits  & EVT_SPISYNC_WRITE_BIT) {
+            spisync_trace("recv bit EVT_SPISYNC_WRITE_BIT\r\n");
+            _write_process(spisync);
+        }
+        if (eventBits  & EVT_SPISYNC_READ_BIT) {
+            spisync_trace("recv bit EVT_SPISYNC_READ_BIT\r\n");
+            _read_process(spisync);
+        }
+    }
 }
 
 /*--------------------- debug moudule ----------------------*/
-int spisync_iperf(spisync_t *spisync, int enable)
-{
-    spisync->iperf = enable;
-
-    spisync_log("iperf:%d\r\n", spisync->iperf);
-}
-
-int spisync_iperftx(spisync_t *spisync, uint32_t time_sec)
-{
-    uint8_t *buf;
-    uint32_t start_cnt, current_cnt;
-    uint32_t tx_cnt = 0;
-    float    res = 1.00;
-    uint32_t iperf_flag = spisync->iperf;
-
-    // enter
-    spisync->iperf = 1;
-
-    start_cnt = xTaskGetTickCount();
-    buf = pvPortMalloc(SPISYNC_PAYLOADBUF_LEN);
-    if (NULL == buf) {
-        return -1;
-    }
-
-    while (1) {
-        current_cnt = xTaskGetTickCount();
-        if ((time_sec * 1000) <= UINT32_DIFF(current_cnt, start_cnt)) {
-            break;
-        }
-        spisync_write(spisync, 0, buf, SPISYNC_PAYLOADBUF_LEN, portMAX_DELAY);
-        tx_cnt++;
-    }
-
-    // resume
-    spisync->iperf = iperf_flag;
-
-    spisync_log("Iperf %d - %d spisync_tx [%f] bps, [%d] Bytes/S, [%d] packet/S\r\n",
-            start_cnt, current_cnt,
-            ((float)((tx_cnt * SPISYNC_PAYLOADBUF_LEN)*8/time_sec)),
-            (tx_cnt * SPISYNC_PAYLOADBUF_LEN)/time_sec,
-            tx_cnt/time_sec);
-
-    return 0;
-}
-
 /* debug */
-int spisync_dump(spisync_t *spisync)
+int spisync_status(spisync_t *spisync)
 {
     int i;
 
@@ -1133,290 +1226,566 @@ int spisync_dump(spisync_t *spisync)
         spisync = g_spisync_current;
     }
 
+    lramsync_dump(&spisync->hw);
+    spisync_dbg("sizeof(slot_tag_t)    =%d\r\n", sizeof(slot_tag_t));
+    spisync_dbg("sizeof(slot_payload_t)=%d\r\n", sizeof(slot_payload_t));
+    spisync_dbg("sizeof(slot_tail_t)   =%d\r\n", sizeof(slot_tail_t));
+    spisync_dbg("sizeof(spisync_slot_t) =%d\r\n", sizeof(spisync_slot_t));
+    spisync_dbg("CLAMP_THRESHOLD:%d, ACKSEQ_THRESHOLD:%d\r\n", CALC_CLAMP_THRESHOLD, CALC_ACKSEQ_THRESHOLD);
+    spisync_dbg("TxSlot--------------------------------------------------\r\n");
     for (i = 0; i < SPISYNC_TXSLOT_COUNT; i++) {
-        spisync_dbg("tx[%ld] 0x%08lX,rseq:%ld,clamp:%ld-%ld-%ld,flag:%ld    len:%d,seq:%d,type:%08lx,crc:0x%08lX\r\n",
+        spisync_dbg("tx[%ld] 0x%04lX,seq:%d,ackseq:%ld,flag:%ld,clamp:%ld-%ld-%ld-%ld-%ld-%ld, len:%d,type:%02X,crc:0x%08lX\r\n",
                 i,
-                spisync->p_tx->slot[i].tag.magic,
-                spisync->p_tx->slot[i].tag.rseq,
-                spisync->p_tx->slot[i].tag.clamp[0], spisync->p_tx->slot[i].tag.clamp[1], spisync->p_tx->slot[i].tag.clamp[2],
+                spisync->p_tx->slot[i].tag.version,
+                spisync->p_tx->slot[i].tag.seq,
+                spisync->p_tx->slot[i].tag.ackseq,
                 spisync->p_tx->slot[i].tag.flag,
-                spisync->p_tx->slot[i].payload.len,
-                spisync->p_tx->slot[i].payload.seq,
-                spisync->p_tx->slot[i].payload.type,
+                spisync->p_tx->slot[i].tag.clamp[0], spisync->p_tx->slot[i].tag.clamp[1], spisync->p_tx->slot[i].tag.clamp[2],
+                spisync->p_tx->slot[i].tag.clamp[3], spisync->p_tx->slot[i].tag.clamp[4], spisync->p_tx->slot[i].tag.clamp[5],
+                spisync->p_tx->slot[i].payload.seg[0].len,
+                spisync->p_tx->slot[i].payload.seg[0].type,
                 spisync->p_tx->slot[i].payload.crc);
         spisync_buf("     ", &spisync->p_tx->slot[i].payload, 32);
     }
-
+    spisync_dbg("RxSlot--------------------------------------------------\r\n");
     for (i = 0; i < SPISYNC_RXSLOT_COUNT; i++) {
-        spisync_dbg("rx[%ld] 0x%08lX,rseq:%ld,clamp:%ld-%ld-%ld,flag:%ld    len:%d,seq:%d,type:%08lx,crc:0x%08lX\r\n",
+        spisync_dbg("rx[%ld] 0x%04lX,seq:%d,ackseq:%ld,flag:%ld,clamp:%ld-%ld-%ld-%ld-%ld-%ld, len:%d,type:%02X,crc:0x%08lX\r\n",
                 i,
-                spisync->p_rx->slot[i].tag.magic,
-                spisync->p_rx->slot[i].tag.rseq,
-                spisync->p_rx->slot[i].tag.clamp[0], spisync->p_rx->slot[i].tag.clamp[1], spisync->p_rx->slot[i].tag.clamp[2],
+                spisync->p_rx->slot[i].tag.version,
+                spisync->p_rx->slot[i].tag.seq,
+                spisync->p_rx->slot[i].tag.ackseq,
                 spisync->p_rx->slot[i].tag.flag,
-                spisync->p_rx->slot[i].payload.len,
-                spisync->p_rx->slot[i].payload.seq,
-                spisync->p_rx->slot[i].payload.type,
+                spisync->p_rx->slot[i].tag.clamp[0], spisync->p_rx->slot[i].tag.clamp[1], spisync->p_rx->slot[i].tag.clamp[2],
+                spisync->p_rx->slot[i].tag.clamp[3], spisync->p_rx->slot[i].tag.clamp[4], spisync->p_rx->slot[i].tag.clamp[5],
+                spisync->p_rx->slot[i].payload.seg[0].len,
+                spisync->p_rx->slot[i].payload.seg[0].type,
                 spisync->p_rx->slot[i].payload.crc);
         spisync_buf("     ", &spisync->p_rx->slot[i].payload, 32);
     }
 
-    spisync_dbg("spisync->tx_seq             = %ld\r\n", spisync->tx_seq);
-    spisync_dbg("spisync->txtag_errtimes     = %ld\r\n", spisync->txtag_errtimes);
-    spisync_dbg("spisync->txwrite_continue   = %ld\r\n", spisync->txwrite_continue);
-    spisync_dbg("spisync->clamp[0,1,2]       = %ld,%ld,%ld\r\n", spisync->clamp[0], spisync->clamp[1], spisync->clamp[2]);
-    spisync_dbg("spisync->rxpattern_checked  = %ld\r\n", spisync->rxpattern_checked);
-    spisync_dbg("spisync->rxread_continue    = %ld\r\n", spisync->rxread_continue);
+    spisync_dbg("Rx------------------------------------------------------\r\n");
+    spisync_dbg("RxQueue[0] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPEMSG_PBUF,
+                uxQueueSpacesAvailable(spisync->prx_queue[0]), uxQueueMessagesWaiting(spisync->prx_queue[0]));
+    spisync_dbg("RxQueue[1] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPEMSG_SYSCTRL,
+                uxQueueSpacesAvailable(spisync->prx_queue[1]), uxQueueMessagesWaiting(spisync->prx_queue[1]));
+    spisync_dbg("RxQueue[2] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPEMSG_USER1,
+                uxQueueSpacesAvailable(spisync->prx_queue[2]), uxQueueMessagesWaiting(spisync->prx_queue[2]));
+    spisync_dbg("Rxstream[0] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPESTREAM_AT,
+                xStreamBufferSpacesAvailable(spisync->prx_streambuffer[0]),
+                (SPISYNC_RXSTREAM_AT_BYTES-xStreamBufferSpacesAvailable(spisync->prx_streambuffer[0])));
+    spisync_dbg("Rxstream[1] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPESTREAM_USER1,
+                xStreamBufferSpacesAvailable(spisync->prx_streambuffer[1]),
+                (SPISYNC_RXSTREAM_USER1_BYTES-xStreamBufferSpacesAvailable(spisync->prx_streambuffer[1])));
+    spisync_dbg("Rxstream[2] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPESTREAM_USER2,
+                xStreamBufferSpacesAvailable(spisync->prx_streambuffer[2]),
+                (SPISYNC_RXSTREAM_USER2_BYTES-xStreamBufferSpacesAvailable(spisync->prx_streambuffer[2])));
+    spisync_dbg("Tx------------------------------------------------------\r\n");
+    spisync_dbg("TxQueue[0] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPEMSG_PBUF,
+                uxQueueSpacesAvailable(spisync->ptx_queue[0]), uxQueueMessagesWaiting(spisync->ptx_queue[0]));
+    spisync_dbg("TxQueue[1] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPEMSG_SYSCTRL,
+                uxQueueSpacesAvailable(spisync->ptx_queue[1]), uxQueueMessagesWaiting(spisync->ptx_queue[1]));
+    spisync_dbg("TxQueue[2] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPEMSG_USER1,
+                uxQueueSpacesAvailable(spisync->ptx_queue[2]), uxQueueMessagesWaiting(spisync->ptx_queue[2]));
+    spisync_dbg("Txstream[0] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPESTREAM_AT,
+                xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[0]),
+                (SPISYNC_TXSTREAM_AT_BYTES-xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[0])));
+    spisync_dbg("Txstream[1] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPESTREAM_USER1,
+                xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[1]),
+                (SPISYNC_TXSTREAM_USER1_BYTES-xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[1])));
+    spisync_dbg("Txstream[2] tot:%ld, free_space:%ld, used:%ld\r\n", SPISYNC_TYPESTREAM_USER2,
+                xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[2]),
+                (SPISYNC_TXSTREAM_USER2_BYTES-xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[2])));
+    spisync_dbg("------------------------------------------------------\r\n");
 
-    spisync_dbg("ptx_streambuffer[0]   total:%ld, free_space:%ld\r\n",
-            SPISYNC_TX0_STREAMBUFFER_SIZE, xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[0])
+    spisync_dbg("Diff TXClamp:%ld-%ld-%ld-%ld-%ld-%ld\r\n",
+            get_latest_clamp(spisync, 0)-spisync->clamp[0],
+            get_latest_clamp(spisync, 1)-spisync->clamp[1],
+            get_latest_clamp(spisync, 2)-spisync->clamp[2],
+            get_latest_clamp(spisync, 3)-spisync->clamp[3],
+            get_latest_clamp(spisync, 4)-spisync->clamp[4],
+            get_latest_clamp(spisync, 5)-spisync->clamp[5]);
+    spisync_dbg("Remote Clamp:%ld-%ld-%ld-%ld-%ld-%ld\r\n",
+            get_latest_clamp(spisync, 0), get_latest_clamp(spisync, 1),
+            get_latest_clamp(spisync, 2), get_latest_clamp(spisync, 3),
+            get_latest_clamp(spisync, 4), get_latest_clamp(spisync, 5));
+    spisync_dbg("LocalTxClamp:%ld-%ld-%ld-%ld-%ld-%ld\r\n",
+            spisync->clamp[0], spisync->clamp[1], spisync->clamp[2],
+            spisync->clamp[3], spisync->clamp[4], spisync->clamp[5]);
+    spisync_dbg("Local RxTagE:%ld, RxPattern:%ld\r\n",
+            spisync->rxtag_errtimes, spisync->rxpattern_checked);
+    uint16_t latest_ackseq = get_latest_ackseq(spisync);
+    spisync_dbg("Local Txseq:%ld(remote:%d,diff:%d), isrRx:%d, isrTx:%d, %d, Rst:%d, CrcE:%d, tskW:%d, tskR:%d\r\n",
+            spisync->tx_seq, latest_ackseq, (latest_ackseq-spisync->tx_seq),
+            spisync->isr_rxcnt,
+            spisync->isr_txcnt,
+            spisync->tsk_rstcnt,
+            spisync->rxcrcerr_cnt,
+            spisync->tsk_writecnt, spisync->tsk_readcnt);
+    spisync_dbg("Local GPIO:%d", spisync_s2m_get(spisync->config->data_rdy_pin));
+    spisync_dbg("Local Write slotblock:%d, clamp_block:%d-%d-%d-%d-%d-%d\r\n",
+            spisync->dbg_write_slotblock,
+            spisync->dbg_write_clampblock[0],spisync->dbg_write_clampblock[1],
+            spisync->dbg_write_clampblock[2],spisync->dbg_write_clampblock[3],
+            spisync->dbg_write_clampblock[4],spisync->dbg_write_clampblock[5]
             );
-    spisync_dbg("ptx_streambuffer[1]   total:%ld, free_space:%ld\r\n",
-            SPISYNC_TX1_STREAMBUFFER_SIZE, xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[1])
+    spisync_dbg("Local Read flow_block:%d-%d-%d-%d-%d-%d\r\n",
+            spisync->dbg_read_flowblock[0],spisync->dbg_read_flowblock[1],
+            spisync->dbg_read_flowblock[2],spisync->dbg_read_flowblock[3],
+            spisync->dbg_read_flowblock[4],spisync->dbg_read_flowblock[5]
             );
-    spisync_dbg("ptx_streambuffer[2]   total:%ld, free_space:%ld\r\n",
-            SPISYNC_TX2_STREAMBUFFER_SIZE, xStreamBufferSpacesAvailable(spisync->ptx_streambuffer[2])
-            );
-    spisync_dbg("prx_streambuffer[0] total:%ld, free_space:%ld\r\n",
-            SPISYNC_RX0_STREAMBUFFER_SIZE,
-            xStreamBufferSpacesAvailable(spisync->prx_streambuffer[0])
-            );
-    spisync_dbg("prx_streambuffer[1] total:%ld, free_space:%ld\r\n",
-            SPISYNC_RX1_STREAMBUFFER_SIZE,
-            xStreamBufferSpacesAvailable(spisync->prx_streambuffer[1])
-            );
-    spisync_dbg("prx_streambuffer[2] total:%ld, free_space:%ld\r\n",
-            SPISYNC_RX2_STREAMBUFFER_SIZE,
-            xStreamBufferSpacesAvailable(spisync->prx_streambuffer[2])
-            );
-    spisync_dbg("isr_rxcnt    = %d\r\n", spisync->isr_rxcnt);
-    spisync_dbg("isr_txcnt    = %d\r\n", spisync->isr_txcnt);
-    spisync_dbg("tsk_rstcnt   = %d\r\n", spisync->tsk_rstcnt);
-    spisync_dbg("tsk_ctrlcnt  = %d\r\n", spisync->tsk_ctrlcnt);
-    spisync_dbg("tsk_writecnt = %d\r\n", spisync->tsk_writecnt);
-    spisync_dbg("tsk_readcnt  = %d\r\n", spisync->tsk_readcnt);
-    spisync_dbg("tsk_rsttick  = %d\r\n", spisync->tsk_rsttick);
 
-    spisync_dbg("iperf            = %d\r\n", spisync->iperf);
-    spisync_dbg("dbg_tick_old     = %d\r\n", spisync->dbg_tick_old);
-    spisync_dbg("isr_rxcnt_old    = %d\r\n", spisync->isr_rxcnt_old);
-    spisync_dbg("isr_txcnt_old    = %d\r\n", spisync->isr_txcnt_old);
-    spisync_dbg("tsk_writecnt_old = %d\r\n", spisync->tsk_writecnt_old);
-    spisync_dbg("tsk_readcnt_old  = %d\r\n", spisync->tsk_readcnt_old);
+    //void dnldbuf_status(char *str);
+    //dnldbuf_status("dump");
+
+    //void spi_ethernetif_status(void);
+    //spi_ethernetif_status();
 
     return 0;
 }
-
-int spisync_dump_internal(spisync_t *spisync)
+int spisync_status_internal(spisync_t *spisync)
 {
     _spisync_setevent(spisync, EVT_SPISYNC_DUMP_BIT);
 
     return 0;
 }
 
-/* iperf */
-typedef struct _iperf_desc {
-    spisync_t *spisync;
-    uint8_t *name;
-    uint8_t type;
-    uint32_t per;
-    uint32_t t;
-} spisync_iperf_t;
-
-typedef int (*iperf_fun_cb_t)(spisync_t *spisync, uint8_t type, void *buf, uint32_t len, uint32_t timeout_ms);
-
-int task_spisync_iperf(void *par)
+int cmd_spisync_write(int argc, char **argv)
 {
-    spisync_iperf_t *arg = (spisync_iperf_t *)par;
-    uint8_t *buf;
-    uint32_t start_cnt, first_cnt, current_cnt;
-    int32_t diff;
-    int ret = 0;
-    uint32_t send_bytes = 0;
-    uint32_t send_bytes_old = 0;
-    iperf_fun_cb_t cb = NULL;
+    spisync_msg_t msg;
+    uint8_t type;
+    uint32_t len;
+    uint32_t send_len = 0;
+    uint32_t count = 1; // Default to sending once
+    uint32_t timeout;
+    uint8_t *buf; // Pointer for dynamically allocated memory
 
-    if (NULL == arg) {
-        spisync_err("task arg error.\r\n");
-        return;
+    if (argc < 3) {
+        printf("Usage: ss_write [type 0-5] [str] [-s send_length] [-c count]\r\neg:ss_write 0 123456789abcdefg -s 2048 -c 10\r\n");
+        return -1; // Return if there are not enough arguments
     }
 
-    buf = pvPortMalloc(SPISYNC_PAYLOADBUF_LEN);
-    if (NULL == buf) {
-        vPortFree(arg);
+    type = atoi(argv[1]);
+    if (type < 0 || type > 5) {
+        printf("Invalid type. Must be between 0 and 5.\r\n");
+        return -1; // Return if the type is invalid
+    }
+
+    len = strlen(argv[2]);
+
+    // Parse additional arguments
+    for (int i = 3; i < argc; i++) {
+        if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+            send_len = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
+            count = atoi(argv[++i]);
+        }
+    }
+
+    if (send_len == 0) {
+        send_len = len; // If no send length is specified, use the string length
+    }
+
+    buf = malloc(send_len + 1); // Allocate enough memory to store the data to be sent
+    if (!buf) {
+        printf("Memory allocation error.\r\n");
         return -1;
     }
 
-    if (arg->name[0] == 't') {
-        cb = spisync_write;
-        printf("write\r\n");
-    } else {
-        cb = spisync_read;
-        printf("read\r\n");
+    // Fill the buffer
+    for (uint32_t i = 0; i < send_len; i++) {
+        buf[i] = argv[2][i % len]; // Repeat the string data until the required length is reached
     }
+    buf[send_len] = '\0'; // Ensure the string is null-terminated
 
-    start_cnt = xTaskGetTickCount();
-    first_cnt = start_cnt;
-    while (1) {
-        //printf("arg->spisync:%p, buf:%d, type:%d\r\n", arg->spisync, buf, arg->type);
-        ret = cb(arg->spisync, arg->type, buf, SPISYNC_PAYLOADBUF_LEN, 10);
-        if (ret > 0) {
-            send_bytes += ret;
-        }
+    timeout = 100; // Initialize timeout to 100ms
 
-        // per print
-        current_cnt = xTaskGetTickCount();
-        diff = INT32_DIFF(current_cnt, start_cnt);
-        if (diff >= (arg->per*1000)) {
-            start_cnt += (arg->per*1000);
-            spisync_log("iperf %d-%d: type:%d %s %ld bps\r\n",
-                    start_cnt, current_cnt, arg->type,
-                    arg->name,
-                    ((send_bytes - send_bytes_old)*8));
-            send_bytes_old = send_bytes;
-        }
-
-        // total t
-        diff = INT32_DIFF(current_cnt, first_cnt);
-        if (diff > (arg->t *1000)) {
-            spisync_log("iperf %d-%d: type:%d %s %ld bps\r\n",
-                    first_cnt, current_cnt, arg->type,
-                    arg->name,
-                    (send_bytes*8)/((current_cnt - first_cnt)/1000));
+    // Send data packets
+    for (uint32_t i = 0; i < count; i++) {
+#if 0
+        /* Check memory availability before sending */
+        struct meminfo info;
+        qcc74x_mem_usage(KMEM_HEAP, &info);
+        spisync_trace("fs:%d, us:%d\r\n", info.free_size, info.used_size);
+        if (info.free_size < 50*1024) {
             break;
         }
-    }
-    vPortFree(arg);
-    vTaskDelete(NULL);
-}
+#endif
 
-int spisync_iperf_test(spisync_t *spisync, uint8_t tx_en, uint8_t type, uint32_t per, uint32_t t)
-{
-    spisync_iperf_t *arg;
-    const uint8_t *tx_str = "tx";
-    const uint8_t *rx_str = "rx";
-    int ret;
-
-    arg = pvPortMalloc(SPISYNC_PAYLOADBUF_LEN);
-    if (NULL == arg) {
-        return -1;
+        _build_msg(&msg, type, (uint32_t)buf, send_len, timeout);
+        int ret = spisync_write(g_spisync_current, &msg, 0);
+        if (ret <= 0) {
+            printf("spisync_write ret:%d, drop it.\r\n", ret);
+            if (msg.cb) {
+                msg.cb(msg.cb_arg);
+            }
+        }
     }
 
-    // update arg
-    arg->spisync = spisync;
-    if (tx_en) {
-        arg->name = tx_str;
-    } else {
-        arg->name = rx_str;
-    }
-    arg->type = type;
-    arg->per  = per;
-    arg->t    = t;
-
-    // creat task
-    if (tx_en) {
-        ret = xTaskCreate(task_spisync_iperf,
-                    (char*)"iperf_tx",
-                    4096/sizeof(StackType_t), arg,
-                    SPISYNC_TASK_PRI,
-                    NULL);
-    } else {
-        ret = xTaskCreate(task_spisync_iperf,
-                    (char*)"iperf_rx",
-                    4096/sizeof(StackType_t), arg,
-                    SPISYNC_TASK_PRI,
-                    NULL);
-    }
-    if (ret != pdPASS) {
-    	spisync_err("Failed to create spisync tx task, %ld\r\n", ret);
-        vPortFree(arg);
-	}
+    free(buf); // Free the allocated memory
 
     return 0;
 }
 
-// type period send&&recv test
-typedef struct _type_desc {
-    spisync_t *spisync;
-    uint32_t per;
-    uint32_t t;
-} spisync_type_t;
+SHELL_CMD_EXPORT_ALIAS(cmd_spisync_write, ss_write, ss_write [type 0-5] [str] [-s send_length] [-c count]);
 
-int task_spisync_type(void *par)
+int cmd_spisync_read(int argc, char **argv)
 {
-    spisync_type_t *arg = (spisync_type_t *)par;
+    int res;
+    spisync_msg_t msg;
+    uint8_t type;
+    uint32_t len = 1536; // Default buffer length is 2K
+    uint32_t timeout = 0; // Default timeout is 0
     uint8_t *buf;
-    uint32_t start_cnt, first_cnt, current_cnt;
-    int32_t diff;
-    int ret0, ret1, ret2, recv0, recv1, recv2;
 
-    if (NULL == arg) {
-        spisync_err("task arg error.\r\n");
-        return;
+    // gpt start
+    if (argc < 2) {
+        printf("ss_read [type 0-5]\r\neg:ss_read 0\r\n");
+        return -1; // Return if not enough arguments
     }
-    spisync_log("task_spisync_type, period:%d, timeout:%d\r\n", arg->per, arg->t);
 
-    buf = pvPortMalloc(SPISYNC_PAYLOADBUF_LEN);
-    if (NULL == buf) {
-        spisync_err("mem error.\r\n");
-        vPortFree(arg);
+    type = atoi(argv[1]);
+    if (type < 0 || type > 5) {
+        printf("Invalid type. Must be between 0 and 5.\r\n");
+        return -1; // Return if type is invalid
+    }
+
+    // build msg
+    buf = malloc(len);
+    if (!buf) {
+        printf("Memory allocation error.\r\n");
         return -1;
     }
 
-    start_cnt = xTaskGetTickCount();
-    first_cnt = start_cnt;
-    while (1) {
-        // per print
-        current_cnt = xTaskGetTickCount();
-        diff = INT32_DIFF(current_cnt, start_cnt);
-        if (diff >= (arg->per*1000)) {
-            start_cnt += (arg->per*1000);
+    // Prepare message
+    spisync_build_msg(&msg, type, (uint32_t)buf, len, timeout);
 
-            ret0 = 0;//spisync_write(arg->spisync, 0, buf, SPISYNC_PAYLOADBUF_LEN/2, 0);
-            ret1 = spisync_write(arg->spisync, 1, buf, SPISYNC_PAYLOADBUF_LEN/2, 0);
-            ret2 = spisync_write(arg->spisync, 2, buf, SPISYNC_PAYLOADBUF_LEN/2, 0);
-            recv0 = 0;//spisync_read(arg->spisync, 0, buf, SPISYNC_PAYLOADBUF_LEN, 0);
-            recv1 = spisync_read(arg->spisync, 1, buf, SPISYNC_PAYLOADBUF_LEN, 0);
-            recv2 = spisync_read(arg->spisync, 2, buf, SPISYNC_PAYLOADBUF_LEN, 0);
-            spisync_log("send:%d-%d-%d, recv:%d-%d-%d\r\n",
-                    ret0, ret1, ret2, recv0, recv1, recv2);
-        }
+    // gpt end
 
-        // total t
-        diff = INT32_DIFF(current_cnt, first_cnt);
-        if (diff > (arg->t *1000)) {
-            spisync_log("type test, send&&recv end.\r\n");
-            break;
-        }
-
-        vTaskDelay(100);
+    res = spisync_read(g_spisync_current, &msg, 0);
+    if (res < 0) {
+        printf("Error reading from SPI sync, res:%d\r\n", res);
+        free(buf);
+        return -1;
     }
-    vPortFree(arg);
-    vTaskDelete(NULL);
+
+    // Print the received data
+    if (res >  0) {
+        printf("recv len[%d]\r\n", msg.buf_len);
+#if 0
+        for (uint32_t i = 0; i < UINT32_MIN(len, msg.buf_len); i++) {
+            printf("%02x ", buf[i]);
+        }
+        printf("\r\n");
+#endif
+    }
+
+    free(buf); // Free allocated memory
+
+    return 0;
 }
+SHELL_CMD_EXPORT_ALIAS(cmd_spisync_read, ss_read, ss_read [type 0-5].);
 
-int spisync_type_test(spisync_t *spisync, uint32_t period, uint32_t t)
+int cmd_spisync_status(int argc, char **argv)
 {
-    spisync_type_t *arg;
-    int ret;
+    spisync_status_internal(g_spisync_current);
 
-    arg = pvPortMalloc(SPISYNC_PAYLOADBUF_LEN);
-    if (NULL == arg) {
-        spisync_err("mem error.\r\n");
+    return 0;
+}
+SHELL_CMD_EXPORT_ALIAS(cmd_spisync_status, ss_status, spisync status);
+
+int cmd_spisync_perf(int argc, char **argv)
+{
+    uint32_t timeout = 1000;// 100ms
+    if (argc < 3) {
+        printf("Usage: ss_perf [type 0-5] [-t duration] [-R for read] [-i interval] [-s packetsize]\r\n"
+                "eg: ss_perf 3 -t 10 -i 1 -s 1536\r\n"
+                "eg: ss_perf 0 -t 10 -i 1 -s 1536\r\n"
+                "eg: ss_perf 3 -t 10 -i 1 -R\r\n"
+                "eg: ss_perf 0 -t 10 -i 1 -R\r\n"
+                );
         return -1;
     }
 
-    arg->spisync = spisync;
-    arg->per = period;
-    arg->t = t;
-    ret = xTaskCreate(task_spisync_type,
-                (char*)"type_tc",
-                4096/sizeof(StackType_t), arg,
-                SPISYNC_TASK_PRI,
+    uint8_t type = atoi(argv[1]);
+    if (type < 0 || type > 5) {
+        printf("Invalid type. Must be between 0 and 5.\r\n");
+        return -1;
+    }
+
+    uint32_t duration = 10; // Default duration of 10 seconds
+    int is_read = 0;
+    uint32_t interval = 1; // Default interval of 1 second for printing throughput
+    uint32_t packet_size = 1536; // Default packet size for writing is 1K
+    uint32_t read_length = 1536; // Default read length is 2K
+
+    // Parse additional arguments
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
+            duration = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-R") == 0) {
+            is_read = 1;
+        } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
+            interval = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+            packet_size = atoi(argv[++i]);
+        }
+    }
+
+    uint8_t *buf = malloc(is_read ? read_length : packet_size);
+    if (!buf) {
+        printf("Memory allocation error.\r\n");
+        return -1;
+    }
+
+    // Initialize buffer with dummy data for write
+    if (!is_read) {
+        memset(buf, 'A', packet_size);
+    }
+
+    TickType_t start_time = xTaskGetTickCount();
+    uint32_t total_bytes = 0;
+
+    while ((xTaskGetTickCount() - start_time) / configTICK_RATE_HZ < duration) {
+        TickType_t current_time = xTaskGetTickCount();
+        uint32_t interval_bytes = 0;
+        TickType_t interval_start_time = current_time;
+
+        while ((xTaskGetTickCount() - interval_start_time) / configTICK_RATE_HZ < interval) {
+            spisync_msg_t msg;
+            int result;
+
+            spisync_build_msg(&msg, type, (uint32_t)buf, (is_read ? read_length : packet_size), timeout);
+
+            spisync_trace("[%d] 1packet_size:%d-%d, interval_bytes:%d, total_bytes:%d\r\n",
+                    xTaskGetTickCount(), packet_size, msg.buf_len, interval_bytes, total_bytes);
+            result = is_read ? spisync_read(g_spisync_current, &msg, 0) : spisync_write(g_spisync_current, &msg, 0);
+
+            spisync_trace("[%d] 2packet_size:%d-%d, res:%d, interval_bytes:%d, total_bytes:%d\r\n",
+                    xTaskGetTickCount(), packet_size, msg.buf_len, result, interval_bytes, total_bytes);
+            if (result < 0) {
+                printf("Error %s to SPI sync.\r\n", is_read ? "reading" : "writing");
+                free(buf);
+                return -1;
+            }
+
+            if (result > 0) {
+                interval_bytes += is_read ? read_length : packet_size;
+                total_bytes += is_read ? read_length : packet_size;
+            }
+            current_time = xTaskGetTickCount();
+        }
+
+        double elapsed_interval = (double)(xTaskGetTickCount() - interval_start_time) / configTICK_RATE_HZ;
+        uint32_t end_sec = (xTaskGetTickCount() - start_time) / configTICK_RATE_HZ;
+        uint32_t start_sec = end_sec - interval;
+        printf("Interval [%u-%u] sec: %.2f bytes/sec, %.2f bps\r\n", start_sec, end_sec, interval_bytes / elapsed_interval, (interval_bytes  / elapsed_interval) * 8);
+    }
+
+    double elapsed_time = (double)(xTaskGetTickCount() - start_time) / configTICK_RATE_HZ;
+    printf("Test completed in %.2f seconds.\r\n", elapsed_time);
+    printf("Total bytes %s: %u\r\n", is_read ? "read" : "written", total_bytes);
+    printf("Average throughput: %.2f bytes/sec, %.2f bps\r\n", total_bytes / elapsed_time, ((total_bytes / elapsed_time) * 8));
+
+    free(buf);
+    return 0;
+}
+SHELL_CMD_EXPORT_ALIAS(cmd_spisync_perf, ss_perf, ss_perf [type 0-5] [-t duration] [-R for read] [-i interval] [-s packetsize]);
+
+static uint16_t get_latest_txackseq(spisync_t *spisync)
+{
+    uint16_t latest = spisync->p_tx->slot[0].tag.ackseq;
+
+    for (uint32_t i = 1; i < SPISYNC_TXSLOT_COUNT; i++) {
+        if ((spisync->p_tx->slot[i].tag.ackseq > latest && (spisync->p_tx->slot[i].tag.ackseq - latest) <= CALC_ACKSEQ_THRESHOLD) ||
+            (spisync->p_tx->slot[i].tag.ackseq < latest && (latest - spisync->p_tx->slot[i].tag.ackseq) > CALC_ACKSEQ_THRESHOLD)) {
+            latest = spisync->p_tx->slot[i].tag.ackseq;
+        }
+    }
+
+    return latest;
+}
+void iperf_async_task(void *arg)
+{
+    uint32_t timeout = 1000;// 100ms
+
+    uint8_t type = 3;
+    if (type < 0 || type > 5) {
+        printf("Invalid type. Must be between 0 and 5.\r\n");
+        return -1;
+    }
+
+    uint32_t duration = 10; // Default duration of 10 seconds
+    int is_read = 0;
+    uint32_t interval = 1; // Default interval of 1 second for printing throughput
+    uint32_t packet_size = 1536; // Default packet size for writing is 1K
+    uint32_t read_length = 1536; // Default read length is 2K
+
+    // Parse additional arguments
+    type = 3;// ===============================
+    duration = 3600;// ===============================
+    is_read = 1;// ===============================
+    interval = 1;// ===============================
+
+    uint8_t *buf = malloc(is_read ? read_length : packet_size);
+    if (!buf) {
+        printf("Memory allocation error.\r\n");
+        return -1;
+    }
+
+    // Initialize buffer with dummy data for write
+    if (!is_read) {
+        memset(buf, 'A', packet_size);
+    }
+
+    TickType_t start_time = xTaskGetTickCount();
+    uint32_t total_bytes = 0;
+
+    while ((xTaskGetTickCount() - start_time) / configTICK_RATE_HZ < duration) {
+        TickType_t current_time = xTaskGetTickCount();
+        uint32_t interval_bytes = 0;
+        TickType_t interval_start_time = current_time;
+
+        while ((xTaskGetTickCount() - interval_start_time) / configTICK_RATE_HZ < interval) {
+            spisync_msg_t msg;
+            int result;
+
+            spisync_build_msg(&msg, type, (uint32_t)buf, (is_read ? read_length : packet_size), timeout);
+
+            spisync_trace("[%d] 1packet_size:%d-%d, interval_bytes:%d, total_bytes:%d\r\n",
+                    xTaskGetTickCount(), packet_size, msg.buf_len, interval_bytes, total_bytes);
+            result = is_read ? spisync_read(g_spisync_current, &msg, 0) : spisync_write(g_spisync_current, &msg, 0);
+
+            spisync_trace("[%d] 2packet_size:%d-%d, res:%d, interval_bytes:%d, total_bytes:%d\r\n",
+                    xTaskGetTickCount(), packet_size, msg.buf_len, result, interval_bytes, total_bytes);
+            if (result < 0) {
+                printf("Error %s to SPI sync.\r\n", is_read ? "reading" : "writing");
+                free(buf);
+                return -1;
+            }
+
+            if (result > 0) {
+                interval_bytes += is_read ? read_length : packet_size;
+                total_bytes += is_read ? read_length : packet_size;
+            }
+            current_time = xTaskGetTickCount();
+        }
+
+        double elapsed_interval = (double)(xTaskGetTickCount() - interval_start_time) / configTICK_RATE_HZ;
+        uint32_t end_sec = (xTaskGetTickCount() - start_time) / configTICK_RATE_HZ;
+        uint32_t start_sec = end_sec - interval;
+        //printf("Interval [%u-%u] sec: %.2f bytes/sec, %.2f bps\r\n", start_sec, end_sec, interval_bytes / elapsed_interval, (interval_bytes  / elapsed_interval) * 8);
+        spisync_t *spisync = g_spisync_current;
+#if 0
+        printf("%.1f, %d-%d-%d-%d  %d\r\n",
+                (interval_bytes  / elapsed_interval) * 8,
+                spisync->p_rx->slot[0].tag.seq,
+                spisync->p_rx->slot[1].tag.seq,
+                spisync->p_rx->slot[2].tag.seq,
+                spisync->p_rx->slot[3].tag.seq,
+                get_latest_txackseq(spisync)
+                );
+#else
+        {
+            uint16_t seq[16];
+            float tp = (interval_bytes  / elapsed_interval) * 8;
+            seq[0] = spisync->p_rx->slot[0].tag.seq;
+            seq[1] = spisync->p_rx->slot[1].tag.seq;
+            seq[2] = spisync->p_rx->slot[2].tag.seq;
+            seq[3] = spisync->p_rx->slot[3].tag.seq;
+            seq[4] = spisync->p_rx->slot[4].tag.seq;
+            seq[5] = spisync->p_rx->slot[5].tag.seq;
+            seq[6] = spisync->p_rx->slot[6].tag.seq;
+            seq[7] = spisync->p_rx->slot[7].tag.seq;
+            seq[8] = get_latest_txackseq(spisync);
+
+            printf("%.1f, %d-%d-%d-%d-%d-%d-%d-%d  %d\r\n",
+                tp, seq[0], seq[1], seq[2], seq[3], seq[4], seq[5], seq[6], seq[7], seq[8]
+                );
+        }
+#endif
+    }
+
+    double elapsed_time = (double)(xTaskGetTickCount() - start_time) / configTICK_RATE_HZ;
+    printf("Test completed in %.2f seconds.\r\n", elapsed_time);
+    printf("Total bytes %s: %u\r\n", is_read ? "read" : "written", total_bytes);
+    printf("Average throughput: %.2f bytes/sec, %.2f bps\r\n", total_bytes / elapsed_time, ((total_bytes / elapsed_time) * 8));
+
+    free(buf);
+    vTaskDelete(NULL);
+    return 0;
+}
+#define SSPERF_STACK_SIZE (8192)
+#define SSPERF_TASK_PRI   (30)
+int cmd_spisync_perf2(int argc, char **argv)
+{
+    int ret;
+    ret = xTaskCreate(iperf_async_task,
+                (char*)"perf async",
+                SSPERF_STACK_SIZE/sizeof(StackType_t), NULL,
+                SSPERF_TASK_PRI,
                 NULL);
     if (ret != pdPASS) {
-    	spisync_err("Failed to create spisync tx task, %ld\r\n", ret);
-        vPortFree(arg);
-	}
+        printf("failed to create spisync task, %ld\r\n", ret);
+    }
 }
+SHELL_CMD_EXPORT_ALIAS(cmd_spisync_perf2, ss_async, ss_perf2 [type 0-5] [-t duration] [-R for read] [-i interval] [-s packetsize]);
+
+int cmd_spisync_echo(int argc, char **argv)
+{
+    int res;
+    uint32_t timeout = 100; // 100 ms
+
+    if (argc < 2) {
+        printf("Usage: ss_echo [type 0-5] [-t time_s] [-c for continuous]\r\neg: ss_echo 0 -t 5000\r\n");
+        return -1;
+    }
+
+    uint8_t type = atoi(argv[1]);
+    if (type < 0 || type > 5) {
+        printf("Invalid type. Must be between 0 and 5.\r\n");
+        return -1;
+    }
+
+    uint32_t time_limit = 10*1000; // Default to 10 seconds
+    int continuous = 0;
+
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
+            time_limit = atoi(argv[++i]) * 1000;
+        } else if (strcmp(argv[i], "-c") == 0) {
+            continuous = 1;
+            time_limit = portMAX_DELAY; // Set to no time limit
+        }
+    }
+
+    uint32_t buffer_size = 2048; // Echo buffer size
+    uint8_t *buf = malloc(buffer_size);
+    if (!buf) {
+        printf("Memory allocation error.\r\n");
+        return -1;
+    }
+
+    TickType_t start_time = xTaskGetTickCount();
+    TickType_t end_time = start_time + time_limit;
+
+    while (continuous || xTaskGetTickCount() < end_time) {
+        spisync_msg_t msg;
+        spisync_build_msg(&msg, type, (uint32_t)buf, buffer_size, timeout);
+
+        // Receive data
+        res = spisync_read(g_spisync_current, &msg, 0);
+        if (res < 0) {
+            continue;
+        }
+        spisync_trace("====> read[%d] res:%d\r\n", msg.buf_len, res);
+
+        // Echo back the received data
+        res = spisync_write(g_spisync_current, &msg, 0);
+        spisync_trace("----> write[%d] res:%d\r\n", msg.buf_len, res);
+    }
+
+    free(buf);
+    return 0;
+}
+SHELL_CMD_EXPORT_ALIAS(cmd_spisync_echo, ss_echo, ss_echo [type 0-5] [-t time_s] [-c for continuous]);
 

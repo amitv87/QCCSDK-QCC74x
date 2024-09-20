@@ -275,7 +275,6 @@ extern int * __errno(void);
 #define LWIP_NETIF_TX_SINGLE_PBUF       1
 #endif
 #define LWIP_RAND() ((u32_t)rand())
-#define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) u8_t variable_name[size] __ALIGN4 __SHAREDRAM
 
 #ifdef CONFIG_WIFI_GATEWAY
 #ifdef WIFI_GATEWAY_DNS_SERVER

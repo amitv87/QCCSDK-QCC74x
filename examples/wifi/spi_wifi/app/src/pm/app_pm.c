@@ -312,17 +312,17 @@ static void lp_io_wakeup_callback(uint64_t wake_up_io_bits)
     //}
 
     //call resume spi
-    spisync_wakeup(NULL);
+    spisync_ps_wakeup(NULL);
 }
 
 static qcc74x_lp_io_cfg_t lp_wake_io_cfg = {
-    .io_20_34_ie = QCC74x_LP_IO_INPUT_ENABLE,
+    .io_16_ie = QCC74x_LP_IO_INPUT_ENABLE,
 };
 
 int lp_set_wakeup_by_io(uint8_t io, uint8_t mode)
 {
-    if (io <28 || io > 29) {
-        printf("only support gpio 28, 29 now.\r\n");
+    if (io != 16) {
+        printf("only support gpio 16.\r\n");
         return -1;
     }
     
@@ -332,9 +332,9 @@ int lp_set_wakeup_by_io(uint8_t io, uint8_t mode)
     } 
 
     if (mode == 0) {
-        lp_wake_io_cfg.io_28_34_pds_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_HIGH_LEVEL;
+        lp_wake_io_cfg.io_16_19_aon_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_HIGH_LEVEL;
     } else if (mode == 1) {
-        lp_wake_io_cfg.io_28_34_pds_trig_mode = QCC74x_LP_AON_IO_TRIG_SYNC_RISING_FALLING_EDGE;
+        lp_wake_io_cfg.io_16_19_aon_trig_mode = QCC74x_LP_AON_IO_TRIG_SYNC_RISING_FALLING_EDGE;
     } else {
     }
 
@@ -345,7 +345,7 @@ int lp_set_wakeup_by_io(uint8_t io, uint8_t mode)
     }
 #endif
 
-    lp_wake_io_cfg.io_20_34_res = QCC74x_LP_IO_RES_PULL_DOWN;
+    lp_wake_io_cfg.io_16_res = QCC74x_LP_IO_RES_PULL_DOWN;
 
     lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << io);
 
@@ -368,11 +368,42 @@ int lp_delete_wakeup_by_io(uint8_t io)
     return 0;
 }
 
+void modify_bit(uint32_t *reg_addr, uint8_t bit_position, uint8_t bit_value) {
+    if (bit_value) {
+        *reg_addr |= (1U << bit_position);
+    } else {
+        *reg_addr &= ~(1U << bit_position);
+    }
+}
+
+void write_register(uint32_t *reg_addr, uint32_t value) {
+    *reg_addr = value;
+}
+
+static void cmd_32k_output(int argc, char **argv)
+{
+    modify_bit(0x2000F204, 22, 0x1);
+    write_register(0x200002E8, 0x4000);
+    write_register(0x200002F0, 0x1);
+    write_register(0x20000930, 0x40000F02);
+}
+
 SHELL_CMD_EXPORT_ALIAS(cmd_tickless, tickless, cmd tickless);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_lp, wifi_lp_test, wifi low power test);
 SHELL_CMD_EXPORT_ALIAS(test_tcp_keepalive, lpfw_tcp_keepalive, tcp keepalive test);
 SHELL_CMD_EXPORT_ALIAS(cmd_io_dbg, io_debug, cmd io_debug);
+SHELL_CMD_EXPORT_ALIAS(cmd_32k_output, output_32k, cmd 32k output);
 #endif
+
+static void xtal32k_input(void)
+{
+    modify_bit(0x2000F204, 19, 0x1);
+    modify_bit(0x2000F204, 21, 0x1);
+    modify_bit(0x2000F204, 2, 0x1);
+    modify_bit(0x2000F204, 10, 0);
+    modify_bit(0x2000F204, 9, 0);
+    modify_bit(0x2000F204, 17, 0x0);
+}
 
 static TaskHandle_t rc32k_coarse_trim_task_hd = NULL;
 static TaskHandle_t xtal32k_check_entry_task_hd = NULL;
@@ -502,14 +533,21 @@ static void xtal32k_check_entry_task(void *pvParameters)
         .drive = 1,
         .smtCtrl = 1
     };
+
+#ifndef CFG_ACTIVE_CRYSTAL
     gpioCfg.gpioPin = 16;
     GLB_GPIO_Init(&gpioCfg);
+#endif
     gpioCfg.gpioPin = 17;
     GLB_GPIO_Init(&gpioCfg);
 
+#ifndef CFG_ACTIVE_CRYSTAL
     /* power on */
     HBN_Set_Xtal_32K_Inverter_Amplify_Strength(3);
     HBN_Power_On_Xtal_32K();
+#else    
+    xtal32k_input();
+#endif
 
     timeout_start = qcc74x_mtimer_get_time_us();
 
@@ -624,7 +662,7 @@ void timerCallback(TimerHandle_t xTimer)
     //if (wifi_mgmr_sta_state_get()) {
     //    wifi_mgmr_sta_ps_exit();
     //}
-    spisync_wakeup(NULL);
+    spisync_ps_wakeup(NULL);
 }
 
 void createAndStartTimer(const char* timerName, TickType_t timerPeriod)

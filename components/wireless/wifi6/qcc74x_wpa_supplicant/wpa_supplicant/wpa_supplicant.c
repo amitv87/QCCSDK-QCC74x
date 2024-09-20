@@ -1631,7 +1631,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using KEY_MGMT FT/SAE");
 	} else if (sel & WPA_KEY_MGMT_SAE) {
 #ifdef CONFIG_EXTRA_WPA_SSID_FLAG
-        if ((ssid->bl_flags & FHOST_WPA_SSID_PREFER_WPA2_TO_WPA3) &&
+        if ((ssid->qcc74x_flags & FHOST_WPA_SSID_PREFER_WPA2_TO_WPA3) &&
                 (sel & (WPA_KEY_MGMT_PSK_SHA256 | WPA_KEY_MGMT_PSK))) {
             if (sel & WPA_KEY_MGMT_PSK_SHA256) {
                 wpa_s->key_mgmt = WPA_KEY_MGMT_PSK_SHA256;

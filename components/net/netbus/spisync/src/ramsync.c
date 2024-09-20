@@ -47,7 +47,7 @@ static ATTR_TCM_SECTION void _spi_dma_tx_irq(void *p_arg)
     }
 }
 
-static void _spi_hw_init(const spisync_config_t *config)
+static void _spi_hw_init(const spisync_hw_t *config)
 {
     struct qcc74x_device_s *spi_dev;
     struct qcc74x_spi_config_s spi_cfg = {
@@ -109,6 +109,35 @@ static void _spi_dma_init(lramsync_ctx_t *ctx)
     qcc74x_irq_enable(((struct qcc74x_device_s *)(ctx->dma_tx_chan))->irq_num);
     //qcc74x_dma_channel_irq_attach(ctx->dma_rx_chan, _spi_dma_rx_irq, (void *)ctx);
 
+#if 1
+    tx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_tx);
+    rx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_rx);
+    for (int i = 0; i < ctx->items_tx; i++) {
+        tx_transfers[i].src_addr = (uint32_t)ctx->node_tx[i].buf;
+        tx_transfers[i].dst_addr = (uint32_t)ctx->config->spi_dma_tdr;
+        tx_transfers[i].nbytes = ctx->node_tx[i].len;
+    }
+    for (int i = 0; i < ctx->items_rx; i++) {
+        rx_transfers[i].src_addr = (uint32_t)ctx->config->spi_dma_rdr;
+        rx_transfers[i].dst_addr = (uint32_t)ctx->node_rx[i].buf;
+        rx_transfers[i].nbytes = ctx->node_rx[i].len;
+    }
+
+    int used_count = qcc74x_dma_channel_lli_reload(ctx->dma_tx_chan,
+                                                 ((struct _ramsync_low_priv *)ctx->priv)->tx_lli,
+                                                 ctx->items_tx,
+                                                 tx_transfers,
+                                                 ctx->items_tx);
+    qcc74x_dma_channel_lli_link_head(ctx->dma_tx_chan,
+                                   ((struct _ramsync_low_priv *)ctx->priv)->tx_lli,
+                                   used_count);
+
+    used_count = qcc74x_dma_channel_lli_reload(ctx->dma_rx_chan,
+                                             ((struct _ramsync_low_priv *)ctx->priv)->rx_lli,
+                                             ctx->items_rx,
+                                             rx_transfers,
+                                             ctx->items_rx);
+#else
     tx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_tx / 2);
     rx_transfers = rsl_malloc(sizeof(struct qcc74x_dma_channel_lli_transfer_s) * ctx->items_rx / 2);
     for (int i = 0; i < ctx->items_tx / 2; i++) {
@@ -136,6 +165,7 @@ static void _spi_dma_init(lramsync_ctx_t *ctx)
                                              ctx->items_rx,
                                              rx_transfers,
                                              ctx->items_rx / 2);
+#endif
     qcc74x_dma_channel_lli_link_head(ctx->dma_rx_chan,
                                    ((struct _ramsync_low_priv *)ctx->priv)->rx_lli,
                                    used_count);
@@ -196,9 +226,6 @@ int lramsync_reset(lramsync_ctx_t *ctx)
     qcc74x_dma_channel_stop(ctx->dma_tx_chan);
     qcc74x_dma_channel_stop(ctx->dma_rx_chan);
 
-    if (ctx->reset_signal_cb) {
-        ctx->reset_signal_cb(ctx->reset_signal_arg);
-    }
     GLB_AHB_MCU_Software_Reset(GLB_AHB_MCU_SW_SPI);
 
     spi_dev = qcc74x_device_get_by_name(ctx->config->spi_name);
@@ -246,7 +273,7 @@ int lramsync_deinit(lramsync_ctx_t *ctx)
 }
 
 int lramsync_init(
-        const spisync_config_t *config,
+        const spisync_hw_t *config,
         lramsync_ctx_t *ctx,
         node_mem_t *node_tx, uint32_t items_tx,
         lramsync_cb_func_t tx_cb, void *tx_arg,
@@ -327,3 +354,59 @@ rsl_init_err:
     }
     return -1;
 }
+
+int lramsync_dump(lramsync_ctx_t *ctx)
+{
+    struct _ramsync_low_priv *priv = NULL;
+    int i;
+    struct qcc74x_dma_channel_lli_pool_s *node;
+
+    priv = (struct _ramsync_low_priv *)ctx->priv;
+    if ((NULL == ctx) || (NULL == ctx->priv)) {
+        return -1;
+    }
+
+    // printf node config
+    for(i = 0; i < ctx->items_tx; i++) {
+        node = (struct qcc74x_dma_channel_lli_pool_s *)priv->tx_lli;
+        printf("tx[%d] src:0x%08X, dst:0x%08X, next:0x%08X, ctl:0x%08X\r\n",
+                i, node[i].src_addr, node[i].dst_addr, node[i].dst_addr, node[i].control.WORD);
+    }
+    for(i = 0; i < ctx->items_rx; i++) {
+        node = (struct qcc74x_dma_channel_lli_pool_s *)priv->rx_lli;
+        printf("rx[%d] src:0x%08X, dst:0x%08X, next:0x%08X, ctl:0x%08X\r\n",
+                i, node[i].src_addr, node[i].dst_addr, node[i].dst_addr, node[i].control.WORD);
+    }
+
+    // printf reg value
+    printf("dma-ch0 tx src:0x%08X, dst:0x%08X, tfsize:0x%08X-%d\r\n",
+            *(uint32_t *)0x2000C100, *(uint32_t *)0x2000C104, *(uint32_t *)0x2000C10C, ((*(uint32_t *)0x2000C10C)&4095));
+    printf("dma-ch1 rx src:0x%08X, dst:0x%08X, tfsize:0x%08X-%d\r\n",
+            *(uint32_t *)0x2000C200, *(uint32_t *)0x2000C204, *(uint32_t *)0x2000C20C, ((*(uint32_t *)0x2000C20C)&4095));
+    // Memory can store up to 4+32Bytes of data in shift registers and FIFO, spirxfifo 32Bytes, spitxfifo 32Bytes
+    printf("spi cfg0-0x2000A280:0x%08X, cfg1-0x2000A284:0x%08X fifo_available_Bytes rx:%d-tx:%d\r\n",
+            *(uint32_t *)0x2000A280,
+            *(uint32_t *)0x2000A284, (*(uint32_t *)0x2000A284)&0x3F00,  (*(uint32_t *)0x2000A284)&0x3F);
+
+    return 0;
+}
+
+int lramsync_get_info(lramsync_ctx_t *ctx, uint32_t *start_addr, uint32_t *curr_addr)
+{
+    struct _ramsync_low_priv *priv = NULL;
+    struct qcc74x_dma_channel_lli_pool_s *node;
+
+    priv = (struct _ramsync_low_priv *)ctx->priv;
+    node = (struct qcc74x_dma_channel_lli_pool_s *)priv->tx_lli;
+
+    if (start_addr) {
+        *start_addr = node[0].src_addr;
+    }
+
+    if (curr_addr) {
+        *curr_addr = (*(volatile uint32_t *)0x2000C100);
+    }
+
+    return 0;
+}
+

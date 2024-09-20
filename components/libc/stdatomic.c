@@ -13,6 +13,7 @@
 // limitations under the License.
 
 //replacement for gcc built-in functions
+#pragma GCC diagnostic ignored "-Wbuiltin-declaration-mismatch"
 #include <stdbool.h>
 #include <stdint.h>
 

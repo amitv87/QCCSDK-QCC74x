@@ -2,7 +2,7 @@
 #include "qcc74x_l1c.h"
 #include "hardware/platform_dma_reg.h"
 
-struct qcc74x_platform_dma_env_tag dma_env;
+static struct qcc74x_platform_dma_env_tag dma_env;
 
 void qcc74x_platform_dma_init(struct qcc74x_device_s *dev)
 {

@@ -12,7 +12,6 @@
 #include "qcc74x_irq.h"
 #include "qcc74x_uart.h"
 #include "qcc743_glb.h"
-#include "qcc74x_romfs.h"
 
 #include "rfparam_adapter.h"
 
@@ -48,9 +47,6 @@ int app_uartwifi_init(void)
     /* Enable easyflash(littlefs) */
     qcc74x_mtd_init();
     easyflash_init();
- 
-    /* romsfs init mount use media factory*/
-    romfs_mount(0x378000);
 
     /* AT moudle start */
     app_atmoudle_init();

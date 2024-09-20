@@ -4,10 +4,10 @@ add_subdirectory(wifi6_lwip_adapter)
 add_subdirectory(qcc74x_os_adapter)
 
 # Enable common section for wifi6
-sdk_add_compile_options(-fcommon)
+# sdk_add_compile_options(-fcommon)
 
 # disable undef warning
-sdk_add_compile_options(-Wno-undef)
+# sdk_add_compile_options(-Wno-undef)
 
 sdk_add_compile_definitions(-DCFG_RTOS)
 sdk_add_compile_definitions(-DCFG_FHOST)
@@ -76,3 +76,5 @@ sdk_add_compile_definitions(-DCONFIG_COEX_WIFI_MODE=${CONFIG_COEX_WIFI_MODE})
 else()
 sdk_add_compile_definitions(-DCONFIG_COEX_WIFI_MODE=0)
 endif()
+
+sdk_add_compile_definitions(-DCONFIG_UNSINGLE_MAC_ADDR)

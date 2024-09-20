@@ -46,7 +46,7 @@
 static struct bt_gatt_service server_svcs[SERVER_MAX_SERVICES];
 static struct bt_gatt_attr server_db[SERVER_MAX_ATTRIBUTES];
 static struct net_buf *server_buf;
-
+static struct bt_gatt_attr *db_attr = NULL;
 static uint8_t ccc_value;
 
 static dynamic_gatt_wr_callbck_func_t read_callback=NULL;
@@ -128,16 +128,16 @@ static void gatt_buf_clear(void)
 	(void)memset(&gatt_buf, 0, sizeof(gatt_buf));
 }
 
+
 static struct bt_gatt_attr *gatt_db_add(const struct bt_gatt_attr *pattern,
 					size_t user_data_len)
 {
-	static struct bt_gatt_attr *attr = server_db;
 	const union uuid *u = CONTAINER_OF(pattern->uuid, union uuid, uuid);
 	size_t uuid_size = u->uuid.type == BT_UUID_TYPE_16 ? sizeof(u->u16) :
 							     sizeof(u->u128);
 
 	/* Return NULL if database is full */
-	if (attr == &server_db[SERVER_MAX_ATTRIBUTES - 1]) {
+	if (db_attr == &server_db[SERVER_MAX_ATTRIBUTES - 1]) {
 		return NULL;
 	}
 
@@ -146,22 +146,24 @@ static struct bt_gatt_attr *gatt_db_add(const struct bt_gatt_attr *pattern,
 		return NULL;
 	}
 
-	memcpy(attr, pattern, sizeof(*attr));
+	memcpy(db_attr, pattern, sizeof(*db_attr));
 
 	/* Store the UUID. */
-	attr->uuid = server_buf_push(uuid_size);
-	memcpy((void *) attr->uuid, &u->uuid, uuid_size);
+	db_attr->uuid = server_buf_push(uuid_size);
+	memcpy((void *) db_attr->uuid, &u->uuid, uuid_size);
+	BT_DBG("attr %p handle 0x%04x uuid %s",
+		       db_attr, db_attr->handle, bt_uuid_str(db_attr->uuid));
 	/* Copy user_data to the buffer. */
 	if (user_data_len) {
-		attr->user_data = server_buf_push(user_data_len);
-		memcpy(attr->user_data, pattern->user_data, user_data_len);
+		db_attr->user_data = server_buf_push(user_data_len);
+		memcpy(db_attr->user_data, pattern->user_data, user_data_len);
 	}
 
-	BT_DBG("handle 0x%04x", attr->handle);
+	BT_DBG("handle 0x%04x", db_attr->handle);
 
 	attr_count++;
 	svc_attr_count++;
-	return attr++;
+	return db_attr++;
 }
 
 static int register_service(void)
@@ -191,6 +193,9 @@ int ble_dynamic_unregister_service(void)
 	if (!err) {
 		attr_count = 0U;
 		svc_count = 0U;
+		memset(&server_svcs[0],0,sizeof(struct bt_gatt_service)*SERVER_MAX_SERVICES);
+		memset(&server_db[0],0,sizeof(struct bt_gatt_attr)*SERVER_MAX_ATTRIBUTES);
+		db_attr = server_db;
 		server_buf_pull(SERVER_BUF_SIZE);
 
 	}
@@ -556,6 +561,8 @@ void ble_dynamic_gatt_server_init(void)
 	server_buf = net_buf_alloc(&dynamic_gatt_pool, K_NO_WAIT);
 
 	net_buf_reserve(server_buf, SERVER_BUF_SIZE);
+	db_attr = server_db;
+
 }
 
 void ble_dynamic_gatt_server_deinit(void)

@@ -9,6 +9,8 @@
 #include "timers.h"
 
 #include <qcc74x_efuse.h>
+#include <qcc74x_sec_trng.h>
+#include <qcc743_mfg_media.h>
 
 #ifdef LP_APP
 #include "qcc74x_lp.h"

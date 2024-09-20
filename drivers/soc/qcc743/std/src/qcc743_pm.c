@@ -809,6 +809,12 @@ ATTR_TCM_SECTION void pm_hbn_mode_enter(enum pm_hbn_sleep_level hbn_level,
     /* To make it simple and safe*/
     __ASM volatile("csrc mstatus, 8");
 
+    /* Must Disable ADC, Otherwise, the current increase 1mA  */
+    /* adc disable */
+    tmpVal = QCC74x_RD_REG(AON_BASE, AON_GPADC_REG_CMD);
+    tmpVal = QCC74x_CLR_REG_BIT(tmpVal, AON_GPADC_GLOBAL_EN);
+    QCC74x_WR_REG(AON_BASE, AON_GPADC_REG_CMD, tmpVal);
+
     qcc74x_irq_clear_pending(HBN_OUT0_IRQn);
     qcc74x_irq_clear_pending(HBN_OUT1_IRQn);
 
@@ -878,7 +884,6 @@ ATTR_TCM_SECTION void pm_hbn_mode_enter(enum pm_hbn_sleep_level hbn_level,
     QCC74x_WR_REG(HBN_BASE, HBN_IRQ_CLR, 0);
 
     /* Enable HBN mode */
-    tmpVal = QCC74x_RD_REG(HBN_BASE, HBN_CTL);
     tmpVal = QCC74x_SET_REG_BIT(tmpVal, HBN_MODE);
     QCC74x_WR_REG(HBN_BASE, HBN_CTL, tmpVal);
 

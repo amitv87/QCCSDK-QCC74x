@@ -18,11 +18,17 @@
 
 //#include <hosal_rng.h>
 
-#include "mbedtls/config.h"
+#if !defined(MBEDTLS_CONFIG_FILE)
+#include "mbedtls/config.h" 
+#else 
+#include MBEDTLS_CONFIG_FILE 
+#endif
+
 #include "mbedtls/debug.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/net.h"
+#include "at_net_ssl.h"
 
 #define AT_NET_SSL_PRINTF printf
 
@@ -35,35 +41,6 @@
 #endif
 
 #define MBEDTLS_DEBUG_LEVEL 3
-
-typedef struct {
-    int ssl_inited;
-    mbedtls_net_context net;
-    mbedtls_x509_crt ca_cert;
-    mbedtls_x509_crt owncert;
-    mbedtls_ssl_config conf;
-    mbedtls_ssl_context ssl;
-    mbedtls_pk_context pkey;
-} ssl_param_t;
-
-
-#if defined(MBEDTLS_PLATFORM_MEMORY)
-static void *ssl_calloc(size_t n, size_t size)
-{
-    void *p = pvPortMalloc(n*size);
-    if (p == NULL)
-        return NULL;
-
-    memset(p, 0, n*size);
-    return p;
-}
-
-static void ssl_free(void *ptr)
-{
-    if (ptr)
-        vPortFree(ptr);
-}
-#endif
 
 #if defined(MBEDTLS_THREADING_ALT)
 static void ssl_mutex_init(mbedtls_threading_mutex_t *mutex)
@@ -121,6 +98,29 @@ static void ssl_debug(void *ctx, int level, const char *file, int line, const ch
 }
 #endif
 
+static int net_would_block(const mbedtls_net_context *ctx)
+{
+    int err = errno;
+
+    // Never return 'WOULD BLOCK' on a non-blocking socket
+    if( ( fcntl( ctx->fd, F_GETFL, 0) & O_NONBLOCK ) != O_NONBLOCK ) {
+        errno = err;
+        return( 0 );
+    }
+
+    switch( errno = err )                                                                                                                                                                              
+    {
+#if defined EAGAIN
+        case EAGAIN:
+#endif
+#if defined EWOULDBLOCK && EWOULDBLOCK != EAGAIN
+        case EWOULDBLOCK:
+#endif
+            return( 1 );
+    }
+    return( 0 );
+}
+
 static int ssl_recv(void *ctx, unsigned char *buf, size_t len)
 {
     int ret;
@@ -142,6 +142,9 @@ static int ssl_recv(void *ctx, unsigned char *buf, size_t len)
             return (MBEDTLS_ERR_SSL_WANT_READ);
         }
 
+        if( net_would_block(ctx) != 0 ) {
+            return (MBEDTLS_ERR_SSL_WANT_READ);
+        }
         AT_NET_SSL_PRINTF("[MBEDTLS] ssl recv failed - errno: %d\r\n", errno);
         return (MBEDTLS_ERR_NET_RECV_FAILED);
     }
@@ -165,16 +168,11 @@ static int ssl_send( void *ctx, const unsigned char *buf, size_t len )
     return ret;
 }
 
-void *mbedtls_ssl_connect(int linkid, int fd, const char *ca_cert, int ca_cert_len, 
-					 const char *own_cert, int own_cert_len, const char *private_cert, int private_cert_len)
+void *mbedtls_ssl_connect(int fd, const ssl_conn_param_t *param)
 {
     int ret;
     uint32_t result;
     ssl_param_t *ssl_param = NULL;
-
-#if defined(MBEDTLS_PLATFORM_MEMORY)
-    mbedtls_platform_set_calloc_free(ssl_calloc, ssl_free);
-#endif
 
 #if defined(MBEDTLS_DEBUG_C)
     mbedtls_debug_set_threshold(MBEDTLS_DEBUG_LEVEL);
@@ -201,36 +199,36 @@ void *mbedtls_ssl_connect(int linkid, int fd, const char *ca_cert, int ca_cert_l
     ssl_param->net.fd = fd;
     mbedtls_ssl_config_init(&ssl_param->conf);
     mbedtls_ssl_init(&ssl_param->ssl);
-    if (ca_cert && ca_cert_len > 0)
+    if (param->ca_cert && param->ca_cert_len > 0)
         mbedtls_x509_crt_init(&ssl_param->ca_cert);
-    if(own_cert && own_cert_len > 0)
+    if(param->own_cert && param->own_cert_len > 0)
         mbedtls_x509_crt_init(&ssl_param->owncert);
-    if(private_cert && private_cert_len > 0)
+    if(param->private_cert && param->private_cert_len > 0)
         mbedtls_pk_init(&ssl_param->pkey);
 
     /*
     * Initialize certificates
     */
     AT_NET_SSL_PRINTF("[MBEDTLS] Loading the CA root certificate ... \r\n");
-    if (ca_cert && ca_cert_len > 0)  {
+    if (param->ca_cert && param->ca_cert_len > 0)  {
         AT_NET_SSL_PRINTF("[MBEDTLS] Loading the rsa\r\n");
-        ret = mbedtls_x509_crt_parse(&ssl_param->ca_cert, (unsigned char *)ca_cert, (size_t)ca_cert_len);
+        ret = mbedtls_x509_crt_parse(&ssl_param->ca_cert, (unsigned char *)param->ca_cert, (size_t)param->ca_cert_len);
         if (ret < 0) {
             AT_NET_SSL_PRINTF("[MBEDTLS] ssl connect: root parse failed- 0x%x\r\n", -ret);
             goto ERROR;
         } 
     }
 
-    if (own_cert && own_cert_len > 0) {
-        ret = mbedtls_x509_crt_parse(&ssl_param->owncert, (unsigned char *)own_cert, (size_t)own_cert_len);
+    if (param->own_cert && param->own_cert_len > 0) {
+        ret = mbedtls_x509_crt_parse(&ssl_param->owncert, (unsigned char *)param->own_cert, (size_t)param->own_cert_len);
         if (ret < 0) {
             AT_NET_SSL_PRINTF("[MBEDTLS] ssl connect: x509 parse failed- 0x%x\r\n", -ret);
             goto ERROR;
         }
     }
 
-    if (private_cert && private_cert_len > 0) {
-        ret = mbedtls_pk_parse_key(&ssl_param->pkey, (unsigned char *)private_cert, private_cert_len, NULL, 0);
+    if (param->private_cert && param->private_cert_len > 0) {
+        ret = mbedtls_pk_parse_key(&ssl_param->pkey, (unsigned char *)param->private_cert, param->private_cert_len, NULL, 0);
         if (ret != 0) {
             AT_NET_SSL_PRINTF("[MBEDTLS] ssl connect: x509 parse failed- 0x%x\r\n", -ret);
             goto ERROR;
@@ -247,14 +245,14 @@ void *mbedtls_ssl_connect(int linkid, int fd, const char *ca_cert, int ca_cert_l
         goto ERROR;
     }
 
-    if (ca_cert && ca_cert_len > 0) {
+    if (param->ca_cert && param->ca_cert_len > 0) {
         mbedtls_ssl_conf_authmode(&ssl_param->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
         mbedtls_ssl_conf_ca_chain(&ssl_param->conf, &ssl_param->ca_cert, NULL);
     } else {
         mbedtls_ssl_conf_authmode(&ssl_param->conf, MBEDTLS_SSL_VERIFY_NONE);
     }
 
-    if (own_cert && own_cert_len > 0 && private_cert && private_cert_len > 0) {
+    if (param->own_cert && param->own_cert_len > 0 && param->private_cert && param->private_cert_len > 0) {
         mbedtls_ssl_conf_own_cert(&ssl_param->conf, &ssl_param->owncert, &ssl_param->pkey);
     }
 
@@ -263,18 +261,12 @@ void *mbedtls_ssl_connect(int linkid, int fd, const char *ca_cert, int ca_cert_l
     mbedtls_ssl_conf_dbg(&ssl_param->conf, ssl_debug, NULL);
 #endif
     
-    char **alpn;
-    int alpm_num;
-    alpn = at_net_ssl_alpn_get(linkid, &alpm_num);
-    if (alpm_num) {
-        mbedtls_ssl_conf_alpn_protocols(&ssl_param->conf, alpn);
+    if (param->alpn_num && param->alpn) {
+        mbedtls_ssl_conf_alpn_protocols(&ssl_param->conf, param->alpn);
     }
     
-    char *psk, *psk_hint;
-    int psk_len, pskhint_len;
-    at_net_ssl_psk_get(linkid, &psk, &psk_len, &psk_hint, &pskhint_len);
-    if (psk_len && pskhint_len) {
-        mbedtls_ssl_conf_psk(&ssl_param->conf, psk, psk_len, psk_hint, pskhint_len);
+    if (param->psk_len && param->psk && param->pskhint_len && param->pskhint) {
+        mbedtls_ssl_conf_psk(&ssl_param->conf, param->psk, param->psk_len, param->pskhint, param->pskhint_len);
     }
 
     ret = mbedtls_ssl_setup(&ssl_param->ssl, &ssl_param->conf);
@@ -283,8 +275,8 @@ void *mbedtls_ssl_connect(int linkid, int fd, const char *ca_cert, int ca_cert_l
         goto ERROR;
     }
 
-    if (at_net_ssl_sni_get(linkid)) {
-        mbedtls_ssl_set_hostname(&ssl_param->ssl, at_net_ssl_sni_get(linkid));
+    if (param->sni) {
+        mbedtls_ssl_set_hostname(&ssl_param->ssl, param->sni);
     }
     mbedtls_ssl_set_bio(&ssl_param->ssl, &ssl_param->net, ssl_send, ssl_recv, NULL);
 
@@ -314,11 +306,11 @@ void *mbedtls_ssl_connect(int linkid, int fd, const char *ca_cert, int ca_cert_l
 
 ERROR:
     if (ssl_param != NULL) {
-        if (ca_cert && ca_cert_len > 0) 
+        if (param->ca_cert && param->ca_cert_len > 0) 
             mbedtls_x509_crt_free(&ssl_param->ca_cert);
-        if(own_cert && own_cert_len > 0)
+        if(param->own_cert && param->own_cert_len > 0)
             mbedtls_x509_crt_free(&ssl_param->owncert);
-        if(private_cert && private_cert_len > 0)
+        if(param->private_cert && param->private_cert_len > 0)
             mbedtls_pk_free(&ssl_param->pkey);
         mbedtls_ssl_free(&ssl_param->ssl);
         mbedtls_ssl_config_free(&ssl_param->conf);
@@ -334,10 +326,6 @@ void *mbedtls_ssl_accept(int fd, const char *ca_cert, int ca_cert_len,
 {
     int ret;
     ssl_param_t *ssl_param = NULL;
-
-#if defined(MBEDTLS_PLATFORM_MEMORY)
-    mbedtls_platform_set_calloc_free(ssl_calloc, ssl_free);
-#endif
 
 #if defined(MBEDTLS_DEBUG_C)
     mbedtls_debug_set_threshold(MBEDTLS_DEBUG_LEVEL);

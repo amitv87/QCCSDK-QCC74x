@@ -56,6 +56,7 @@ void at_response_string(const char *format , ...)
 {
     va_list ap;
     char outbuf[128];
+    int outstr_len = 0;
 
     if (!at) {
         AT_CMD_PRINTF("ERROR: atcmd has not been initialized\r\n");
@@ -67,7 +68,14 @@ void at_response_string(const char *format , ...)
     vsnprintf(outbuf, sizeof(outbuf), format, ap);
     va_end(ap);
 
-    at->device_ops.write_data((uint8_t *)outbuf, strlen(outbuf));
+    outstr_len = strlen(outbuf);
+    if ((strncmp(&outbuf[outstr_len - 2], "\r\n", 2) != 0) && (outstr_len + 2 <= sizeof(outbuf))) {
+        outbuf[outstr_len] = '\r';
+        outbuf[outstr_len + 1] = '\n';
+        outstr_len += 2;
+    }
+
+    at->device_ops.write_data((uint8_t *)outbuf, outstr_len);
 }
 
 int at_register_function(at_func restore, at_func stop)
@@ -193,6 +201,9 @@ int at_module_init(void)
         AT_CMD_PRINTF("ERROR: init at cmd device failed, ret = %d\r\n", ret);
         goto INIT_ERROR;
     }
+
+    /* register at fs */
+    at_fs_register();
 
     /* register base AT command */
     at_base_cmd_regist();

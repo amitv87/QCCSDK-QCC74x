@@ -85,6 +85,7 @@ typedef struct {
     ble_scan_param scan_param;
     ble_adv_data adv_data;
     ble_scan_rsp_data scan_rsp_data;
+    int ble_sec_param;
 }ble_config;
 
 extern ble_config *at_ble_config;

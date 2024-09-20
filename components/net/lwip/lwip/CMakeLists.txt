@@ -14,6 +14,12 @@ sdk_library_add_sources_ifdef(CONFIG_DHCPD src/apps/lwip_dhcpd/dhcp_server_raw.c
 sdk_library_add_sources_ifdef(CONFIG_MDNS src/apps/lwip_mdns/mdns_server.c)
 sdk_add_include_directories_ifdef(CONFIG_DHCPD src/apps/lwip_dhcpd)
 sdk_add_include_directories_ifdef(CONFIG_MDNS src/apps/lwip_mdns)
+sdk_library_add_sources_ifdef(CONFIG_LWIP_ALTCP src/apps/altcp_tls/altcp_tls_mbedtls.c)
+sdk_library_add_sources_ifdef(CONFIG_LWIP_ALTCP src/apps/altcp_tls/altcp_tls_mbedtls_mem.c)
+
+sdk_library_add_sources_ifdef(CONFIG_LWIP_ALTCP src/core/altcp.c)
+sdk_library_add_sources_ifdef(CONFIG_LWIP_ALTCP src/core/altcp_alloc.c)
+sdk_library_add_sources_ifdef(CONFIG_LWIP_ALTCP src/core/altcp_tcp.c)
 
 sdk_library_add_sources(src/api/api_lib.c)
 sdk_library_add_sources(src/api/api_msg.c)

@@ -19,6 +19,9 @@ execute_process(
 
 add_definitions(-DGIT_COMMIT="${GIT_COMMIT}")
 
+if(DISABLE_MFG_AUTOBOOT)
+add_definitions(-DDISABLE_MFG_AUTOBOOT)
+endif()
 
 sdk_add_compile_definitions(-DBUILD_ROM_CODE)
 
@@ -27,7 +30,10 @@ target_sources(app PRIVATE
                 mfg_sdu.c
                 mfg_m154.c
                 mfg_main.c
-                   )
+                mfg_atcmd.c
+                mfg_atcmd_port.c
+                mfg_otp.c
+            )
 
 sdk_add_include_directories(.)
 sdk_add_include_directories(./build/generated/)

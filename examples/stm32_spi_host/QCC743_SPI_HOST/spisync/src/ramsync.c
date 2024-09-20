@@ -46,7 +46,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 	uint16_t len = g_ctx->node_tx[priv->buf_idx].len;
 	ret = HAL_SPI_TransmitReceive_DMA(&hspi1, txptr, rxptr, len);
 	if (ret != HAL_OK)
-		printf("failed to start spi txrx in completion callback, %d\r\n", ret);
+		spisync_err("failed to start spi txrx in completion callback, %d\r\n", ret);
 }
 
 static void spi_hw_init(const lramsync_spi_config_t *config)
@@ -82,9 +82,34 @@ static void lramsync_callback_register(
     ctx->rx_arg = rx_arg;
 }
 
+int lramsync_get_xfer_progress(lramsync_ctx_t *ctx)
+{
+	struct _ramsync_low_priv *priv = ctx->priv;
+	return priv->buf_idx;
+}
+
 int lramsync_start(lramsync_ctx_t *ctx)
 {
     spi_dma_start(ctx);
+    return 0;
+}
+
+int lramsync_stop(lramsync_ctx_t *ctx)
+{
+	HAL_StatusTypeDef status;
+
+    if (ctx == NULL) {
+    	spisync_err("ctx is NULL, can't stop it\r\n");
+    	return -1;
+    }
+
+    /* abort SPI ongoing transfer */
+    status = HAL_SPI_Abort(&hspi1);
+    if (status != HAL_OK) {
+    	spisync_err("failed to abort spi, %d\r\n", status);
+    	return -1;
+    }
+    spisync_trace("spi dma is stopped\r\n");
     return 0;
 }
 
@@ -95,26 +120,23 @@ int lramsync_reset(lramsync_ctx_t *ctx)
     if (ctx == NULL)
         return -1;
 
-    printf("lramsync_reset\r\n");
     /* abort SPI ongoing transfer */
     status = HAL_SPI_Abort(&hspi1);
     if (status != HAL_OK) {
-    	printf("failed to abort spi, %d\r\n", status);
+    	spisync_err("failed to abort spi, %d\r\n", status);
     	return -1;
     }
+    spisync_trace("spi dma is reset\r\n");
     spi_dma_init(ctx);
     return 0;
 }
 
 int lramsync_deinit(lramsync_ctx_t *ctx)
 {
-    struct _ramsync_low_priv *priv;
-
     if (ctx == NULL)
         return -1;
 
-    priv = (struct _ramsync_low_priv *)ctx->priv;
-    printf("lramsync deinit is not supported yet\r\n");
+    spisync_err("lramsync deinit is not supported yet\r\n");
     return 0;
 }
 
@@ -166,7 +188,7 @@ int lramsync_init(
     spi_hw_init(ctx->cfg);
     spi_dma_init(ctx);
     spi_dma_start(ctx);
-    printf("lramsync_init done\r\n");
+    spisync_log("lramsync_init done\r\n");
     return 0;
 
 rsl_init_err:
@@ -187,6 +209,7 @@ int lramsync_suspend(lramsync_ctx_t *ctx)
 
     if (!priv->suspended)
     	priv->suspended = 1;
+    spisync_trace("spi dma suspend flag is set\r\n");
     return 0;
 }
 
@@ -208,8 +231,9 @@ int lramsync_resume(lramsync_ctx_t *ctx)
 	uint16_t len = g_ctx->node_tx[priv->buf_idx].len;
 	ret = HAL_SPI_TransmitReceive_DMA(&hspi1, txptr, rxptr, len);
 	if (ret != HAL_OK) {
-		printf("failed to start spi txrx to resume, %d\r\n", ret);
+		spisync_err("failed to resume spi, %d\r\n", ret);
 		return -1;
 	}
+	spisync_trace("spi dma suspend flag is cleared, pumped new msg\r\n");
 	return 0;
 }

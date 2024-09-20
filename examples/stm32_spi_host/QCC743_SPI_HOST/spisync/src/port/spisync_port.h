@@ -2,7 +2,7 @@
 #define __spisync_port_H__
 
 #include <stdint.h>
-#define TPDBG_ENABLE   (1)
+#define TPDBG_ENABLE   (0)
 
 #if TPDBG_ENABLE
 #ifndef SHORT_FILE
@@ -11,9 +11,7 @@
             ? ((strrchr(__FILE__, '\\') ? strrchr(__FILE__, '\\') + 1 : __FILE__)) \
             : ((strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)))
 #endif
-#define spisync_trace(...)  //printf
-#define spisync_dbg           printf
-#if 0
+
 #define spisync_log(M, ...) do { printf("[%u][%s +%d] " M "",\
                                 (xPortIsInsideInterrupt())?(xTaskGetTickCountFromISR()):(xTaskGetTickCount()),\
                                 SHORT_FILE, __LINE__,\
@@ -24,10 +22,6 @@
                                 SHORT_FILE, __LINE__,\
                                 ##__VA_ARGS__);\
                                 } while(0==1)
-#endif
-#define spisync_log	//printf
-#define spisync_err	printf
-
 #else
 #define spisync_trace(...)
 #define spisync_dbg           printf

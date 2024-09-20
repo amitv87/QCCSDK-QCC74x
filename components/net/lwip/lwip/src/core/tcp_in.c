@@ -777,11 +777,6 @@ tcp_timewait_input(struct tcp_pcb *pcb)
     pcb->tmr = tcp_ticks;
   }
 
-#if TCP_TIMER_PRECISE_NEEDED
-  pcb->keep_cnt_sent = 0;
-  tcp_keepalive_timer_stop(pcb);
-#endif
-
   if ((tcplen > 0)) {
     /* Acknowledge data, FIN or out-of-window SYN */
     tcp_ack_now(pcb);
@@ -1074,13 +1069,6 @@ tcp_process(struct tcp_pcb *pcb)
     default:
       break;
   }
-
-#if TCP_TIMER_PRECISE_NEEDED
-  if (pcb->state == ESTABLISHED) {
-    pcb->keep_cnt_sent = 0;
-    tcp_keepalive_timer_start(pcb);
-  }
-#endif
 
   return ERR_OK;
 }

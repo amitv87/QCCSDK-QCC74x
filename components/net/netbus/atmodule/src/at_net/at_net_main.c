@@ -19,7 +19,6 @@
 #include <at_net_sntp.h>
 #include <wifi_mgmr_ext.h>
 #include <qcc74x_sec_trng.h>
-#include <qcc74x_romfs.h>
 
 #include "at_main.h"
 #include "at_core.h"
@@ -35,7 +34,7 @@
 #define AT_NET_PRINTF              printf
 #define AT_NET_DEBUG               printf
 
-#define AT_NET_IPD_EVT_HEAD(s)      (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE)?s:s":"
+#define AT_NET_IPD_EVT_HEAD(s)      (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE)?s"\r\n":s","
 
 #define CHECK_NET_CLIENT_ID_VALID(id) \
     if (!at_net_client_id_is_valid(id)) { \
@@ -113,6 +112,7 @@ typedef struct {
     uint8_t ca_enable;
     int8_t client_max;
     int8_t client_num;
+    int keepalive;
   
     uint8_t is_ipv6;  
     char ca_path[32];
@@ -196,7 +196,7 @@ static int ip_multicast_enable(int fd, ip_addr_t *ipaddr)
     if (IP_IS_V6(ipaddr)) {
         struct ipv6_mreq mreq6;
         memset(&mreq6, 0, sizeof(struct ipv6_mreq));
-        mreq6.ipv6mr_interface = in6addr_any;
+        mreq6.ipv6mr_interface = 0;
         memcpy(&mreq6.ipv6mr_multiaddr, ipaddr, sizeof(mreq6.ipv6mr_multiaddr));
         if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq6, sizeof(mreq6))) {
             AT_NET_PRINTF("sock set add membership failed\r\n");
@@ -208,7 +208,7 @@ static int ip_multicast_enable(int fd, ip_addr_t *ipaddr)
         struct ip_mreq mreq;
         memset(&mreq, 0, sizeof(struct ip_mreq));
         mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-        mreq.imr_multiaddr.s_addr = ip;  
+        mreq.imr_multiaddr.s_addr = ip4_addr_get_u32(ip_2_ip4(ipaddr));  
         if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mreq, sizeof(mreq))) {
             AT_NET_PRINTF("sock set add membership failed\r\n");
             return -1;
@@ -244,7 +244,7 @@ static int so_keepalive_enable(int fd, int idle, int interval, int count)
         return -1;
     }
 
-    AT_NET_PRINTF("sock enable keepalive\r\n");
+    AT_NET_PRINTF("sock:%d enable keepalive:%d\r\n", fd, keepIdle);
     return 0;
 }
 
@@ -530,27 +530,11 @@ static int udp_client_send(int fd, void *buffer, int length, ip_addr_t *ipaddr, 
     return 0;
 }
 
-static int get_romfs_file_content(const char *file, romfs_filebuf_t *buf) 
-{
-    char path[64] = {0};
-    romfs_file_t fp;
-
-    if (!strlen(file)) {
-        return -1;
-    }
-    sprintf(path, AT_FS_ROOT_DIR"/%s", file);
-    romfs_open(&fp, path, 0);
-    romfs_filebuf_get(&fp, buf);
-    romfs_close(&fp);
-
-    buf->bufsize += 1;
-    return 0;
-}
-
 static int ssl_client_connect(int id, ip_addr_t *ipaddr, uint16_t port, void **priv)
 {
     int fd;
     void *handle;
+    ssl_conn_param_t ssl_param = {0};
 
     AT_NET_PRINTF("ssl client connect %s:%d\r\n", ipaddr_ntoa(ipaddr), port);
 
@@ -560,15 +544,15 @@ static int ssl_client_connect(int id, ip_addr_t *ipaddr, uint16_t port, void **p
         return -1;
     }
 
-    romfs_filebuf_t ca = {0}, cert = {0}, key = {0};
+    at_load_file(g_at_client_handle[id].ca_path, &ssl_param.ca_cert, &ssl_param.ca_cert_len);
+    at_load_file(g_at_client_handle[id].cert_path, &ssl_param.own_cert, &ssl_param.own_cert_len);
+    at_load_file(g_at_client_handle[id].priv_key_path, &ssl_param.private_cert, &ssl_param.private_cert_len);
+    
+    ssl_param.alpn = at_net_ssl_alpn_get(id, &ssl_param.alpn_num);
+    at_net_ssl_psk_get(id, &ssl_param.psk, &ssl_param.psk_len, &ssl_param.pskhint, &ssl_param.pskhint_len);
+    ssl_param.sni = at_net_ssl_sni_get(id);
 
-    get_romfs_file_content(g_at_client_handle[id].ca_path, &ca);
-    get_romfs_file_content(g_at_client_handle[id].cert_path, &cert);
-    get_romfs_file_content(g_at_client_handle[id].priv_key_path, &key);
-
-    handle = mbedtls_ssl_connect(id, fd, ca.buf, ca.bufsize,
-                                 cert.buf, cert.bufsize,
-                                 key.buf, key.bufsize);
+    handle = mbedtls_ssl_connect(fd, &ssl_param);
     if (handle == NULL) {
         AT_NET_PRINTF("mbedtls_ssl_connect handle NULL, fd:%d\r\n", fd);
         close(fd);
@@ -576,6 +560,10 @@ static int ssl_client_connect(int id, ip_addr_t *ipaddr, uint16_t port, void **p
     }
 
     *priv = handle;
+    free(ssl_param.ca_cert);
+    free(ssl_param.own_cert);
+    free(ssl_param.private_cert);
+
     return fd;
 }
 
@@ -734,24 +722,14 @@ static void net_unlock(void)
 
 static int net_is_active(void)
 {
-    if (at_wifi_config->wifi_mode == WIFI_STATION_MODE) {
+    if (at_wifi_config->wifi_mode == WIFI_STATION_MODE || at_wifi_config->wifi_mode == WIFI_AP_STA_MODE) {
         uint32_t addr = 0;
     	wifi_sta_ip4_addr_get(&addr, NULL, NULL, NULL);
     	if (addr != IPADDR_ANY) {
     		return 1;
     	}
     } else if (at_wifi_config->wifi_mode == WIFI_SOFTAP_MODE) {
-#if 0
-        if (WIFI_STATE_AP_IS_ENABLED(state)) {
-            return 1;
-        }
-#endif
-    } else if (at_wifi_config->wifi_mode == WIFI_AP_STA_MODE) {
-#if 0
-         if (state == WIFI_STATE_CONNECTED_IP_GOT || state == WIFI_STATE_WITH_AP_CONNECTED_IP_GOT || WIFI_STATE_AP_IS_ENABLED(state)) {
-            return 1;
-         }
-#endif
+
     }
     
     return 0;
@@ -774,9 +752,9 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
             else {
                 if (at_net_config->wips_enable) {
                     if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                        at_response_string("+CIP:CONNECT\r\n");
+                        at_response_string("+CIP:CONNECTED\r\n");
                     else
-                        at_response_string("+CIP:%d,CONNECT\r\n", id);
+                        at_response_string("+CIP:%d,CONNECTED\r\n", id);
                 }
             }
         }
@@ -785,9 +763,9 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
         if (at_net_config->wips_enable) {
             if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {     
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string("+CIP:CLOSED\r\n");
+                    at_response_string("+CIP:DISCONNECTED\r\n");
                 else
-                    at_response_string("+CIP:%d,CLOSED\r\n", id);
+                    at_response_string("+CIP:%d,DISCONNECTED\r\n", id);
             }
         }
     }
@@ -795,25 +773,30 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
         if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT && at_net_config->wips_enable) {
             if (at_net_config->ipd_info == NET_IPDINFO_DISABLE_IPPORT) {
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD,%d"), length);
+                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d"), length);
                 else
-                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD,%d,%d"), id, length);
+                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,%d"), id, length);
             } else {
 
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD,%d,\"%s\",%d"), length, ipaddr_ntoa(ipaddr), port);
+                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,\"%s\",%d"), length, ipaddr_ntoa(ipaddr), port);
                 else
-                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD,%d,%d,\"%s\",%d"), id, length, ipaddr_ntoa(ipaddr), port);
+                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,%d,\"%s\",%d"), id, length, ipaddr_ntoa(ipaddr), port);
             }
             if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
                 xStreamBufferSend(g_at_client_handle[id].recv_buf, buffer, length, portMAX_DELAY);
             } else {
+                memcpy(buffer + length, "\r\n", 2);
+                length += 2;
                 AT_CMD_DATA_SEND(buffer, length);
             }
         } else {
+            if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT) {
+                memcpy(buffer + length, "\r\n", 2);
+                length += 2;
+            }
             AT_CMD_DATA_SEND(buffer, length);
         }
-        at_response_string("\r\n");
     }
 
     return 0;
@@ -863,7 +846,7 @@ static int net_socket_connect(int id, net_client_type type, ip_addr_t *ipaddr, u
         fd = tcp_client_connect(ipaddr, port);
         AT_NET_PRINTF("tcp_client_connect fd:%d\r\n", fd);
         if (fd >= 0) {
-            keep_alive = keepalive;
+            keep_alive = (keepalive>0)?keepalive:at_net_config->tcp_opt[id].keep_alive;
             so_linger = at_net_config->tcp_opt[id].so_linger;
             tcp_nodelay = at_net_config->tcp_opt[id].tcp_nodelay;
             so_sndtimeo = at_net_config->tcp_opt[id].so_sndtimeo;
@@ -916,9 +899,10 @@ static int net_socket_connect(int id, net_client_type type, ip_addr_t *ipaddr, u
     g_at_client_handle[id].so_linger = so_linger;
     g_at_client_handle[id].tcp_nodelay = tcp_nodelay;
     g_at_client_handle[id].so_sndtimeo = so_sndtimeo;
-    if (!g_at_client_handle[id].recv_buf) {
-        g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
+    if (g_at_client_handle[id].recv_buf) {
+        vStreamBufferDelete(g_at_client_handle[id].recv_buf);
     }
+    g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
     net_unlock();
     net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, &g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
     return 0;
@@ -945,11 +929,7 @@ static int net_socket_close(int id)
     g_at_client_handle[id].fd = -1;
     g_at_client_handle[id].priv = NULL;
     g_at_client_handle[id].disconnect_time = os_get_time_ms();
-   
-    if (g_at_client_handle[id].recv_buf) {
-        vStreamBufferDelete(g_at_client_handle[id].recv_buf);
-        g_at_client_handle[id].recv_buf = NULL;
-    }
+  
     if (g_at_client_handle[id].tetype && g_at_server_handle[servid].valid) {
         g_at_server_handle[servid].client_num--;
         if (g_at_server_handle[servid].client_num < 0)
@@ -997,7 +977,7 @@ static int net_socket_recv(int id)
     int num = 0;
     struct sockaddr_in remote_addr;
     int len = sizeof(remote_addr);
-    static char at_net_recv_buf[AT_NET_RECV_BUF_SIZE];
+    static char at_net_recv_buf[AT_NET_RECV_BUF_SIZE + 2];
 
     int type = g_at_client_handle[id].type;
     int fd = g_at_client_handle[id].fd;
@@ -1073,7 +1053,7 @@ static int net_socket_recv(int id)
     return num;
 }
 
-static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, uint8_t num, uint8_t max_conn, uint8_t is_ipv6)
+static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, uint8_t num, uint8_t max_conn, uint8_t is_ipv6, int keepalive)
 {
     int sock;
     struct sockaddr_in remote_addr;
@@ -1118,18 +1098,23 @@ static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, 
 
         if (type == NET_SERVER_SSL) {
 
-            romfs_filebuf_t ca = {0}, cert = {0}, key = {0};
+            ssl_conn_param_t ssl_param = {0};
 
-            get_romfs_file_content(g_at_server_handle[id].ca_path, &ca);
-            get_romfs_file_content(g_at_server_handle[id].cert_path, &cert);
-            get_romfs_file_content(g_at_server_handle[id].priv_key_path, &key);
-
-            priv = mbedtls_ssl_accept(sock, ca.buf, ca.bufsize, cert.buf, cert.bufsize, key.buf, key.bufsize);
+            at_load_file(g_at_server_handle[id].ca_path, &ssl_param.ca_cert, &ssl_param.ca_cert_len);
+            at_load_file(g_at_server_handle[id].cert_path, &ssl_param.own_cert, &ssl_param.own_cert_len);
+            at_load_file(g_at_server_handle[id].priv_key_path, &ssl_param.private_cert, &ssl_param.private_cert_len);
+    
+            priv = mbedtls_ssl_accept(sock, ssl_param.ca_cert, ssl_param.ca_cert_len, 
+                                      ssl_param.own_cert, ssl_param.own_cert_len, 
+                                      ssl_param.private_cert, ssl_param.private_cert_len);
             //priv = mbedtls_ssl_accept(sock, NULL, 0, NULL, 0, NULL, 0);
             if (priv == NULL) {
                 close(sock);
                 return 0;
             }
+        }
+        if (type == NET_SERVER_SSL || type == NET_SERVER_TCP) {
+            so_keepalive_enable(sock, keepalive, 1, 3);
         }
 
         net_lock();
@@ -1157,9 +1142,10 @@ static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, 
         g_at_client_handle[id].so_linger = -1;
         g_at_client_handle[id].tcp_nodelay = 0;
         g_at_client_handle[id].so_sndtimeo = 0;
-        if (!g_at_client_handle[id].recv_buf) {
-            g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
+        if (g_at_client_handle[id].recv_buf) {
+            vStreamBufferDelete(g_at_client_handle[id].recv_buf);
         }
+        g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
         net_unlock();
 
         net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, &g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
@@ -1242,9 +1228,10 @@ static void net_poll_reconnect(void)
         g_at_client_handle[id].remote_ip = ipaddr;
         g_at_client_handle[id].remote_port = port;
         g_at_client_handle[id].local_port = local_port;
-        if (!g_at_client_handle[id].recv_buf) {
-            g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
+        if (g_at_client_handle[id].recv_buf) {
+            vStreamBufferDelete(g_at_client_handle[id].recv_buf);
         }
+        g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
         net_unlock();
     }
 }
@@ -1292,7 +1279,8 @@ static void net_poll_recv(void)
             if (g_at_server_handle[i].valid && FD_ISSET(g_at_server_handle[i].fd, &fdR)) {
                 if (net_socket_accept(g_at_server_handle[i].fd, g_at_server_handle[i].type,
                             g_at_server_handle[i].port, g_at_server_handle[i].recv_timeout,
-                            g_at_server_handle[i].client_num, g_at_server_handle[i].client_max, g_at_server_handle[i].is_ipv6) ) {
+                            g_at_server_handle[i].client_num, g_at_server_handle[i].client_max, 
+                            g_at_server_handle[i].is_ipv6, g_at_server_handle[i].keepalive) ) {
                     g_at_server_handle[i].client_num++;
                 }
             }
@@ -1557,7 +1545,7 @@ int at_net_client_get_recvsize(int id)
 {
     CHECK_NET_CLIENT_ID_VALID(id);
 
-    if (g_at_client_handle[id].valid && g_at_client_handle[id].fd >= 0 && g_at_client_handle[id].recv_buf)
+    if (g_at_client_handle[id].recv_buf)
         return xStreamBufferBytesAvailable(g_at_client_handle[id].recv_buf);
     else
         return 0;
@@ -1624,11 +1612,12 @@ int at_net_server_udp_create(uint16_t port, int max_conn,  int timeout, uint8_t 
     g_at_server_handle[id].ca_enable = 0;
     g_at_server_handle[id].client_max = max_conn;
     g_at_server_handle[id].client_num = 0;
+    g_at_server_handle[id].keepalive = 0;
     net_unlock();
     return 0;
 }
 
-int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout, uint8_t is_ipv6)
+int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout, uint8_t is_ipv6, int keep_alive)
 {
     int id = 0;
     int fd;
@@ -1655,11 +1644,12 @@ int at_net_server_tcp_create(uint16_t port, int max_conn,  int timeout, uint8_t 
     g_at_server_handle[id].ca_enable = 0;
     g_at_server_handle[id].client_max = max_conn;
     g_at_server_handle[id].client_num = 0;
+    g_at_server_handle[id].keepalive = keep_alive;
     net_unlock();
     return 0;
 }
 
-int at_net_server_ssl_create(uint16_t port, int max_conn,  int timeout, int ca_enable, uint8_t is_ipv6)
+int at_net_server_ssl_create(uint16_t port, int max_conn,  int timeout, int ca_enable, uint8_t is_ipv6, int keep_alive)
 {
     int id = 0;
     int fd;
@@ -1686,11 +1676,12 @@ int at_net_server_ssl_create(uint16_t port, int max_conn,  int timeout, int ca_e
     g_at_server_handle[id].ca_enable = 0;
     g_at_server_handle[id].client_max = max_conn;
     g_at_server_handle[id].client_num = 0;
+    g_at_server_handle[id].keepalive = keep_alive;
     net_unlock();
     return 0;
 }
 
-int at_net_server_is_created(uint16_t *port, char *type, int *ca_enable)
+int at_net_server_is_created(uint16_t *port, char *type, int *ca_enable, int *keepalive)
 {
     int id = 0;
     CHECK_NET_SERVER_ID_VALID(id);
@@ -1709,6 +1700,9 @@ int at_net_server_is_created(uint16_t *port, char *type, int *ca_enable)
     }
     if (ca_enable) {
         *ca_enable = g_at_server_handle[id].ca_enable;
+    }
+    if (keepalive) {
+        *keepalive = g_at_server_handle[id].keepalive;
     }
     return 1;
 }
@@ -1824,9 +1818,7 @@ int at_net_stop(void)
 int at_net_recvbuf_size_set(int linkid, uint32_t size)
 {
     net_lock();
-    if (!g_at_client_handle[linkid].recv_buf) {
-        g_at_client_handle[linkid].recvbuf_size = size;
-    }
+    g_at_client_handle[linkid].recvbuf_size = size;
     net_unlock();
     return 0;
 }

@@ -28,8 +28,8 @@ extern void rwnx_ps_pause(void);
 extern void rtos_wifi_task_resume(bool isr);
 
 int pds_wakeup_overhead = 0;
-uint64_t ulLowPowerTimeEnterFunction;
-uint64_t ulLowPowerTimeAfterSleep;
+static uint64_t ulLowPowerTimeEnterFunction;
+static uint64_t ulLowPowerTimeAfterSleep;
 
 int debug_abort_tickless = 0;
 

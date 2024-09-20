@@ -15,6 +15,7 @@
 #include <utils_hex.h>
 #include <btble_lib_api.h>
 #include <hci_driver.h>
+#include "bt_log.h"
 #if CONFIG_BT_A2DP
 #include <a2dp.h>
 #endif
@@ -26,6 +27,10 @@
 #endif
 #if CONFIG_BT_HFP
 #include <hfp_hf.h>
+#endif
+
+#if CONFIG_BT_SPP
+#include <spp.h>
 #endif
 
 #define AT_BREDR_PRINTF     printf
@@ -75,6 +80,12 @@ static int at_exe_cmd_a2dp_open_stream(int argc, const char **argv);
 static int at_exe_cmd_a2dp_start_stream(int argc, const char **argv);
 #endif
 #endif
+#if CONFIG_BT_SPP
+static int at_exe_cmd_bredr_sppdisconnect(int argc, const char **argv);
+static int at_exe_cmd_bredr_sppconnect(int argc, const char **argv);
+static int at_setup_cmd_bredr_sppsend(int argc, const char **argv);
+#endif
+
 #if CONFIG_BT_AVRCP
 static int at_exe_cmd_avrcp_connect(int argc, const char **argv);
 static int at_exe_cmd_avrcp_get_play_status(int argc, const char **argv);
@@ -225,7 +236,7 @@ static void bredr_connected(struct bt_conn *conn, u8_t err)
         default_conn = conn;
     }
 
-    at_response_string("+BREDRCONN=%s\r\n",addr);
+    at_response_string("+BREDR:CONNECTED:%s\r\n",addr);
 }
 
 static void bredr_disconnected(struct bt_conn *conn, u8_t reason)
@@ -242,7 +253,7 @@ static void bredr_disconnected(struct bt_conn *conn, u8_t reason)
 
     AT_BREDR_PRINTF("bredr disconnected: %s (reason %u) \r\n", addr, reason);
 
-    at_response_string("+BREDR_DISCCONN=%s\r\n",addr);
+    at_response_string(" +BREDR:DISCONNECTED%s\r\n",addr);
     if (default_conn == conn)
     {
         default_conn = NULL;
@@ -259,6 +270,28 @@ static void bt_enable_cb(int err)
                bt_addr.a.val[5], bt_addr.a.val[4], bt_addr.a.val[3], bt_addr.a.val[2], bt_addr.a.val[1], bt_addr.a.val[0]);
     }
 }
+
+#if CONFIG_BT_SPP
+
+static void bt_recv_callback(u8_t *data, u16_t length)
+{
+    at_response_string("+BREDR:SPP:%s\r\n",bt_hex(data,length));
+};
+static void bt_spp_connected(void)
+{
+    at_response_string("+BREDR:SPPCONNECTED");
+};
+static void bt_spp_disconnected(void)
+{
+    at_response_string("+BREDR:SPPDISCONNECTED");
+};
+
+static struct spp_callback_t spp_conn_callbacks={
+    .connected=bt_spp_connected,
+    .disconnected=bt_spp_disconnected,
+    .bt_spp_recv=bt_recv_callback,
+};
+#endif
 
 static int at_exe_cmd_bredr_init(int argc, const char **argv)
 {
@@ -289,11 +322,85 @@ static int at_exe_cmd_bredr_init(int argc, const char **argv)
 #if CONFIG_BT_AVRCP
     avrcp_cb_register(&avrcp_callbacks);
 #endif
-
+#if CONFIG_BT_SPP
+    spp_cb_register(&spp_conn_callbacks);
+#endif
     init = true;
     AT_BREDR_PRINTF("bredr init successfully\n");
     return AT_RESULT_CODE_OK;
 }
+
+#if CONFIG_BT_SPP
+static int at_setup_cmd_bredr_sppsend(int argc, const char **argv)
+{
+    int err = 0;
+    uint8_t string[255]={0};
+    int strlen = 0;
+    AT_CMD_PARSE_STRING(0, string, sizeof(string));
+    AT_CMD_PARSE_NUMBER(1, &strlen);
+    if(!default_conn){
+        AT_BREDR_PRINTF("Not connected.\n");
+        return AT_RESULT_CODE_ERROR;
+    }
+    
+    err=bt_spp_send(string,strlen);
+    if(err)
+    {
+        AT_BREDR_PRINTF("bt spp send err:%d\r\n", err);
+        at_response_string("%s", AT_CMD_MSG_SEND_FAIL);
+        return AT_RESULT_CODE_IGNORE;
+    }
+    else
+    {
+        AT_BREDR_PRINTF("bt spp send successfully\r\n");
+        at_response_string("%s", AT_CMD_MSG_SEND_OK);
+        return AT_RESULT_CODE_PROCESS_DONE;
+    }
+        
+}
+
+static int at_exe_cmd_bredr_sppconnect(int argc, const char **argv)
+{
+    int err = 0;
+    if(!default_conn){
+        AT_BREDR_PRINTF("Not connected.\n");
+        return AT_RESULT_CODE_ERROR;
+    }
+    err= bt_spp_connect(default_conn);
+    if(err)
+    {
+        AT_BREDR_PRINTF("bt spp connect err:%d\r\n", err);
+        return AT_RESULT_CODE_ERROR;
+    }
+    else
+    {
+        AT_BREDR_PRINTF("bt spp connect successfully\r\n");
+        return AT_RESULT_CODE_OK;
+    }
+}
+
+static int at_exe_cmd_bredr_sppdisconnect(int argc, const char **argv)
+{
+    int err = 0;
+    if(!default_conn){
+        
+        AT_BREDR_PRINTF("Not connected.\n");
+        return AT_RESULT_CODE_ERROR;
+    }
+    err= bt_spp_disconnect(default_conn);
+    if(err)
+    {
+        AT_BREDR_PRINTF("bt spp disconnect err:%d\r\n", err);
+        return AT_RESULT_CODE_ERROR;
+    }
+    else
+    {
+        AT_BREDR_PRINTF("bt spp disconnect successfully\r\n");
+        return AT_RESULT_CODE_OK;
+    }
+
+}
+#endif
 
 static int at_setup_cmd_bredr_connectable(int argc, const char **argv)
 {
@@ -1180,11 +1287,11 @@ static int at_setup_cmd_bredr_set_tx_pwr(int argc, const char **argv)
     err = bt_br_set_tx_pwr((int8_t)br_power, (int8_t)edr_power);
 
     if(err){
-		printf("bt_set_tx_pwr, Fail to set tx power (err %d)\r\n", err);
+		AT_BREDR_PRINTF("bt_set_tx_pwr, Fail to set tx power (err %d)\r\n", err);
         return AT_RESULT_CODE_ERROR;
 	}
 	else{
-		printf("bt_set_tx_pwr, Set tx power successfully\r\n");
+		AT_BREDR_PRINTF("bt_set_tx_pwr, Set tx power successfully\r\n");
         return AT_RESULT_CODE_OK;
 	}
 
@@ -1236,6 +1343,11 @@ static const at_cmd_struct at_bredr_cmd[] = {
     {"+AVRCP_KEY_ACTION", NULL,NULL,at_setup_cmd_avrcp_pth_key_act, NULL,2,2},
     {"+AVRCP_CHANGE_VOL", NULL,NULL,at_setup_cmd_avrcp_change_vol, NULL,1,1},
     {"+AVRCP_GET_PLAY_STATUS", NULL,NULL,NULL, at_exe_cmd_avrcp_get_play_status,0,0},
+    #endif
+    #if CONFIG_BT_SPP
+    {"+BREDRSPPCONNECT", NULL,NULL,NULL, at_exe_cmd_bredr_sppconnect,0,0},
+    {"+BREDRSPPDISCONNECT", NULL,NULL,NULL, at_exe_cmd_bredr_sppdisconnect,0,0},
+    {"+BREDRSPPSEND", NULL,NULL,at_setup_cmd_bredr_sppsend, NULL,2,2},
     #endif
     
 };

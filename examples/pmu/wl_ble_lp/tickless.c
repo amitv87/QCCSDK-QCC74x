@@ -454,7 +454,7 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   uintptr_t dst_addr = LP_FW_START_ADDR;
   uint32_t lpfw_size = *((uint32_t *)__lpfw_start - 7);
   memcpy((void *)dst_addr, __lpfw_start, lpfw_size);
-  lpfw_cfg.lpfw_copy = 0;
+  lpfw_cfg.lpfw_copy = 1;
 
   wake_reason = qcc74x_lp_fw_enter(&lpfw_cfg);
 

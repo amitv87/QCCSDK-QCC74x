@@ -205,7 +205,7 @@ ATTR_ROM_WIFI_SECTION int lpfw_bcn_timestamp_check(uint64_t beacon_timestamp_now
 {
     uint64_t rtc_timestamp_last_us;
     uint64_t beacon_timestamp_last_us;
-    uint32_t rtc_us, beacon_us;
+    uint64_t rtc_us, beacon_us;
     int32_t diff_us;
 
     /* get last timestamp */
@@ -226,7 +226,7 @@ ATTR_ROM_WIFI_SECTION int lpfw_bcn_timestamp_check(uint64_t beacon_timestamp_now
     rtc_us = rtc_timestamp_now_us - rtc_timestamp_last_us;
     beacon_us = beacon_timestamp_now_us - beacon_timestamp_last_us;
 
-    if ( beacon_us > 10 * 1000 * 1000 || rtc_us > 10 * 1000 * 1000) {
+    if ( beacon_us > 60 * 1000 * 1000 || rtc_us > 60 * 1000 * 1000) {
         /* The time span is too large. Abort */
         return -2;
     }
@@ -238,7 +238,7 @@ ATTR_ROM_WIFI_SECTION int lpfw_bcn_timestamp_check(uint64_t beacon_timestamp_now
         diff_us = beacon_us - rtc_us;
     }
 
-    if (diff_us > 100 * 1000 ) {
+    if (diff_us > 10 * 1000 ) {
         /* The error is too large. Abort */
         return -3;
     }
@@ -253,9 +253,8 @@ ATTR_ROM_WIFI_SECTION int lpfw_bcn_timestamp_check(uint64_t beacon_timestamp_now
 /* Calibrate RC32K and update the beacon timestamp */
 ATTR_ROM_WIFI_SECTION int lpfw_recal_rc32k(uint64_t beacon_timestamp_now_us, uint64_t rtc_timestamp_now_us, uint32_t mode)
 {
-    uint64_t rtc_timestamp_last_us;
-    uint64_t beacon_timestamp_last_us;
-    uint32_t rtc_us, beacon_us;
+    uint64_t rtc_timestamp_last_us, beacon_timestamp_last_us;
+    int64_t rtc_us, beacon_us;
     int diff_us, diff_ppm;
     int ret = 0;
 
@@ -302,7 +301,7 @@ ATTR_ROM_WIFI_SECTION int lpfw_recal_rc32k(uint64_t beacon_timestamp_now_us, uin
 
     if (rtc_us > 5 * 1000 * 1000 || beacon_us > 5 * 1000 * 1000) {
         /* The time span is too large. Abort calibration */
-        ret = -6;
+        ret = 6;
         /* update timestamp */
         goto update_tsf;
     }
@@ -445,6 +444,7 @@ ATTR_TCM_SECTION int32_t lpfw_calculate_beacon_delay(uint64_t beacon_timestamp_u
 
     /* clear continuous loss cnt */
     iot2lp_para->continuous_loss_cnt = 0;
+    iot2lp_para->bcn_loss_level = 0;
 
     /* update timestamp_us */
     iot2lp_para->last_beacon_stamp_rtc_valid = mode;

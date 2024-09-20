@@ -12,7 +12,7 @@ sdk_add_compile_options(
 -Wchar-subscripts
 # -Wformat
 -Wno-format
--Wundef
+-Wno-undef
 -Wuninitialized
 -Winit-self
 -Wignored-qualifiers
@@ -37,7 +37,7 @@ sdk_add_compile_options(
 # $<$<COMPILE_LANGUAGE:C>:-Wno-enum-conversion>
 # $<$<COMPILE_LANGUAGE:C>:-Wno-cast-function-type>
 $<$<COMPILE_LANGUAGE:C>:-std=gnu99>
-$<$<COMPILE_LANGUAGE:CXX>:-std=c++11>
+$<$<COMPILE_LANGUAGE:CXX>:-std=c++17>
 $<$<COMPILE_LANGUAGE:CXX>:-nostdlib>
 $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
 $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>

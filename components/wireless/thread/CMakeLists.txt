@@ -6,6 +6,7 @@ if (DEFINED OT_NCP)
   add_subdirectory(openthread_ncp)
 endif()
 sdk_add_subdirectory_ifdef(CONFIG_OTBR openthread_br)
+sdk_add_subdirectory_ifdef(CONFIG_OTBR_REST openthread_rest)
 
 get_target_property(SDK_INTF_LIB_LINK_OPTIONS sdk_intf_lib INTERFACE_LINK_OPTIONS)
 list(REMOVE_ITEM SDK_INTF_LIB_LINK_OPTIONS -nostartfiles)
@@ -17,6 +18,10 @@ set_target_properties(sdk_intf_lib PROPERTIES INTERFACE_LINK_OPTIONS "")
 foreach(item ${SDK_INTF_LIB_LINK_OPTIONS})
     sdk_add_link_options(${item})
 endforeach()
+
+if (CONFIG_MATTER)
+  sdk_add_high_prior_compile_options(-fno-short-enums)
+endif()
 
 if (DEFINED OT_NCP AND OT_CLI)
   message(FATAL_ERROR "OT_NCP can't be defined with OT_CLI set true.")

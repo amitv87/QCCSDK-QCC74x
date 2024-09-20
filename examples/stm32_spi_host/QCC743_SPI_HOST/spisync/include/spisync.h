@@ -6,177 +6,211 @@
 #include <semphr.h>
 #include "stream_buffer.h"
 #include <event_groups.h>
+#include "ramsync.h"
 
-#include <ramsync.h>
+/* slot config */
+#define SPISYNC_SLOT_VERSION        (0x5501)
+#define SPISYNC_TXSLOT_COUNT        (4)
+#define SPISYNC_RXSLOT_COUNT        (4)
+#define SPISYNC_PAYLOADBUF_LEN      (1536)
+#define SPISYNC_PAYLOADLEN_MAX      (SPISYNC_PAYLOADBUF_LEN + 4)//seg_len_type_res,
 
-#define SPISYNC_MASTER_ENABLE       (1)
+/* Check the number of tag errors. If the number of errors
+   exceeds the allowed limit, the resetflag will set.
+ */
+#define SPISYNC_TAGERR_TIMES	((SPISYNC_RXSLOT_COUNT + 1) * (SPISYNC_RXSLOT_COUNT + 1))
 
-// slot config
-#define SPISYNC_TXSLOT_COUNT        (6)
-#define SPISYNC_RXSLOT_COUNT        (6)
-#define SPISYNC_SLOT_MAGIC          (0x11223344)
-#define SPISYNC_PAYLOADBUF_LEN      (1024 + 512)             // 1536
-#define SPISYNC_PAYLOADLENSEQ_LEN   (8 + 4)                  // sizeof(len)+sizeof(seq)
-#define SPISYNC_PAYLOADLEN_MAX      (SPISYNC_PAYLOADBUF_LEN + SPISYNC_PAYLOADLENSEQ_LEN)
+/* Config msg/stream size */
+#define SPISYNC_RXMSG_PBUF_ITEMS       (8)
+#define SPISYNC_RXMSG_SYSCTRL_ITEMS    (2)
+#define SPISYNC_RXMSG_USER1_ITEMS      (1)
+#define SPISYNC_RXSTREAM_AT_BYTES      (1536*4)
+#define SPISYNC_RXSTREAM_USER1_BYTES   (1536*2)
+#define SPISYNC_RXSTREAM_USER2_BYTES   (1536*1)
 
-#if SPISYNC_MASTER_ENABLE
-#define SPISYNC_RESET_PATTERN		(0x55)
-#define SPISYNC_TAGERR_TIMES        ((SPISYNC_RXSLOT_COUNT + 1) * (SPISYNC_RXSLOT_COUNT + 1))
-#define SPISYNC_PATTERN_TIMES       (SPISYNC_RXSLOT_COUNT*5) // 10
-#else
-#define SPISYNC_TAGERR_TIMES        (SPISYNC_RXSLOT_COUNT*4)
-#define SPISYNC_PATTERN_TIMES       (SPISYNC_TXSLOT_COUNT*5)
-#endif
-#define SPISYNC_PATTERN_DELAYMS     (100)// clock 10M ---> 1KBytes/ms
+#define SPISYNC_TXMSG_PBUF_ITEMS       (8)
+#define SPISYNC_TXMSG_SYSCTRL_ITEMS    (2)
+#define SPISYNC_TXMSG_USER1_ITEMS      (2)
+#define SPISYNC_TXSTREAM_AT_BYTES      (1536*4)
+#define SPISYNC_TXSTREAM_USER1_BYTES   (1536*2)
+#define SPISYNC_TXSTREAM_USER2_BYTES   (1536*1)
 
-// tx buf
-#define SPISYNC_TX0_STREAMBUFFER_SIZE    (10*sizeof(spisync_slot_t))
-#define SPISYNC_TX1_STREAMBUFFER_SIZE    (2*sizeof(spisync_slot_t))
-#define SPISYNC_TX2_STREAMBUFFER_SIZE    (1*sizeof(spisync_slot_t))
+/* task config */
+#define SPISYNC_STACK_SIZE             (12048)
+#define SPISYNC_TASK_PRI               (55)
 
-// rx buf
-#define SPISYNC_RX0_STREAMBUFFER_SIZE    (10*sizeof(spisync_slot_t))
-#define SPISYNC_RX1_STREAMBUFFER_SIZE    (2*sizeof(spisync_slot_t))
-#define SPISYNC_RX2_STREAMBUFFER_SIZE    (1*sizeof(spisync_slot_t))
-#define SPISYNC_RX_READTIMES             (2)
+/* ========================================================================= */
 
-#define SPISYNC_RX_STREAMBUFFER_LEVEL   (SPISYNC_PAYLOADBUF_LEN)
+/* For system wait */
+#define SPISYNC_WAIT_FOREVER           (0xFFFFFFFF)
+#define SPISYNC_RX_READTIMES           (SPISYNC_RXSLOT_COUNT-1)
 
-// task config
-#if SPISYNC_MASTER_ENABLE
-#define SPISYNC_STACK_SIZE          (4096)
-#define SPISYNC_TASK_PRI            (55)
-#else
-#define SPISYNC_STACK_SIZE          (2048)
-#define SPISYNC_TASK_PRI            (30)
-#endif
+/* For Tag flag */
+#define SPISYNC_TAGFLAGBIT_RXERR       (0x0001) // bit0 indicates whether the slave device has an error
 
-/* enum */
-#define EVT_SPISYNC_RESET_BIT       (1<<1)
-#define EVT_SPISYNC_CTRL_BIT        (1<<2)
-#define EVT_SPISYNC_WRITE_BIT       (1<<3)
-#define EVT_SPISYNC_READ_BIT        (1<<4)
-#define EVT_SPISYNC_RSYNC_BIT       (1<<5)
-#define EVT_SPISYNC_DUMP_BIT        (1<<6)
-#define EVT_SPISYNC_GOTO_IDLE       (1<<7)
-#define EVT_SPISYNC_POLL            (1<<8)
-#define EVT_SPISYNC_ALL_BIT         (EVT_SPISYNC_RESET_BIT | \
-                                     EVT_SPISYNC_CTRL_BIT  | \
-                                     EVT_SPISYNC_WRITE_BIT | \
-                                     EVT_SPISYNC_READ_BIT  | \
-                                     EVT_SPISYNC_RSYNC_BIT | \
-                                     EVT_SPISYNC_GOTO_IDLE | \
-                                     EVT_SPISYNC_POLL)
+/* For MSG flag */
+#define SPISYNC_MSGFLAGBIT_COPY        (0x01) // bit0 indicates whether to reallocate memory and copy the incoming msg->buf
 
-// enum
-// #define SPIMSYNC_DEV_TYPE_MASTER    (1)
-// #define SPIMSYNC_DEV_TYPE_SLAVE     (2)
+/* /Msg/Stream type */
+#define SPISYNC_TYPEMSG_PBUF           (0)
+#define SPISYNC_TYPEMSG_SYSCTRL        (1)
+#define SPISYNC_TYPEMSG_USER1          (2)
+#define SPISYNC_TYPESTREAM_AT          (3)
+#define SPISYNC_TYPESTREAM_USER1       (4)
+#define SPISYNC_TYPESTREAM_USER2       (5)
+#define SPISYNC_TYPEMAX                (6)
+
+/*
+ * clock_10M--->1KBytes/ms
+ * clock_20M--->2KBytes/ms
+ * clock_40M--->4KBytes/ms
+ */
+#define SPISYNC_RESET_PATTERN_TIME_MS		(100)
+#define SPISYNC_RESET_PATTERN_JITTER_MS		(20)
+#define SPISYNC_PATTERN_DURATION_MS		(SPISYNC_RESET_PATTERN_TIME_MS - SPISYNC_RESET_PATTERN_JITTER_MS)
+#define SPISYNC_RESYNC_WAIT_DURATION_MS	(SPISYNC_RESET_PATTERN_TIME_MS + SPISYNC_RESET_PATTERN_JITTER_MS)
+
+/* slot.tag */
+typedef struct __slot_tag {
+    uint16_t version;
+    uint16_t seq;
+    uint16_t ackseq;
+    /* bit0: 1-bus_error */
+    uint16_t flag;
+    uint32_t clamp[SPISYNC_TYPEMAX];
+    uint8_t  resv[2];
+    uint16_t crc;
+} __attribute__((packed)) slot_tag_t;
+
+/* slot.payload.seg */
+typedef struct __payload {
+    uint16_t len;
+    uint8_t  type;
+    uint8_t  resv[1];
+    uint8_t  buf[1];
+} __attribute__((packed)) slot_seg_t;
+
+/* slot.payload */
+typedef struct __slot_payload {
+    uint16_t tot_len;
+    uint8_t  res[2];
+    union {
+        uint8_t     raw[1536 + 4];
+        slot_seg_t  seg[1];
+    };
+    uint32_t crc;
+} __attribute__((packed)) slot_payload_t;
+
+/* slot.tail */
+typedef struct __slot_tail {
+    uint16_t    seq_mirror;
+    uint8_t     reserved[2];
+} __attribute__((packed)) slot_tail_t;
 
 /* slot */
-typedef struct __slot_tag {
-    uint32_t magic;
-    uint32_t rseq; uint32_t clamp[3]; uint32_t flag;// bit0: 0-noerr, 1-err } slot_tag_t;
-
-typedef struct __slot_payload {
-    uint32_t    len;
-    uint32_t    seq;
-    uint32_t    type;
-    uint8_t     buf[SPISYNC_PAYLOADBUF_LEN];
-    uint32_t    crc;
-} slot_payload_t;
-
-typedef struct __slot_tail {
-    uint8_t     reserved[4];
-    uint32_t    seq_mirror;
-} slot_tail_t;
-
 typedef struct __spisync_slot {
     slot_tag_t      tag;
     slot_payload_t  payload;
     slot_tail_t     tail;
-} spisync_slot_t;
+} __attribute__((packed)) spisync_slot_t;
 
 /* tx/rx buf */
 typedef struct __spisync_txbuf {
     spisync_slot_t slot[SPISYNC_TXSLOT_COUNT];
-} spisync_txbuf_t;
+} __attribute__((packed)) spisync_txbuf_t;
 
 typedef struct __spisync_rxbuf {
     spisync_slot_t slot[SPISYNC_RXSLOT_COUNT];
-} spisync_rxbuf_t;
+} __attribute__((packed)) spisync_rxbuf_t;
 
-#if SPISYNC_MASTER_ENABLE
-enum spisync_state {
-	SPISYNC_STATE_INIT,
-	SPISYNC_STATE_RESET_ANNOUNCE,
-	SPISYNC_STATE_WAITING,
-    SPISYNC_STATE_ACTIVE,
-    SPISYNC_STATE_IDLE,
-};
+/* writ or read arg*/
+typedef struct __spisync_msg {
+    uint8_t type;      // for spisync
+    uint32_t timeout;   // rtos send/recv timeout
+    void     *buf;      // real buf addr
+    uint32_t buf_len;   // read buf length
+    void (*cb)(void *arg);  // pbuf_free or complete used
+    void *cb_arg;            // pbuf_free or complete used
+} spisync_msg_t;
 
-#define SPISYNC_IDLE_TIMER_PERIOD_MS    50
-#endif
-
-/* hdr */
 typedef struct __spisync {
     /* sys hdl */
-    TaskHandle_t            taskhdr;
-    EventGroupHandle_t      event;
-    TimerHandle_t           rst_tmr;//only for delay reset
-    SemaphoreHandle_t       w_mutex; // spisync_write lock
-    StreamBufferHandle_t    ptx_streambuffer[3];
+    TaskHandle_t            task_handle;
+    EventGroupHandle_t      event;       // EVT wait
+    TimerHandle_t           timer;       // Only for delay to reset
+    SemaphoreHandle_t       write_lock;  // spisync_write lock
+    SemaphoreHandle_t       opspin_log;
+    SemaphoreHandle_t       updateclamp; // updateclamp
+
+    QueueHandle_t           prx_queue[3];
     StreamBufferHandle_t    prx_streambuffer[3];
+    QueueHandle_t           ptx_queue[3];
+    StreamBufferHandle_t    ptx_streambuffer[3];
 
     /* local global arg */
-    uint32_t                tx_seq;
+    uint8_t                 enablerxtx;
+    uint16_t                tx_seq;
     uint32_t                txtag_errtimes;
-    uint32_t                txwrite_continue;
     uint32_t                rxpattern_checked;
-    uint32_t                rxread_continue;
-    uint32_t                clamp[3];
+    uint32_t                ps_status;  // 0:active, 1:sleeping
+    uint32_t                clamp[SPISYNC_TYPEMAX];   // local for tx // local-reicved  // s->m flowctrl
+
+    /* local cb */
+    spisync_ops_t           sync_ops[SPISYNC_TYPEMAX]; // for spisync zerocopy, eg:fhost_tx
 
     /* slot */
     /* Because the cache is aligned to 32 bytes, both the beginning and end
-    need to consider cache alignment issues. */
+       need to consider cache alignment issues.
+     */
     spisync_txbuf_t*        p_tx;
     spisync_rxbuf_t*        p_rx;
     /* calulate crc for rx */
-    slot_payload_t*         p_rxcache;
+    spisync_slot_t*         p_rxcache;
 
     /* ramsync */
     lramsync_ctx_t          hw;
-	// The config is only cleared to 0 during init, unchanged during reset
-    const spisync_config_t *config;
-#if SPISYNC_MASTER_ENABLE
-    enum spisync_state		state;
-    TimerHandle_t idle_tmr;
-#endif
-
+	/* The config is only cleared to 0 during init, unchanged during reset */
+    const spisync_hw_t      *config;
+    int state;
+    /* number of deferred spi transactions before going to IDLE. */
+    int countdown;
     /* debug */
     uint32_t                isr_rxcnt;
     uint32_t                isr_txcnt;
-    // The tsk_rstcnt is only cleared to 0 during init, unchanged during reset
+    uint32_t                rxcrcerr_cnt;
     uint32_t                tsk_rstcnt;
-    uint32_t                tsk_ctrlcnt;
     uint32_t                tsk_writecnt;
     uint32_t                tsk_readcnt;
+    uint32_t                tsk_ctrlcnt;
     uint32_t                tsk_rsttick;
-
-    uint32_t                iperf;
     uint32_t                dbg_tick_old;
     uint32_t                isr_rxcnt_old;
     uint32_t                isr_txcnt_old;
     uint32_t                tsk_writecnt_old;
     uint32_t                tsk_readcnt_old;
-
+    uint32_t 				tx_throttled[SPISYNC_TYPEMAX];
 } spisync_t;
 
+/* base api */
 int spisync_init        (spisync_t *spisync, const spisync_config_t *config);
+int spisync_build_typecb(spisync_ops_t *msg, uint8_t type, spisync_opscb_cb_t cb, void *cb_pri);
+int spisync_reg_typecb  (spisync_t *spisync, spisync_ops_t *msg);
 int spisync_deinit      (spisync_t *spisync);
-int spisync_read        (spisync_t *spisync, uint8_t type, void *buf, uint32_t len, uint32_t timeout_ms);
-int spisync_write       (spisync_t *spisync, uint8_t type, void *buf, uint32_t len, uint32_t timeout_ms);
+int spisync_read        (spisync_t *spisync, spisync_msg_t *msg, uint32_t flags);
+int spisync_write       (spisync_t *spisync, spisync_msg_t *msg, uint32_t flags);
+int spisync_build_msg   (spisync_msg_t *msg, uint32_t type, void *buf, uint32_t len, uint32_t timeout);
 
-int spisync_fakewrite_forread(spisync_t *spisync, void *buf, uint32_t len, uint32_t timeout_ms);
+/* debug api */
+int spisync_status              (spisync_t *spisync);
+int spisync_status_internal     (spisync_t *spisync);
+int spisync_fakewrite_forread   (spisync_t *spisync, spisync_msg_t *msg, uint32_t flags);
+
+/* todo */
+int spisync_set_clamp(spisync_t *spisync, uint8_t type, uint32_t cnt);
+
+#define SPISYNC_RESET_PATTERN		(0x55)
+
+#define SPISYNC_IDLE_TIMER_PERIOD_MS    50
 
 int spisync_dump          (spisync_t *spisync);
 int spisync_dump_internal (spisync_t *spisync);

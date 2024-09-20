@@ -178,6 +178,8 @@ void btble_controller_remaining_mem(uint8_t** addr, int* size);
 
 void btble_controller_set_cs2(uint8_t enable);    // cs2 is enabled by default
 
+void btble_controller_set_local_sdk_ver(uint32_t sdk_ver);
+
 #if defined(QCC74x_undefL)
 void btble_controller_sleep_init(void);
 typedef int (*btble_before_sleep_cb_t)(void);

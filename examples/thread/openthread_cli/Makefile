@@ -10,6 +10,8 @@ CROSS_COMPILE ?= riscv64-unknown-elf-
 OT_FTD ?= 1 
 OT_SERIAL ?= SYS_CLI
 
+#cmake_definition+=-DCONFIG_LMAC154_LOG_ENABLE=1
+
 cmake_definition+=-DOT_FTD=${OT_FTD}
 cmake_definition+=-DOT_CLI=1
 

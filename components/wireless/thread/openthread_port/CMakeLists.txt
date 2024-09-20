@@ -4,7 +4,6 @@ if("${CHIP}" STREQUAL "qcc743")
   sdk_add_private_compile_definitions(-DQCC743)
 endif()
 
-
 sdk_add_include_directories(./include)
 
 if (CONFIG_LITTLEFS)
@@ -15,9 +14,13 @@ elseif (CONFIG_EASYFLASH4)
 else ()
   message(FATAL_ERROR "Please select one of CONFIG_LITTLEFS and CONFIG_EASYFLASH4 for OpenThread setting storage.")
 endif()
+
+if (NOT CONFIG_MATTER)
+  sdk_library_add_sources(./ot_freertos.c)
+endif()
+
 sdk_library_add_sources(./ot_sys_qcc74x.c)
 sdk_library_add_sources(./ot_alarm_qcc743.c)
-sdk_library_add_sources(./ot_freertos.c)
 sdk_library_add_sources(./ot_radio.c)
 sdk_library_add_sources(./ot_radio_qcc74x.c)
 

@@ -28,16 +28,10 @@ typedef struct ota_header {
     } u;
 } at_ota_header_t;
 
-int at_iperf_udp_tx_start(spisync_t *p_spisync, char ip_addr[20], int port);
-int at_iperf_tcp_tx_start(spisync_t *p_spisync, char ip_addr[20], int port);
-int at_iperf_udp_rx_start(spisync_t *p_spisync, char ip_addr[20], int port);
-int at_iperf_tcp_rx_start(spisync_t *p_spisync, char ip_addr[20], int port);
-void at_wifi_connect(spisync_t *p_spisync, char ssid[32], char pswd[64]);
-void at_qcc74x_ota_start(spisync_t *p_spisync, char ip_addr[20], int port);
-int at_qcc74x_ota_update(spisync_t *p_spisync, uint8_t *buf, uint32_t len);
-int at_qcc74x_ota_finish(spisync_t *p_spisync);
-
-void at_spisync_start_run(spisync_t *p_spisync);
+int at_iperf_udp_tx_start(at_host_handle_t at, char ip_addr[20], int port);
+int at_iperf_tcp_tx_start(at_host_handle_t at, char ip_addr[20], int port);
+int at_iperf_udp_rx_start(at_host_handle_t at, char ip_addr[20], int port);
+int at_iperf_tcp_rx_start(at_host_handle_t at, char ip_addr[20], int port);
 
 at_host_handle_t at_spisync_init(void);
 

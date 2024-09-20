@@ -53,4 +53,4 @@ if (CONFIG_FATFS)
     sdk_add_compile_definitions(-DCONFIG_FATFS=1)
 endif()
 
-sdk_add_compile_options(--save-temps)
+sdk_add_private_compile_options(--save-temps)

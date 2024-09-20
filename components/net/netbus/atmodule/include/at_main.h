@@ -15,7 +15,6 @@ extern "C" {
 #endif
 
 #define AT_CMD_BIN_VERSION "1.0.0"
-#define AT_FS_ROOT_DIR "/romfs"
 
 #define AT_CMD_MAX_NUM 256
 #define AT_CMD_MAX_LEN 256
@@ -81,7 +80,7 @@ struct at_struct {
     char *inbuf;
 };
 
-struct at_struct *at;
+extern struct at_struct *at;
 
 int at_module_init(void);
 

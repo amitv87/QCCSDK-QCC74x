@@ -114,11 +114,11 @@ void free_aligned_with_padding(void *ptr)
 
 void *malloc_aligned_with_padding_nocache(int size, int align_bytes)
 {
-    return ((uint32_t)(malloc_aligned_with_padding(size, align_bytes))) & 0xBFFFFFFF;
+    return malloc_aligned_with_padding(size, align_bytes);
 }
 
 void free_aligned_with_padding_nocache(void *ptr)
 {
-    free_aligned_with_padding(((uint32_t)(ptr)) | 0x60000000);
+    free_aligned_with_padding(ptr);
 }
 

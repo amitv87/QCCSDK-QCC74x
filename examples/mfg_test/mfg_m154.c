@@ -119,6 +119,12 @@ void m154_init(void)
 {
     // Initialize MAC154
     lmac154_init();
+    // bz only on
+    uint32_t val = *(volatile uint32_t*)0x20001220;
+    val |= (1<<26);
+    val |= (1<<27);
+    *(volatile uint32_t*)0x20001220 = val;
+
     // qcc74x_irq_attach(M154_INT_IRQn, qcc743_lmac154_getInterruptHandler, NULL);
     qcc74x_irq_attach(M154_INT_IRQn, lmac154_getInterruptHandler(), NULL);
     qcc74x_irq_enable(M154_INT_IRQn);
@@ -139,10 +145,8 @@ void m154_exit(void)
     wl_154_optimize_restore();
     // bz only off
     uint32_t val = *(volatile uint32_t*)0x20001220;
-    // mfg_zb_print("%ld \r\n", val);
     val &= (~(1<<26));
     val &= (~(1<<27));
-    // mfg_zb_print("%ld \r\n", val);
     *(volatile uint32_t*)0x20001220 = val;
 }
 

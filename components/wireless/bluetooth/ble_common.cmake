@@ -1195,6 +1195,12 @@ endif()
 # CFLAGS += -DCONFIG_HW_SEC_ENG_DISABLE
 # endif
 sdk_add_compile_definitions_ifdef(CONFIG_HW_SEC_ENG_DISABLE -DCONFIG_HW_SEC_ENG_DISABLE)
+
+# ifeq ($(CONFIG_LP_HCIUART),1)
+# CFLAGS += -DCONFIG_LP_HCIUART
+# endif
+sdk_add_compile_definitions_ifdef(CONFIG_LP_HCIUART -DCONFIG_LP_HCIUART)
+
 # 
 # ##########################################
 # ############## BLE STACK #################
@@ -1422,6 +1428,10 @@ sdk_add_compile_definitions_ifdef(CONFIG_HOGP_SERVER -DCONFIG_HOGP_SERVER)
 # CFLAGS += -DCONFIG_BT_BAS_SERVER
 # endif
 sdk_add_compile_definitions_ifdef(CONFIG_BT_BAS_SERVER -DCONFIG_BT_BAS_SERVER)
+# ifeq ($(CONFIG_BT_IAS_SERVER),1)
+# CFLAGS += -DCONFIG_BT_IAS_SERVER
+# endif
+sdk_add_compile_definitions_ifdef(CONFIG_BT_IAS_SERVER -DCONFIG_BT_IAS_SERVER)
 # ifeq ($(CONFIG_BT_SPP_SERVER),1)
 # CFLAGS += -DCONFIG_BT_SPP_SERVER
 # endif

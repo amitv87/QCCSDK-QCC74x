@@ -28,13 +28,14 @@
 #include "qcc74x_hci_wrapper.h"
 #endif
 
-#if (QCC74x_STATIC_ALLOC_MEM)
+//#if (QCC74x_STATIC_ALLOC_MEM)
 #include "l2cap.h"
 #include <gatt.h>
 #include <conn.h>
 #include "conn_internal.h"
 #include "att_internal.h"
-#endif
+//#endif
+#include "l2cap_internal.h"
 
 #if defined(CONFIG_NET_BUF_LOG)
 #define NET_BUF_DBG(fmt, ...) LOG_DBG("(%p) " fmt, k_current_get(), \

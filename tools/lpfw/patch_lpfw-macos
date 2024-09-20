@@ -64,7 +64,7 @@ sub swap_endian {
 
 sub getCrc32{
     # Open a file
-    open(DATA, "<$_[0]") or die "Cannot open file: $!";
+    open(DATA, "<:raw", $_[0]) or die "Cannot open file: $!";
 
     my @args = stat ($_[0]);
     my $size = $args[7];
@@ -104,7 +104,7 @@ $crc = swap_endian($crc);
 print uc($crc) . "\n";
 $crc = pack("H*", $crc);
 
-open FD, "+<$ARGV[0]";
+open FD, "+<:raw", $ARGV[0];
 seek FD, -64, 2;
 print FD $crc;
 

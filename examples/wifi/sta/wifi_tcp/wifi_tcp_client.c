@@ -24,7 +24,7 @@ struct arg_param {
 
 // clang-format off
 static const uint8_t write_buf[128] = "wifi tcp client test, helloworld!\r\n";
-static const uint8_t read_buf[128];
+static uint8_t read_buf[128];
 // clang-format on
 
 static volatile int wifi_tcp_client_exit;

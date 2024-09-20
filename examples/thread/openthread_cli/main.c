@@ -7,6 +7,8 @@
 #if defined (CONFIG_EASYFLASH4)
 #include <easyflash.h>
 #endif
+#include <lmac154.h>
+#include <zb_timer.h>
 
 #include <openthread_port.h>
 #include <openthread/cli.h>
@@ -20,9 +22,59 @@ extern void __libc_init_array(void);
 extern void shell_init_with_task(struct qcc74x_device_s *shell);
 #endif
 
+static void ot_stateChangedCallback(otChangedFlags aFlags, void *aContext) 
+{
+    char string[OT_IP6_ADDRESS_STRING_SIZE];
+
+    if (OT_CHANGED_THREAD_ROLE & aFlags) {
+        otDeviceRole role = otThreadGetDeviceRole(otrGetInstance());
+        const otNetifAddress *unicastAddrs = otIp6GetUnicastAddresses(otrGetInstance());
+
+        APP_PRINT ("st_role %ld %s, partition id %d\r\n", zb_timer_get_current_time(), 
+                otThreadDeviceRoleToString(role), otThreadGetPartitionId(otrGetInstance()));
+
+        for (const otNetifAddress *addr = unicastAddrs; addr; addr = addr->mNext) {
+            otIp6AddressToString(&addr->mAddress, string, sizeof(string));
+            APP_PRINT ("%s\r\n", string);
+        }
+    }
+
+    if (OT_CHANGED_IP6_ADDRESS_ADDED & aFlags) {
+        otDeviceRole role = otThreadGetDeviceRole(otrGetInstance());
+        const otNetifAddress *unicastAddrs = otIp6GetUnicastAddresses(otrGetInstance());
+
+        APP_PRINT ("st_addr %ld %s, partition id %d\r\n", zb_timer_get_current_time(), 
+                otThreadDeviceRoleToString(role), otThreadGetPartitionId(otrGetInstance()));
+
+        for (const otNetifAddress *addr = unicastAddrs; addr; addr = addr->mNext) {
+            otIp6AddressToString(&addr->mAddress, string, sizeof(string));
+            APP_PRINT ("%s\r\n", string);
+        }
+    }
+
+    if (OT_CHANGED_THREAD_PARTITION_ID & aFlags) {
+        APP_PRINT ("st_part %ld %s, partition id %d\r\n", zb_timer_get_current_time(), 
+                otThreadDeviceRoleToString(otThreadGetDeviceRole(otrGetInstance())), otThreadGetPartitionId(otrGetInstance()));
+    }
+}
+
 void otrInitUser(otInstance * instance)
 {
     otAppCliInit(instance);
+
+    if (otDatasetIsCommissioned(otrGetInstance())) {
+        otIp6SetEnabled(otrGetInstance(), true);
+        otThreadSetEnabled(otrGetInstance(), true);
+    }
+    otSetStateChangedCallback(otrGetInstance(), ot_stateChangedCallback, NULL);
+}
+
+void vApplicationTickHook( void )
+{
+    lmac154_monitor();
+#if CONFIG_LMAC154_LOG_ENABLE
+    lmac154_logs_output();
+#endif
 }
 
 int main(void)
@@ -45,8 +97,12 @@ int main(void)
         return 0;
     }
 #endif
-
+    
     __libc_init_array();
+
+#if CONFIG_LMAC154_LOG_ENABLE
+    lmac154_log_init();
+#endif
 
     uart0 = qcc74x_device_get_by_name("uart0");
 #if defined(OT_SERIAL_SHELL)

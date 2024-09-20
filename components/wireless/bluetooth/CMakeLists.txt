@@ -1,6 +1,12 @@
 include(${CMAKE_CURRENT_SOURCE_DIR}/ble_common.cmake)
 
+
+if((${CHIP} STREQUAL "qcc74x_undef"))
+add_subdirectory(blecontroller)
+else()
 add_subdirectory(btblecontroller)
+endif()
+
 if(NOT CONFIG_BLE_HOST_DISABLE)
     add_subdirectory(blestack)
 	if (CONFIG_BT_MESH)

@@ -6,7 +6,9 @@
 #include <qcc743_glb.h>
 #include <qcc74x_mtimer.h>
 #include <qcc74x_efuse.h>
+#include <qcc74x_flash.h>
 #include <lmac154.h>
+#include <zb_timer.h>
 
 #include <openthread_port.h>
 #include <ot_radio_trx.h>
@@ -14,28 +16,25 @@
 
 void otPlatRadioGetIeeeEui64(otInstance *aInstance, uint8_t *aIeeeEui64) 
 {
-    uint8_t chipid[8];
-    uint8_t mac_addr[6];
     int i;
+    uint32_t flash_id = 0;
 
+    memset(aIeeeEui64, 0, 8);
     for (i = 2; i >= 0; i --) {
-        if (!qcc74x_efuse_is_mac_address_slot_empty(2, 0)) {
-            qcc74x_efuse_read_mac_address_opt(i, mac_addr, 0);
-            break;
+        if (!qcc74x_efuse_is_mac_address_slot_empty(i, 0)) {
+            qcc74x_efuse_read_mac_address_opt(i, aIeeeEui64, 0);
+            return;
         }
     }
 
-    qcc74x_efuse_get_chipid(chipid);
-    if (i >= 0) {
-        memcpy(aIeeeEui64, mac_addr, 6);
-        memcpy(aIeeeEui64 + 6, chipid + 4, 2);
-    }
-    else {
-        memcpy(aIeeeEui64 + 2, chipid, 6);
-        aIeeeEui64[0] = 0x8C;
-        aIeeeEui64[1] = 0xFD;
-        aIeeeEui64[2] = 0xF0;
-    }
+    aIeeeEui64[0] = 0x8C;
+    aIeeeEui64[1] = 0xFD;
+    aIeeeEui64[2] = 0xF0;
+    flash_id = qcc74x_flash_get_jedec_id();
+    aIeeeEui64[3] = (flash_id >> 24) & 0xff;
+    aIeeeEui64[4] = (flash_id >> 16) & 0xff;
+    aIeeeEui64[5] = (flash_id >> 8) & 0xff;
+    aIeeeEui64[6] = flash_id & 0xff;
 }
 
 uint64_t otPlatRadioGetNow(otInstance *aInstance)
@@ -62,12 +61,21 @@ otError otPlatRadioDisable(otInstance *aInstance)
 
 otError otPlatRadioReceive(otInstance *aInstance, uint8_t aChannel) 
 {
-    uint8_t ch = aChannel - OT_RADIO_2P4GHZ_OQPSK_CHANNEL_MIN;
+    uint8_t ch = lmac154_getChannel();
 
-    lmac154_setChannel((lmac154_channel_t)ch);
 #if (OPENTHREAD_FTD) || (OPENTHREAD_MTD)
-    lmac154_setRxStateWhenIdle(otThreadGetLinkMode(aInstance).mRxOnWhenIdle);
+    if (lmac154_isRxStateWhenIdle() != otThreadGetLinkMode(aInstance).mRxOnWhenIdle) {
+        lmac154_setRxStateWhenIdle(otThreadGetLinkMode(aInstance).mRxOnWhenIdle);
+    }
 #endif
+
+    if (ch != (aChannel - OT_RADIO_2P4GHZ_OQPSK_CHANNEL_MIN)) {
+
+        lmac154_disableRx();
+
+        lmac154_setChannel(aChannel - OT_RADIO_2P4GHZ_OQPSK_CHANNEL_MIN);
+    }
+
     lmac154_enableRx();
 
     return OT_ERROR_NONE;

@@ -609,8 +609,15 @@ httpc_init_connection_common(httpc_state_t **connection, const httpc_connection_
   }
   req->uri = req->server_name + server_name_len + 1;
   memcpy(req->uri, uri, uri_len + 1);
+#endif 
+#if LWIP_ALTCP_TLS && LWIP_ALTCP_TLS_MBEDTLS
+  if (settings->tls_config) {
+    req->pcb = altcp_tls_new(settings->tls_config, IPADDR_TYPE_ANY);
+  } else 
 #endif
-  req->pcb = altcp_new(settings->altcp_allocator);
+  {
+    req->pcb = altcp_new(settings->altcp_allocator);
+  }
   if(req->pcb == NULL) {
     httpc_free_state(req);
     return ERR_MEM;

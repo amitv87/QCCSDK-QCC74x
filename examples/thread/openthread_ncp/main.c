@@ -153,7 +153,7 @@ int main(void)
         return 0;
     }
 #endif
-
+    
     __libc_init_array();
 
     uart0 = qcc74x_device_get_by_name("uart0");

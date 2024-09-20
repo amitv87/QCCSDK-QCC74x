@@ -27,4 +27,4 @@ sdk_library_add_sources(
     src/qcc743/codec/test/test_output.c
     )
 
-sdk_add_compile_options(--save-temps)
+sdk_add_private_compile_options(--save-temps)

@@ -153,6 +153,7 @@ typedef struct {
     wifi_country_code wifi_country;
     char hostname[28];
     uint8_t  reconnect_state;
+    uint8_t  connecting_state;
     uint8_t  wlan_disable;
     uint8_t  wevt_enable;
 }wifi_config;

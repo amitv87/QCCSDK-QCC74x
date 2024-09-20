@@ -1,6 +1,5 @@
 QConn_Secure is a command line firmware process tool to update correct bootheder information and encrypt or sign firmware.
 In order to achieve this goal, some parameters must be specified:
-  --chipname: chipname that you are building
   --brdcfgdir: board config directory that you are using, this is used to copy files like boot2 to image directory
   --imgfile: image file that you want to deal with, ',' can be used to split multiple files and '*' can be used to match the only one file
   --key: AES key when you want to encrypt image with AES CTR
@@ -8,21 +7,32 @@ In order to achieve this goal, some parameters must be specified:
   --xtsmode: xts mode enable when you want to encrypt image with AES xts and your chip should support it
   --privatekey: private key of ecc-256 in pem format
   --publickey: public key of ecc-256 in pem format
+  --publickey_sign: signature of the public key, in base64 format
+  --publickey_hash_sign: signature of the public key's hash, in base64 format
+  --imgfile_sign: signature of the image file, in base64 format
 
 Examples(examples/wifi/sta/wifi_tcp, qcc743):
+
+
+***Secure boot with sign***
+step1: sign the helloworld_qcc743.bin with privatekey_uecc.pem and convert into base64 format as input imgfile_sign
+step2: sign the publickey_uecc.pem with privatekey_uecc.pem and convert into base64 format as input publickey_sign
+step3: sign the hash(sha256) of publickey_uecc.pem with privatekey_uecc.pem and convert into base64 format as input publickey_hash_sign
+step4: "QConn_Secure --imgfile=helloworld_qcc743.bin --publickey_sign=tdZGKpDE0/BysnPH166h86/d4vJOrqxW2ObGuGp+SxpXFJouWQ+8bTVaBbYpVjgEfXE5dlDWz/BC+21hMiMlgg== --publickey_hash_sign=E4U3TCWEezXSRnzVVzsOQtLML0z3VX4FNunVj0tuqf0=  --imgfile_sign=Ft+u9TD6IM7nOf4lqssT4Ed9+KnnRzdUdUgKN1DLIu9doQUAhqVa1yq/Vyz2cvcA2eu1I/cZzFdKCipRTppz2g=="
+
 
 ***No secure boot***
 
 step1: "cd examples/wifi/sta/wifi_tcp"
 step2: "make"
-step3: "QConn_Secure --chipname=qcc743 --brdcfgdir=bsp/board/qcc743dk/config --imgfile=./build/build_out/wifi_tcp_qcc743.bin"
+step3: "QConn_Secure --brdcfgdir=bsp/board/qcc743dk/config --imgfile=./build/build_out/wifi_tcp_qcc743.bin"
 
 
 ***Secure boot with command line***
 
 step1: "cd examples/wifi/sta/wifi_tcp"
 step2: "make"
-step3: "QConn_Secure --chipname=qcc743 --brdcfgdir=bsp/board/qcc743dk/config --imgfile=./build/build_out/wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
+step3: "QConn_Secure --brdcfgdir=bsp/board/qcc743dk/config --imgfile=./build/build_out/wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
 
 
 ***Secure boot with encrypt and sign server***
@@ -32,11 +42,11 @@ step2: "cd examples/wifi/sta/wifi_tcp"
 step3: "make"
 
 step4: upload build/build_out/boot2_xxx.bin to server (optional, if boot2 is not changed and already encrypt and sign,skip this step)
-step5: server excute "QConn_Secure --chipname=qcc743 --imgfile=boot2_xxx.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
+step5: server excute "QConn_Secure --imgfile=boot2_xxx.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
 step6: download boot2_xxx.bin from server and overwrite the original one
 
 step7: upload build/build_out/wifi_tcp_qcc743.bin to server (optional, if boot2 is not changed and already encrypt and sign,skip this step)
-step8: server excute "QConn_Secure --chipname=qcc743 --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
+step8: server excute "QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
 step9: download wifi_tcp_qcc743.bin from server and overwrite the original one
 
 step10: make flash
@@ -44,7 +54,7 @@ step11: make efuse
 
 
 Other options:
-	multi-files: "QConn_Secure --chipname=qcc743 --imgfile=./build/build_out/helloworld_qcc743.bin,./build/build_out/boot2_*.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000"
+	multi-files: "QConn_Secure --imgfile=./build/build_out/helloworld_qcc743.bin,./build/build_out/boot2_*.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000"
 	--edbg_mode:set dbg mode,open/pswd/close; ex:--edbg_mode=pswd
 	--epswwd:JTAG password value for hex string; ex:--epswwd=1234567890ABCDEF
 	--ehbn_sign:enable/disable signature check when HBN mode wakeup; ex:--ehbn_sign=true

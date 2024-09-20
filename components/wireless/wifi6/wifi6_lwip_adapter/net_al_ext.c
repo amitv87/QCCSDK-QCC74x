@@ -477,6 +477,7 @@ int net_al_gw_service_disable(net_al_if_t net_if)
     return 0;
 }
 
+#if LWIP_QUICK_CONNECT
 static ip4_addr_t saved_ip_addr = {IPADDR_ANY};
 static ip4_addr_t saved_ip_mask = {IPADDR_ANY};
 static ip4_addr_t saved_ip_gw = {IPADDR_ANY};
@@ -498,7 +499,6 @@ static void qc_callback(struct netif *net_if)
     platform_post_event(EV_WIFI, CODE_WIFI_ON_GOT_IP);
 }
 
-#if LWIP_QUICK_CONNECT
 static void net_quick_dhcp_restore(net_al_if_t net_if)
 {
     inet_if_t *nif = (inet_if_t *)net_if;

@@ -58,6 +58,7 @@ static int g_wifi_sta_use_dhcp = 0;
 static int g_wifi_sta_disconnect_reason = 0;
 static int g_wifi_waiting_connect_result = 0;
 static int g_wifi_sniffer_is_start = 0;
+static int g_wifi_ap_is_start = 0;
 
 /** Mac address length  */
 #define DHCP_MAX_HLEN               6
@@ -198,6 +199,7 @@ void wifiopt_sta_connect(void)
     uint32_t mask = at_wifi_config->sta_ip.netmask;
     uint32_t gateway = at_wifi_config->sta_ip.gateway;
     const uint8_t invalid_mac[6] = {0, 0, 0, 0, 0, 0};
+    char bssid_str[20] = {0};
     //struct ap_connect_adv ext_param;
 
     if (strlen(ssid) <= 0) {
@@ -206,6 +208,10 @@ void wifiopt_sta_connect(void)
 
     if (memcmp(bssid, invalid_mac, sizeof(invalid_mac)) == 0) {
         bssid = NULL;
+    } else {
+        snprintf(bssid_str, sizeof(bssid_str), "%02x:%02x:%02x:%02x:%02x:%02x",
+                bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
+        bssid = bssid_str;
     }
 
 #if 0
@@ -256,7 +262,12 @@ void wifiopt_sta_connect(void)
     }
 
     at_wifi_hostname_set(hostname);
-    wifi_sta_connect(ssid, psk, NULL, at_wifi_config->sta_info.wep_en?"WEP":NULL, pmf_cfg, freq, freq, dhcp_en);
+    at_wifi_config->connecting_state = 1;
+
+    if (at_wifi_config->wevt_enable) {
+        at_response_string("+CW:CONNECTING\r\n");
+    }
+    wifi_sta_connect(ssid, psk, bssid, at_wifi_config->sta_info.wep_en?"WEP":NULL, pmf_cfg, freq, freq, dhcp_en);
 #endif
 }
 
@@ -312,7 +323,9 @@ static void reconnect_event(void *arg)
         vTaskDelay(pdMS_TO_TICKS(interval));
 
         state = at_wifi_state_get();
-        if (at_wifi_config->wifi_mode != WIFI_STATION_MODE || state == FHOST_STA_CONNECTED || (!at_wifi_config->reconn_cfg.repeat_count)) {
+        if ((at_wifi_config->wifi_mode != WIFI_STATION_MODE && at_wifi_config->wifi_mode != WIFI_AP_STA_MODE)  ||
+            state == FHOST_STA_CONNECTED || 
+            (!at_wifi_config->reconn_cfg.repeat_count)) {
             break;
         }
         printf("xxxxxxxxxxxxx %d %d\r\n", state, wifi_mgmr_sta_state_get());
@@ -340,7 +353,7 @@ static void wifi_sta_enable_reconnect(int enable)
 
 static void _wifi_ap_status_callback(struct netif *netif)
 {
-    wifi_ap_update_sta_ip((uint8_t *)netif->hwaddr, ip_addr_get_ip4_u32(&netif->ip_addr));
+    wifi_ap_update_sta_ip((uint8_t *)netif->hwaddr, ip4_addr_get_u32(ip_2_ip4(&netif->ip_addr)));
 
     if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
         if (at_wifi_config->wevt_enable) {
@@ -360,6 +373,14 @@ static int wifi_ap_start(void)
 {
     wifi_mgmr_ap_params_t config = {0};
 
+    if (at_wifi_config->wifi_mode == WIFI_AP_STA_MODE) {
+        int sta_channel;
+        if (wifi_mgmr_sta_channel_get(&sta_channel) == 0) {
+            at_wifi_config->ap_info.channel = sta_channel;
+            printf("Set AP channel to %d\r\n", sta_channel);
+        }
+    }
+
     config.ssid = at_wifi_config->ap_info.ssid;
     config.key = at_wifi_config->ap_info.pwd;
     config.hidden_ssid = at_wifi_config->ap_info.ssid_hidden;
@@ -376,16 +397,16 @@ static int wifi_ap_start(void)
     wifi_mgmr_ap_start(&config);
     vTaskDelay(100);
     dhcpd_status_callback_set(netif, _wifi_ap_status_callback);
+    g_wifi_ap_is_start = 1;
 
     return 0;
 }
 
 static int wifiopt_ap_stop(int force)
 {
-
+    g_wifi_ap_is_start = 0;
     dhcpd_stop_with_netif(fhost_to_net_if(MGMR_VIF_AP));
     wifi_mgmr_ap_stop();
-
     return 0;
 }
 
@@ -519,7 +540,7 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             if (g_wifi_sta_is_connected) {
                 if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
                     if (at_wifi_config->wevt_enable) {
-                        at_response_string("+CW:DISCONNECT\r\n");
+                        at_response_string("+CW:DISCONNECTED\r\n");
                     }
                 }
                 g_wifi_sta_is_connected = 0;
@@ -527,6 +548,7 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
             }
             g_wifi_sta_disconnect_reason = wifi_mgmr_sta_info_status_code_get();// qcc74x_fw_api.h eg: WLAN_FW_BEACON_LOSS
             g_wifi_waiting_connect_result = 0;
+            at_wifi_config->connecting_state = 0;
         }
         break;
         case CODE_WIFI_ON_SCAN_DONE: {
@@ -550,6 +572,10 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
                 }
                 g_wifi_sta_is_connected = 1;
 
+                if (g_wifi_ap_is_start && at_wifi_config->wifi_mode == WIFI_AP_STA_MODE) {
+                    at_wifi_ap_start();
+                }
+                at_wifi_config->connecting_state = 0;
                 //if (g_wifi_sta_use_dhcp == 0)
                 //    aos_post_event(EV_WIFI, CODE_WIFI_ON_GOT_IP, 0);
 
@@ -826,7 +852,7 @@ int at_wifi_sniffer_set_channel(int channel, void *cb, void *arg)
     sniffer_item.cb_arg = arg;
 
     printf("set channel %d\r\n", channel);
-    wifi_mgmr_sniffer_enable(&sniffer_item);
+    wifi_mgmr_sniffer_enable(sniffer_item);
     return 0;
 }
 
@@ -840,7 +866,7 @@ int at_wifi_sniffer_stop(void)
     memset(&sniffer_item, 0, sizeof(sniffer_item));
     sniffer_item.itf = "wl1";
 
-    wifi_mgmr_sniffer_disable(&sniffer_item);
+    wifi_mgmr_sniffer_disable(sniffer_item);
 
     g_wifi_sniffer_is_start = 0;
     return 0;

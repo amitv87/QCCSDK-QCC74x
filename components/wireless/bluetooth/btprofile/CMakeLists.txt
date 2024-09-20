@@ -1,2 +1,6 @@
 sdk_add_include_directories(include/bluetooth)
+if (CONFIG_BT_BREDR_PTS)
+sdk_add_static_library(lib/libbtprofile_pts.a)
+else()
 sdk_add_static_library(lib/libbtprofile.a)
+endif()

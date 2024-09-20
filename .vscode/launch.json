@@ -6,14 +6,20 @@
             "type": "cppdbg",
             "request": "launch",
             "preLaunchTask": "Launch OpenOCD",
-            "program": "${workspaceFolder}/${input:elfFilePath}",
+            "program": "${workspaceRoot}/${input:elfFilePath}",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceRoot}",
             "environment": [],
             "externalConsole": true,
             "MIMode": "gdb",
             "miDebuggerPath": "riscv64-unknown-elf-gdb",
+            "windows" : {
+                "miDebuggerPath": "${workspaceRoot}/toolchain/windows_x86_64/bin/riscv64-unknown-elf-gdb.exe"
+            },
+            "linux" : {
+                "miDebuggerPath": "${workspaceRoot}/toolchain/linux_x86_64/bin/riscv64-unknown-elf-gdb"
+            },
             "setupCommands": [
                 {
                     "description": "Enable pretty printing",
@@ -47,7 +53,7 @@
                 {
                     "text": "mem 0xA0000000 0xA0400000 ro",
                     "ignoreFailures": false
-                },
+                }
             ],
             "logging": {
                 "engineLogging": true

@@ -217,6 +217,13 @@
 #endif
 #endif
 
+#ifndef CONFIG_USER_DATA_LEN_UPDATE
+#define CONFIG_USER_DATA_LEN_UPDATE 1
+#endif
+
+#ifndef CONFIG_BT_GATT_DIS_SETTINGS
+#define CONFIG_BT_GATT_DIS_SETTINGS 1
+#endif
 /**
 * CONFIG_BT_L2CAP_TX_USER_DATA_SIZE: the max length for L2CAP tx buffer user data size
 * range 4 to 65535
@@ -632,7 +639,6 @@
 #define CONFIG_BT_SCAN_WITH_IDENTITY 1
 #define CONFIG_BT_DEVICE_NAME_GATT_WRITABLE
 #define CONFIG_BT_GAP_APPEARANCE_WRITABLE
-
 
 #if defined(CONFIG_AUTO_PTS)
 #ifdef QCC74x_FIXED_IRK

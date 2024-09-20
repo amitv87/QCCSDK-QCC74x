@@ -1,0 +1,64 @@
+  {
+    "1": "Used and updated by extension, you should not change it manually if you don't know why",
+    "prjName": "hello_world",
+    "IDEVer": "^0.5.6",
+    "sdkName": "qccsdk_qcc740",
+    "sdkVer": "1.0.0",
+    "activated": true,
+    "chipID": "QCC740",
+    "chipVersion": "v2",
+    "chipTarget": "QCC740",
+    "toolchainName": "riscv64-unknown-elf-gcc",
+    "demoPath": "./examples/helloworld",
+    "sdkPath": "",
+    "demoRTOS": "f",
+    "demoChipBoard": "qcc743dk",
+    "demoBuildScriptWin": "make",
+    "demoBuildScriptLinux": "make",
+    "demoFlashScriptWin": "make",
+    "demoFlashScriptLinux": "make",
+    "cfgSetScriptWin": "",
+    "cfgSetScriptLinux": "",
+    "defaultDemo": "",
+    "defaultDemoPathName": "",
+    "buildRunPath": "",
+    "flashRunPath": "",
+    "entryFun": "app_start",
+    "elfName": "",
+    "elfPath": "",
+    "gdbInitFilePath": "",
+    "openocdGdbServerFilePath": "",
+    "buildArgs": "",
+    "boardList": [],
+    "incPaths": [
+      "${demoPath}"
+    ],
+    "SET_CFG_PATTERN": {
+      "win": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "linux": []
+    },
+    "BUILD_IMAGE_PATTERN": {
+      "win": [
+        "./tools/make/make.exe -C ${demoPath} ${buildArgs}"
+      ],
+      "linux": []
+    },
+    "CLEAN_IMAGE_PATTERN": {
+      "win": [
+        "./tools/make/make.exe -C ${demoPath} clean"
+      ],
+      "linux": []
+    },
+    "FLASH_PATTERN": {
+      "win": [
+        "./tools/qccide/flash_select_port.exe ${demoPath}",
+        "./tools/qccide/flash_select_port.exe ${demoPath}"
+      ],
+      "linux": []
+    }
+  }

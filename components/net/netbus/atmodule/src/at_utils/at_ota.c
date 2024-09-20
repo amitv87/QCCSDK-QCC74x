@@ -39,12 +39,14 @@ static int ota_upgrade_slice(at_ota_handle_t handle, uint32_t offset, char *buf,
 {
     int ret = 0;
     uint32_t retry;
-     
+    
+#if (!CONFIG_AT_FAST_OTA)
     ret = at_ota_erase(handle, offset, slice_size);
     if (ret) {
         printf("erase failed\r\n");
         return -1;
     }
+#endif
 
     for (retry = 0; retry < OTA_UPGRADE_RETRY; retry++) {
 
@@ -55,6 +57,7 @@ static int ota_upgrade_slice(at_ota_handle_t handle, uint32_t offset, char *buf,
             return -1;
         }
 
+#if (!CONFIG_AT_FAST_OTA)
         ret = qcc74x_flash_read((handle->ota_addr + offset), handle->check_buf, slice_size);
         if (ret != 0) {
             printf("flash read fail! %d\r\n", ret);
@@ -65,6 +68,7 @@ static int ota_upgrade_slice(at_ota_handle_t handle, uint32_t offset, char *buf,
             printf("flash check fail! 0x%08x\r\n", offset);
             return -1;
         }
+#endif
 
 #if OTA_DEBUG_IMG
         ret = qcc74x_flash_read((handle->active_addr + offset), handle->check_buf, slice_size);
@@ -166,11 +170,14 @@ at_ota_handle_t at_ota_start(at_ota_header_t *ota_header)
     ota_handle->sector_erased = pvPortMalloc(4 * ota_handle->sector_erased_size);
     memset(ota_handle->sector_erased, 0, 4 * ota_handle->sector_erased_size);
 
-    printf("[OTA] [TEST] activeIndex is %u, use OTA address=%08x\r\n", ota_handle->pt_fw_entry.active_index, (unsigned int)ota_handle->ota_addr);
+    printf("[OTA] [TEST] activeIndex is %u, use OTA address=%08x part_size=%08x\r\n", ota_handle->pt_fw_entry.active_index, (unsigned int)ota_handle->ota_addr, ota_handle->part_size);
     
     utils_sha256_init(&ota_handle->ctx_sha256);
     utils_sha256_starts(&ota_handle->ctx_sha256);
 
+#if CONFIG_AT_FAST_OTA
+    at_ota_erase(ota_handle, 0, ota_handle->part_size);
+#endif
     return ota_handle;
 _fail:
     vPortFree(ota_handle);

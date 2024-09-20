@@ -10,7 +10,9 @@ endif()
 if(CONFIG_PSRAM_COPY_CODE)
 sdk_set_linker_script(qcc743_chip_psram.ld)
 elseif(CONFIG_LINK_FOR_MFGTEST)
-sdk_set_linker_script(qcc743_chip_mfgtest.ld)
+message(FATAL_ERROR "
+FATAL: Please use qcc743dk compile mfg app
+")
 elseif(CONFIG_LPAPP)
 sdk_set_linker_script(qcc743_lp.ld)
 else()

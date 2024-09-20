@@ -171,7 +171,7 @@ STBRP_DEF void stbrp_setup_heuristic(stbrp_context * context, int heuristic);
 
 enum {
     STBRP_HEURISTIC_Skyline_default = 0,
-    STBRP_HEURISTIC_Skyline_QCC74x_sortHeight = STBRP_HEURISTIC_Skyline_default,
+    STBRP_HEURISTIC_Skyline_BL_sortHeight = STBRP_HEURISTIC_Skyline_default,
     STBRP_HEURISTIC_Skyline_BF_sortHeight
 };
 
@@ -236,7 +236,7 @@ STBRP_DEF void stbrp_setup_heuristic(stbrp_context * context, int heuristic)
 {
     switch(context->init_mode) {
         case STBRP__INIT_skyline:
-            STBRP_ASSERT(heuristic == STBRP_HEURISTIC_Skyline_QCC74x_sortHeight || heuristic == STBRP_HEURISTIC_Skyline_BF_sortHeight);
+            STBRP_ASSERT(heuristic == STBRP_HEURISTIC_Skyline_BL_sortHeight || heuristic == STBRP_HEURISTIC_Skyline_BF_sortHeight);
             context->heuristic = heuristic;
             break;
         default:
@@ -369,7 +369,7 @@ static stbrp__findresult stbrp__skyline_find_best_pos(stbrp_context * c, int wid
     while(node->x + width <= c->width) {
         int y, waste;
         y = stbrp__skyline_find_min_y(c, node, node->x, width, &waste);
-        if(c->heuristic == STBRP_HEURISTIC_Skyline_QCC74x_sortHeight) {  // actually just want to test BL
+        if(c->heuristic == STBRP_HEURISTIC_Skyline_BL_sortHeight) {  // actually just want to test BL
             // bottom left
             if(y < best_y) {
                 best_y = y;

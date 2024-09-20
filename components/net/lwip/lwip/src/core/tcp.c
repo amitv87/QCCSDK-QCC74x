@@ -1372,7 +1372,6 @@ tcp_slowtmr_start:
     }
 
     /* Check if KEEPALIVE should be sent */
-#if !TCP_TIMER_PRECISE_NEEDED
     if (ip_get_option(pcb, SOF_KEEPALIVE) &&
         ((pcb->state == ESTABLISHED) ||
          (pcb->state == CLOSE_WAIT))) {
@@ -1393,7 +1392,6 @@ tcp_slowtmr_start:
         }
       }
     }
-#endif
 
     /* If this PCB has queued out of sequence data, but has been
        inactive for too long, will drop the data (it will eventually
@@ -1541,78 +1539,6 @@ tcp_slowtmr_start:
     }
   }
 }
-
-#if TCP_TIMER_PRECISE_NEEDED
-void tcp_keepalive_tmr(void *arg)
-{
-  struct tcp_pcb *pcb = (struct tcp_pcb *)arg;
-  if (tcp_active_pcbs == NULL || pcb == NULL) {
-    LWIP_DEBUGF(TCP_DEBUG, ("tcp_keepalive_tmr: no active pcbs\n"));
-    return;
-  }
-  u8_t pcb_remove = 0; /* flag if a PCB should be removed */
-  u8_t pcb_reset = 0; /* flag if a RST should be sent when removing */
-  err_t err = ERR_OK;
-
-tcp_keepalive_start:
-  if (pcb != NULL) {
-    /* Check if KEEPALIVE should be sent */
-    if (ip_get_option(pcb, SOF_KEEPALIVE)
-          && ((pcb->state == ESTABLISHED) || (pcb->state == CLOSE_WAIT))) {
-      if ((u32_t)pcb->keep_cnt_sent > TCP_KEEPCNT_DEFAULT) {
-        LWIP_DEBUGF(TCP_DEBUG, ("tcp_keepalive_tmr: KEEPALIVE timeout. Aborting connection to ")); ip_addr_debug_print(TCP_DEBUG, &pcb->remote_ip); LWIP_DEBUGF(TCP_DEBUG, ("\n"));
-        ++pcb_remove;
-        ++pcb_reset;
-        tcp_keepalive_timer_stop(pcb);
-      } else if ((u32_t)pcb->keep_cnt_sent <= TCP_KEEPCNT_DEFAULT) {
-        err = tcp_keepalive(pcb);
-        if (err == ERR_OK) {
-          pcb->keep_cnt_sent++;
-          tcp_keepalive_timer_start(pcb);
-        }
-      }
-    }
-
-    /* If the PCB should be removed, do it. */
-    if (pcb_remove) {
-#if LWIP_CALLBACK_API
-      tcp_err_fn err_fn = pcb->errf;
-#endif /* LWIP_CALLBACK_API */
-      void *err_arg;
-      enum tcp_state last_state;
-      tcp_pcb_purge(pcb);
-
-      /* Remove PCB from tcp_active_pcbs list. */
-      if (pcb == tcp_active_pcbs) {
-         tcp_active_pcbs = pcb->next;
-      } else {
-         struct tcp_pcb *cur = tcp_active_pcbs;
-         struct tcp_pcb *pre = NULL;
-         while (cur != pcb) {
-           pre = cur;
-           cur = cur->next;
-         }
-         pre->next = cur->next;
-      }
-
-      if (pcb_reset) {
-        tcp_rst(pcb, pcb->snd_nxt, pcb->rcv_nxt, &pcb->local_ip, &pcb->remote_ip,
-            pcb->local_port, pcb->remote_port);
-      }
-
-      err_arg = pcb->callback_arg;
-      last_state = pcb->state;
-      tcp_free(pcb);
-
-      tcp_active_pcbs_changed = 0;
-      TCP_EVENT_ERR(last_state, err_fn, err_arg, ERR_ABRT);
-      if (tcp_active_pcbs_changed) {
-          goto tcp_keepalive_start;
-      }
-    }
-  }
-}
-#endif
 
 /**
  * Is called every TCP_FAST_INTERVAL (250 ms) and process data previously
@@ -2051,7 +1977,6 @@ tcp_alloc(u8_t prio)
 #else
     pcb->rtime = 0;
     pcb->fin_wait1_tmr = 0;
-    pcb->keepalive_os_timer = NULL;
 #endif
     pcb->cwnd = 1;
     pcb->tmr = tcp_ticks;
@@ -2311,14 +2236,9 @@ tcp_pcb_purge(struct tcp_pcb *pcb)
     }
 #endif /* TCP_QUEUE_OOSEQ */
 
-#if !TCP_TIMER_PRECISE_NEEDED
     /* Stop the retransmission timer as it will expect data on unacked
        queue if it fires */
     pcb->rtime = -1;
-#else
-    pcb->keep_cnt_sent = 0;
-    tcp_keepalive_timer_stop(pcb);
-#endif
 
     tcp_segs_free(pcb->unsent);
     tcp_segs_free(pcb->unacked);

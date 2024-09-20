@@ -38,6 +38,7 @@ int at_net_config_init(void)
             at_net_config->tcp_opt[i].so_linger = -1;
             at_net_config->tcp_opt[i].tcp_nodelay = 0;
             at_net_config->tcp_opt[i].so_sndtimeo = 0;
+            at_net_config->tcp_opt[i].keep_alive = 0;
         }
     }
     at_net_config->server_maxconn = AT_NET_CLIENT_HANDLE_MAX;

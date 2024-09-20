@@ -1770,7 +1770,7 @@ done:
 	bt_conn_unref(conn);
 }
 
-#if defined(CONFIG_BT_DATA_LEN_UPDATE)
+#if defined(CONFIG_USER_DATA_LEN_UPDATE)
 static void le_data_len_change(struct net_buf *buf)
 {
 	struct bt_hci_evt_le_data_len_change *evt = (void *)buf->data;
@@ -1795,11 +1795,13 @@ static void le_data_len_change(struct net_buf *buf)
 	BT_DBG("max. tx: %u (%uus), max. rx: %u (%uus)", max_tx_octets,
 	       max_tx_time, max_rx_octets, max_rx_time);
 
+	notify_le_datalen_updated(conn,max_tx_octets,
+	       max_tx_time, max_rx_octets, max_rx_time);
 	/* TODO use those */
 
 	bt_conn_unref(conn);
 }
-#endif /* CONFIG_BT_DATA_LEN_UPDATE */
+#endif /* CONFIG_USER_DATA_LEN_UPDATE */
 
 #if defined(CONFIG_BT_PHY_UPDATE)
 static void le_phy_update_complete(struct net_buf *buf)
@@ -4280,10 +4282,10 @@ static const struct event_handler meta_events[] = {
 		      sizeof(struct bt_hci_evt_le_remote_feat_complete)),
 	EVENT_HANDLER(BT_HCI_EVT_LE_CONN_PARAM_REQ, le_conn_param_req,
 		      sizeof(struct bt_hci_evt_le_conn_param_req)),
-#if defined(CONFIG_BT_DATA_LEN_UPDATE)
+#if defined(CONFIG_USER_DATA_LEN_UPDATE)
 	EVENT_HANDLER(BT_HCI_EVT_LE_DATA_LEN_CHANGE, le_data_len_change,
 		      sizeof(struct bt_hci_evt_le_data_len_change)),
-#endif /* CONFIG_BT_DATA_LEN_UPDATE */
+#endif /* CONFIG_USER_DATA_LEN_UPDATE */
 #if defined(CONFIG_BT_PHY_UPDATE)
 	EVENT_HANDLER(BT_HCI_EVT_LE_PHY_UPDATE_COMPLETE,
 		      le_phy_update_complete,
@@ -4774,7 +4776,7 @@ static int le_set_event_mask(void)
 			mask |= BT_EVT_MASK_LE_CONN_PARAM_REQ;
 		}
 
-		if (IS_ENABLED(CONFIG_BT_DATA_LEN_UPDATE) &&
+		if (IS_ENABLED(CONFIG_USER_DATA_LEN_UPDATE)&&
 		    BT_FEAT_LE_DLE(bt_dev.le.features)) {
 			mask |= BT_EVT_MASK_LE_DATA_LEN_CHANGE;
 		}
@@ -7715,7 +7717,37 @@ int bt_set_bd_addr(const bt_addr_t *addr)
 	return 0;
 }
 
+#if !defined(QCC74x_undef) && !defined(QCC74x_undef)
+int bt_get_controller_sdk_version(struct bt_controller_sdk_ver *version)
+{
+    struct net_buf *rsp;
+    struct bt_hci_rp_get_controller_sdk_ver *rp;
 
+    if(!version)
+		return -EINVAL;
+
+    /* Get controller sdk version */
+    int err = bt_hci_cmd_send_sync(BT_HCI_OP_VS_GET_CONTROLLER_SDK_VER, NULL, &rsp);
+    if (err) {
+		BT_ERR("Fail to get controller sdk ver,err=%d", err);
+		return err;
+    }
+
+    rp = (void *)rsp->data;
+
+    BT_DBG("status 0x%02x", rp->status);
+
+    version->status = rp->status;
+    version->ver_major = rp->ver_major;
+    version->ver_minor = rp->ver_minor;
+    version->ver_patch = rp->ver_patch;
+    version->sdk_commit_id = rp->sdk_commit_id[0]<<24 | rp->sdk_commit_id[1]<<16 | rp->sdk_commit_id[2]<<8 | rp->sdk_commit_id[3];
+
+    net_buf_unref(rsp);
+
+    return 0;
+}
+#endif
 
 int bt_buf_get_rx_avail_cnt(void)
 {

@@ -560,7 +560,7 @@ void wpa_sm_set_dpp_z(struct wpa_sm *sm, const struct wpabuf *z);
 void wpa_pasn_pmksa_cache_add(struct wpa_sm *sm, const u8 *pmk, size_t pmk_len,
 			      const u8 *pmkid, const u8 *bssid, int key_mgmt);
 
-#ifdef CONFIG_BL_PMK_CACHE_IN_MGMR
+#ifdef CONFIG_QCC74x_PMK_CACHE_IN_MGMR
 /**
  * @brief Load PMKSA cache from wifi_mgmr.
  *

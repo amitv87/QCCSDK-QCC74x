@@ -381,7 +381,7 @@ altcp_mbedtls_handle_rx_appldata(struct altcp_pcb *conn, altcp_mbedtls_state_t *
   }
   do {
     /* allocate a full-sized unchained PBUF_POOL: this is for RX! */
-    struct pbuf *buf = pbuf_alloc(PBUF_RAW, PBUF_POOL_BUFSIZE, PBUF_POOL);
+    struct pbuf *buf = pbuf_alloc(PBUF_RAW, PBUF_POOL_BUFSIZE, PBUF_RAM);
     if (buf == NULL) {
       /* We're short on pbufs, try again later from 'poll' or 'recv' callbacks.
          @todo: close on excessive allocation failures or leave this up to upper conn? */

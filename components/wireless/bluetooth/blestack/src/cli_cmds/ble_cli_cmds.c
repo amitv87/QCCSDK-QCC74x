@@ -2097,9 +2097,18 @@ static struct bt_gatt_write_params write_params;
 static void write_func(struct bt_conn *conn, u8_t err,
 		       struct bt_gatt_write_params *params)
 {
+    int ret = 0;
 	vOutputString("Write complete: err %u \r\n", err);
 
-	(void)memset(&write_params, 0, sizeof(write_params));
+    if(err == BT_ATT_ERR_PREPARE_QUEUE_FULL){
+        ret = bt_gatt_cancle_prepare_writes(conn, params);
+        if(ret){
+            vOutputString("Fail to cancel prepare writes(err %d)\r\n", ret);
+        }else{
+            vOutputString("Cancel prepare writes pending\r\n");
+        }
+    }else
+        memset(params, 0, sizeof(struct bt_gatt_write_params));
 }
 
 BLE_CLI(write)

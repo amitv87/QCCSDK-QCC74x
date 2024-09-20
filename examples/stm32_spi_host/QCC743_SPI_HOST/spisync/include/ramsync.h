@@ -59,7 +59,7 @@ int lramsync_init(
     );
 
 int lramsync_start(lramsync_ctx_t *ctx);
-
+int lramsync_stop(lramsync_ctx_t *ctx);
 int lramsync_reset(lramsync_ctx_t *ctx);
 int lramsync_deinit(lramsync_ctx_t *ctx);
 int lramsync_suspend(lramsync_ctx_t *ctx);

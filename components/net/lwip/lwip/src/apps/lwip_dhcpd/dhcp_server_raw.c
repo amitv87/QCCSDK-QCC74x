@@ -1,7 +1,3 @@
-/** only supported for IPv4 */
-#undef LWIP_IPV6
-#define LWIP_IPV6 0
-
 #include <string.h>
 #include <stdint.h>
 #include <FreeRTOS.h>

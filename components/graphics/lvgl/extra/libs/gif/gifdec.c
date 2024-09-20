@@ -25,7 +25,7 @@ typedef struct Table {
 
 static gd_GIF *  gif_open(gd_GIF * gif);
 static bool f_gif_open(gd_GIF * gif, const void * path, bool is_file);
-static void f_gif_read(gd_GIF * gif, void * buf, size_t len);
+static int f_gif_read(gd_GIF * gif, void * buf, size_t len);
 static int f_gif_seek(gd_GIF * gif, size_t pos, int k);
 static void f_gif_close(gd_GIF * gif);
 
@@ -70,7 +70,7 @@ static gd_GIF * gif_open(gd_GIF * gif_base)
     uint8_t sigver[3];
     uint16_t width, height, depth;
     uint8_t fdsz, bgidx, aspect;
-    int i;
+    size_t i;
     uint8_t *bgcolor;
     int gct_sz;
     gd_GIF *gif = NULL;
@@ -171,11 +171,17 @@ ok:
 static void
 discard_sub_blocks(gd_GIF *gif)
 {
+    uint8_t first_try = 1;
+    uint8_t seek_pos;
     uint8_t size;
 
     do {
         f_gif_read(gif, &size, 1);
+        if(!first_try && size == seek_pos) //To prevent infinite loop
+            break;
         f_gif_seek(gif, size, LV_FS_SEEK_CUR);
+        seek_pos = size;
+        first_try = 0;
     } while (size);
 }
 
@@ -275,9 +281,10 @@ read_application_ext(gd_GIF *gif)
 static void
 read_ext(gd_GIF *gif)
 {
-    uint8_t label;
+    uint8_t label = 0x00;
 
-    f_gif_read(gif, &label, 1);
+    if(f_gif_read(gif, &label, 1) < 1)
+        return;
     switch (label) {
     case 0x01:
         read_plain_text_ext(gif);
@@ -351,7 +358,13 @@ get_key(gd_GIF *gif, int key_size, uint8_t *sub_len, uint8_t *shift, uint8_t *by
                 f_gif_read(gif, sub_len, 1); /* Must be nonzero! */
                 if (*sub_len == 0) return 0x1000;
             }
-            f_gif_read(gif, byte, 1);
+            if(gif->is_file) {
+                if(lv_fs_read(&gif->fd, byte, 1, NULL));
+            } else
+            {
+                memcpy(byte, &gif->data[gif->f_rw_p], 1);
+                gif->f_rw_p += 1;
+            }
             (*sub_len)--;
         }
         frag_size = MIN(key_size - bits_read, 8 - rpad);
@@ -434,6 +447,7 @@ read_image_data(gd_GIF *gif, int interlace)
         key = get_key(gif, key_size, &sub_len, &shift, &byte);
         if (key == clear) continue;
         if (key == stop || key == 0x1000) break;
+        if (key >= table->nentries) break;
         if (ret == 1) key_size++;
         entry = table->entries[key];
         str_len = entry.length;
@@ -444,7 +458,7 @@ read_image_data(gd_GIF *gif, int interlace)
             if (interlace)
                 y = interlaced_line_index((int) gif->fh, y);
             gif->frame[(gif->fy + y) * gif->width + gif->fx + x] = entry.suffix;
-            if (entry.prefix == 0xFFF)
+            if (entry.prefix == 0xFFF || entry.prefix >= table->nentries)
                 break;
             else
                 entry = table->entries[entry.prefix];
@@ -590,7 +604,8 @@ gd_get_frame(gd_GIF *gif)
         else if (sep == '!')
             read_ext(gif);
         else return -1;
-        f_gif_read(gif, &sep, 1);
+        if(f_gif_read(gif, &sep, 1) < 1)
+            return -1;
     }
     if (read_image(gif) == -1)
         return -1;
@@ -642,14 +657,18 @@ static bool f_gif_open(gd_GIF * gif, const void * path, bool is_file)
     }
 }
 
-static void f_gif_read(gd_GIF * gif, void * buf, size_t len)
+static int f_gif_read(gd_GIF * gif, void * buf, size_t len)
 {
     if(gif->is_file) {
-        lv_fs_read(&gif->fd, buf, len, NULL);
+        if(lv_fs_read(&gif->fd, buf, len, NULL) == LV_FS_RES_OK)
+            return len;
+        else
+            return -1;
     } else
     {
         memcpy(buf, &gif->data[gif->f_rw_p], len);
         gif->f_rw_p += len;
+        return len;
     }
 }
 

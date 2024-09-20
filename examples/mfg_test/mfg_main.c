@@ -24,6 +24,8 @@
 #include "mfg_sdio.h"
 
 #include "mfg_m154.h"
+#include "mfg_atcmd.h"
+#include "mfg_otp.h"
 
 #include "qcc743_common.h"
 #include "qcc743_pm.h"
@@ -179,9 +181,11 @@ static uint16_t const ble_channel_freq[] =
 static uint8_t ble_tx_hopping_task_en = 0;
 static uint8_t ef_ctrl_wr_lock_mac = 0;
 
+#ifndef DISABLE_MFG_AUTOBOOT
 #if defined(MFG_GU_QCC74x_undef) || defined(MFG_GU_QCC743)
 #define __BOOT_FLAG_SECTION __attribute__((section("BOOT_FLAG_SECTION"), used))
 static const __BOOT_FLAG_SECTION uint8_t boot_flag[] = { "0mfg" };
+#endif
 #endif
 
 const uint64_t rf_param[2048/8] __attribute__ ((section(".rfparam"),aligned(64))) = {0x4152415046524c42};//"..RFPARAk1bXkD6O"
@@ -3950,6 +3954,8 @@ void mfg_main(void *pvParameters)
     /* sdu_host_check(1); */
 #endif
 
+    otp_init();
+
     const TickType_t xMaxBlockTime = pdMS_TO_TICKS( 2000 );
     EventBits_t uxBits;
     extern EventGroupHandle_t xEventGroupMFG;
@@ -3978,6 +3984,14 @@ void mfg_main(void *pvParameters)
             continue;
         }
 
+        if (at_command_input(mfg_cmd)) {
+            continue;
+        }
+
+        if (strncmp(mfg_cmd,"AT+",3) == 0) {
+            continue;
+        }
+        
         cmd=mfg_cmd[0];
         cmd_data=&mfg_cmd[1];
 

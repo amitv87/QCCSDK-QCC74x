@@ -13,6 +13,7 @@
 #include "qcc743_tzc_sec.h"
 #include "qcc743_psram.h"
 #include "qcc743_glb.h"
+#include "qcc743_sys.h"
 
 #include "mem.h"
 
@@ -448,10 +449,11 @@ void board_spi0_gpio_init()
     struct qcc74x_device_s *gpio;
 
     gpio = qcc74x_device_get_by_name("gpio");
+     
     /* spi cs */ 
-    qcc74x_gpio_init(gpio, GPIO_PIN_16, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
+    qcc74x_gpio_init(gpio, GPIO_PIN_28, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi clk */
-    qcc74x_gpio_init(gpio, GPIO_PIN_33, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
+    qcc74x_gpio_init(gpio, GPIO_PIN_29, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi miso */
     qcc74x_gpio_init(gpio, GPIO_PIN_30, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi mosi */
@@ -465,7 +467,7 @@ void board_spi0_gpio_3pin_init()
     gpio = qcc74x_device_get_by_name("gpio");
     
     /* spi clk */
-    qcc74x_gpio_init(gpio, GPIO_PIN_33, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
+    qcc74x_gpio_init(gpio, GPIO_PIN_29, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi miso */
     qcc74x_gpio_init(gpio, GPIO_PIN_30, GPIO_FUNC_SPI0 | GPIO_ALTERNATE | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_1);
     /* spi mosi */

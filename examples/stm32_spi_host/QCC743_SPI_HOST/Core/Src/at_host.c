@@ -85,7 +85,7 @@ static int _at_read(at_host_handle_t handle, uint8_t *buf, uint32_t len)
 	}
 
 	if (ret > 0 && handle->rx_cb) {
-		handle->rx_cb(buf, ret, handle->receive_cb_arg);
+		ret = handle->rx_cb(buf, ret, handle->receive_cb_arg);
 	}
 	return ret;
 }
@@ -94,7 +94,7 @@ static void __at_rx_task(void *arg)
 {
 	int ret;
 	at_host_handle_t handle = (at_host_handle_t)arg;
-	char evt_head[128];
+	static char evt_head[2048];
 	struct _fount_list found_list[10];
 
 	printf("at rx start\r\n");
@@ -155,11 +155,12 @@ static int at_resp_ciprecvdata(at_host_handle_t at, const char *cmd, int len)
 		goto _end;
 	}
 
-	data_buf = pvPortMalloc(data_len);
+	data_buf = pvPortCalloc(data_len + 2, 1);
 	if (!data_buf) {
 		printf("malloc fail len:%d\r\n", data_len);
 		return 0;
 	}
+
 	wptr = data_buf;
 	head_len = countDigits(data_len) + 14;
 	frame_len = head_len + data_len + strlen("\r\n");
@@ -169,14 +170,15 @@ static int at_resp_ciprecvdata(at_host_handle_t at, const char *cmd, int len)
 		wptr = data_buf + ret;
 	}
 
-	while (len < frame_len) {
-		recv_len = _at_read(at, wptr + recv_len, frame_len - len);
+	len = ret;
+	while (len < data_len + 2) {
+		recv_len = _at_read(at, data_buf + len, data_len + 2 - len);
 		if (recv_len > 0) {
 			len += recv_len;
 		}
 	}
 
-	if (len > frame_len) {
+	if (len + head_len > frame_len) {
 		printf("frame len:%d len:%d\r\n", frame_len, len);
 	}
 
@@ -213,7 +215,7 @@ static int at_resp_ipd(at_host_handle_t at, const char *cmd, int len)
 
 	memcpy(ipd_buf, cmd, len);
 
-    sscanf(ipd_buf, "\r\n+IPD,%d,%d", &linkid, &data_len);
+    sscanf(ipd_buf, "\r\n+IPD:%d,%d", &linkid, &data_len);
 
     if (at->recv_mode == AT_NET_RECV_MODE_ACTIVE) {
 

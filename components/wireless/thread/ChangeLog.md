@@ -1,5 +1,36 @@
 # change log on Thread module
 
+## 2024/09/05
+
+- Version: 1.6.9
+- Changes:
+  - QCC743: Improve network stablity with limits on standard 2015
+
+## 2024/8/30
+
+- Version: 1.6.8
+- Changes:
+  - QCC743: Correct efuse slot to get MAC address
+  - support dynamic initialize multi file system
+
+## 2024/8/2
+- Version: 1.6.7
+- Changes:
+  - QCC743: Fix eui64 address constructed with flash id
+  - OTBR: Fix udp socket binding issue
+
+## 2024/8/1
+- Version: 1.6.6
+- Changes:
+  - QCC743: Update eui64 with efuse 6 bytes mac address and 2 bytes of 0 padding
+  - QCC743: Update eui64 with flash ID if no mac address in efuse.
+
+## 2024/7/18
+- Version: 1.6.5
+- Changes:
+  - OTBR: Add RESTful APIs provided on OTBR
+  - OTBR: Reduce dead lock between lwip task and thread task
+
 ## 2024/5/27
 - Version: 1.6.4
 - Changes:

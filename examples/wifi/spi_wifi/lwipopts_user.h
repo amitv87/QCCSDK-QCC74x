@@ -33,6 +33,9 @@
 #define LWIP_HAVE_LOOPIF              1
 #define LWIP_LOOPBACK_MAX_PBUFS       0
 
+#define LWIP_ALTCP_TLS_MBEDTLS        1
+#define LWIP_ALTCP                    1
+#define LWIP_ALTCP_TLS                1
 #define LWIP_CHKSUM_ALGORITHM         3
 #define LWIP_TCPIP_CORE_LOCKING_INPUT 1
 
@@ -98,7 +101,7 @@
 #define SO_REUSE                  1
 #define LWIP_TCP_KEEPALIVE        1
 
-#ifdef CONFIG_RWNX_LWIP
+#ifdef CONFIG_LWIP_LP
 #define TCP_TIMER_PRECISE_NEEDED        1
 #define DHCP_TIMER_PRECISE_NEEDED       1
 #define ARP_TIMER_PRECISE_NEEDED        1

@@ -49,11 +49,11 @@ int at_net_client_close(int id);
 
 int at_net_client_close_all(void);
 
-int at_net_server_tcp_create(uint16_t port, int max_conn, int timeout, uint8_t is_ipv6);
+int at_net_server_tcp_create(uint16_t port, int max_conn, int timeout, uint8_t is_ipv6, int keepalive);
 
-int at_net_server_ssl_create(uint16_t port, int max_conn, int timeout, int ca_enable, uint8_t is_ipv6);
+int at_net_server_ssl_create(uint16_t port, int max_conn, int timeout, int ca_enable, uint8_t is_ipv6, int keepalive);
 
-int at_net_server_is_created(uint16_t *port, char *type, int *ca_enable);
+int at_net_server_is_created(uint16_t *port, char *type, int *ca_enable, int *keepalive);
 
 int at_net_server_close(void);
 

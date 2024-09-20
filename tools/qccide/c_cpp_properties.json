@@ -1,0 +1,22 @@
+{
+  "configurations": [
+    {
+      "cStandard": "c11",
+      "compilerPath": "${myCompilerPath}",
+      "cppStandard": "c++17",
+      "includePath": [
+        ""
+      ],
+      "defines": [
+        ""
+      ],
+      "intelliSenseMode": "windows-gcc-arm",
+      "name": "QCC-IDE"
+    }
+  ],
+  "env": {
+    "myCompilerPath": "",
+    "mySdkPath": ""
+  },
+  "version": 4
+}

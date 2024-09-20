@@ -3,7 +3,7 @@
 
 #include <qcc743_glb.h>
 #include <rfparam_adapter.h>
-#include "qcc74x_wdg.h"
+#include <qcc74x_wdg.h>
 #include <qcc74x_mtd.h>
 #if defined (CONFIG_EASYFLASH4)
 #include <easyflash.h>
@@ -14,6 +14,9 @@
 #include <task.h>
 #include <timers.h>
 #include <mem.h>
+
+#include <lmac154.h>
+#include <zb_timer.h>
 
 #include <lwip/tcpip.h>
 #include <lwip/dhcp6.h>
@@ -68,6 +71,14 @@ static char otbr_wifi_pass[65];
 extern void __libc_init_array(void);
 extern void shell_init_with_task(struct qcc74x_device_s *shell);
 static void netif_status_callback(struct netif *netif);
+
+void vApplicationTickHook( void )
+{
+    lmac154_monitor();
+#if CONFIG_LMAC154_LOG_ENABLE
+    lmac154_logs_output();
+#endif
+}
 
 int wifi_start_firmware_task(void)
 {
@@ -134,7 +145,7 @@ void wifi_event_handler(uint32_t code)
     }
 }
 
-struct netif * otbr_getInfraNetif(void)
+struct netif * otbr_getInfraNetif(void) 
 {
     return (struct netif *)fhost_to_net_if(0);
 }
@@ -218,7 +229,7 @@ static void netif_status_callback(struct netif *netif)
     }
 }
 
-void otr_start_default(void)
+void otr_start_default(void) 
 {
     otOperationalDataset ds;
 
@@ -284,6 +295,10 @@ int main(void)
 #endif
 
     __libc_init_array();
+
+#if CONFIG_LMAC154_LOG_ENABLE
+    lmac154_log_init();
+#endif
 
     uart0 = qcc74x_device_get_by_name("uart0");
     shell_init_with_task(uart0);

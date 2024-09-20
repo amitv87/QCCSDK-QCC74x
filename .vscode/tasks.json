@@ -4,10 +4,10 @@
         {
             "label": "Launch OpenOCD",
             "type": "shell",
-            "command": "tools/openocd/openocd",
+            "command": "${workspaceRoot}/tools/openocd/openocd",
             "args": [
-                "-f", "tools/openocd/interface/ch347.cfg",
-                "-f", "tools/openocd/target/tgt_e907.cfg"
+                "-f", "${workspaceRoot}/tools/openocd/interface/ch347.cfg",
+                "-f", "${workspaceRoot}/tools/openocd/target/tgt_e907.cfg"
             ],
             "isBackground": true,
             "problemMatcher": {

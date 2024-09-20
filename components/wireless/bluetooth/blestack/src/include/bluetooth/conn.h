@@ -503,6 +503,11 @@ struct bt_conn_cb {
 	 *  @param rx_phy Receive phy.
 	 */
 	void (*le_phy_updated)(struct bt_conn *conn, u8_t tx_phy, u8_t rx_phy);
+
+#if defined(CONFIG_USER_DATA_LEN_UPDATE)
+	void (*le_datalen_updated)(struct bt_conn *conn, u16_t tx_octets, u16_t tx_time,u16_t rx_octets,u16_t rx_time);
+#endif
+
 #if defined(CONFIG_BT_SMP)
 	/** @brief Remote Identity Address has been resolved.
 	 *

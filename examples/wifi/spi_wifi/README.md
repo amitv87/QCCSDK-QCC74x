@@ -10,11 +10,9 @@ The hardware wiring diagram between the STM32 HOST and QCC74X is shown in the fi
 
 #### Jumper Wires
 
-If you are using the QCC743 development board, please connect the jumpers as follows：
+If you are using the QCC743/QCC744 development board, please connect the jumpers as follows：
 
 ![connect.png](assets/connect-20240719112357-bevu52y.png)
-
-NOTE:The DVK HW Version currently being used is V2.0. Due to the IO limitations of this board, the JTAG chip needs to be removed, and the SCK should be connected to GPIO1 of the QCC743.
 
 #### Compile
 
@@ -22,26 +20,6 @@ Compile spiwifi porject:
 
 ```bash
 make 
-```
-
-or
-
-```bash
-make BOARD=qcc743dk
-```
-
-### QCC744
-
-If you are using the QCC744 development board, please connect the jumpers as follows：
-
-![qcc744_connect.png](assets/qcc744_connect-20240719112358-blz07fv.png)
-
-#### Compile
-
-Compile spiwifi porject:
-
-```bash
-make BOARD=qcc744dk
 ```
 
 ### Flashing
@@ -122,7 +100,7 @@ AT+PWR=2              // Standby mode.
 #### Testing IO Wakeup(support gpio 28, 29. only supoport standby mode now)
 
 1. Reset the demo board.
-2. Execute the command `AT+SLWKIO=28,0` in serial port tool.(now support high level wakeup)
+2. Execute the command `AT+SLWKIO=16,0` in serial port tool.
 3. Execute the command `AT+PWR=2` in serial port tool.
 4. Execute the command `HOSTCMD wakeup 28` in serial port tool.
 
@@ -159,7 +137,7 @@ Ensure that the PC and qcc74x are connected to the same router.
    Execute commands in the directory examples/wifi/spi_wifi:
 
    ```bash
-    cat build/build_out/spi_wifi_qcc743.bin.ota|nc -nvl 3365
+   ncat -klp 3365 < build/build_out/spi_wifi_qcc743.bin.ota
    ```
 
 ### HOST UART Command
@@ -236,7 +214,70 @@ Ensure that the PC and qcc74x are connected to the same router.
     OK
     ```
 
-    1.2M OTA firmware, the entire upgrade process takes approximately 22 seconds.
+    OTA transfer times are as follows:
+
+    |Firmware image|Image size|Upgrade time|
+    | :------------------------| :-----------| :-------------|
+    |spi_wifi_qcc743.xz.ota|1.4M|15 S|
+    |spi_wifi_qcc743.bin.ota|0.8M|10 S|
+
+## Throughput test
+### TCP TX
+
+1. PC Command
+
+   ```bash
+    iperf -s -i 1
+   ```
+
+2. HOST Command
+
+   ```bash
+    HOSTCMD ipc <remote_ip>
+   ```
+
+### UDP TX
+
+1. PC Command
+
+   ```bash
+    iperf -u -s -i 1
+   ```
+
+2. HOST Command
+
+   ```bash
+    HOSTCMD ipu <remote_ip>
+   ```
+
+### TCP RX
+
+2. HOST Command
+
+   ```bash
+    HOSTCMD ips <remote_ip>
+   ```
+
+1. PC Command
+
+   ```bash
+    iperf -c <remote_ip> -i 1 -t 10
+   ```
+
+### UDP RX
+
+2. HOST Command
+
+   ```bash
+    HOSTCMD ipus <remote_ip>
+   ```
+
+1. PC Command
+
+   ```bash
+    iperf -u -c <remote_ip> -i 1 -b 20M -t 10
+   ```
+
 
 # SPISync Brief Design
 
@@ -247,6 +288,10 @@ Many customers desire an SPI-based communication solution with high throughput. 
 ## Solution Architecture Diagram
 
 ​![image](assets/image-20240703140622-xrofbuw.png)​
+
+## Software Flowchart
+
+​![spisync.drawio (1)](assets/spisync.drawio%201-20240802111203-lmmz0vk.png)​
 
 ## Modules Involved in the Solution
 
@@ -268,9 +313,7 @@ Many customers desire an SPI-based communication solution with high throughput. 
 To send different types of data through spisync, we have categorized them as follows:
 
 * Type 0: Stream type, used for AT communication between spi\_master and spi\_slave.
-
 * Type 1: Stream type, reserved for user use.
-
 * Type 2: Stream type, reserved for user use.
 
 Our purpose for this categorization is:
@@ -294,7 +337,7 @@ Without handling the misalignment of received bits synchronously, communication 
 Anomaly Classification:
 
 |Classification Number|Anomaly Description|
-| -----------------------| ----------------------------------------------------------------------------------------------------------------------------------------|
+| ---------------------| --------------------------------------------------------------------------------------------------------------------------------------|
 |1|Master receives incorrectly, slave receives correctly. Master can detect this error through tag sanity check.|
 |2|Master receives correctly, slave receives incorrectly. Master cannot detect this error actively; it needs notification from the slave.|
 |3|Both master and slave receive incorrectly. Same as 1, the master can actively detect this error.|
@@ -334,18 +377,18 @@ Anomaly Handling Process:
 
 ## Performance and Configuration
 
-When the SPI rate is configured to 20M, the following are the SPI performance data corresponding to different stream\_buffer configurations, provided for reference only:
+The following are the SPI performance data corresponding to different stream\_buffer configurations, provided for reference only:
 
-|TXSLOT count|RXSLOTcount|TX\_STREAM\_BUFFER count|RX\_STREAM\_BUFFER count|SPI\_M\_TX speed|SPI\_M\_RX speed|RAM(byte)|
-| --------------| -------------| --------------------------------| --------------------------------| ------------------------| ------------------------| -----------|
-|6|6|10|10|18Mbps|15Mbps|32*1564|
-|4|4|10|10|19Mbps|12-19Mbps|28*1564|
-|2|2|10|10|9.5Mbps|9.5Mbps|24*1564|
-|2|2|8|8|9.5Mbps|9.5Mbps|20*1564|
-|2|2|6|6|9.5Mbps|9.5Mbps|16*1564|
-|2|2|4|4|9.5Mbps|9.5Mbps|12*1564|
-|2|2|2|2|7.3Mbps|6.5Mbps|8*1564|
-|2|2|1|1|4.8Mbps|3.2Mbps|6*1564|
+|TXSLOT count|RXSLOTcount|TX_STREAMBUF count|RX_STREAMBUF count|20M SPI_M_TX |20M SPI_M_RX|40M SPI_M_TX|40M SPI_M_RX|RAM(byte)|
+| ------------------------------| ------------------------------| ------------------------------| -------------------------------| -----------------------------------------------------------| -----------------------------------------------------------| -------------------------------| ------------------------------------------------------------| -----------|
+|6|6|10|10|18Mbps|15Mbps|22Mbps|21Mbps|32*1564|
+|4|4|10|10|19Mbps|12-19Mbps|22Mbps|21Mbps|28*1564|
+|2|2|10|10|9.5Mbps|9.5Mbps|18Mbps|18Mbps|24*1564|
+|2|2|8|8|9.5Mbps|9.5Mbps|18Mbps|16Mbps|20*1564|
+|2|2|6|6|9.5Mbps|9.5Mbps|18Mbps|18Mbps|16*1564|
+|2|2|4|4|9.5Mbps|9.5Mbps|18Mbps|18Mbps|12*1564|
+|2|2|2|2|7.3Mbps|6.5Mbps|12Mbps<br />|18Mbps|8*1564|
+|2|2|1|1|4.8Mbps|3.2Mbps|7.3Mbps|6.3Mbps|6*1564|
 
 ### Memory Involved in the Solution
 
@@ -415,7 +458,7 @@ After connecting to an AP, the Qcc74x can interact with the AP and enter power s
 | Command Name     | Description           |
 |------------------|-----------------------|
 | AT+PWR=2         | Enter low power mode  |
-| AT+SLWKIO=28,0   | Set IO wakeup         |
+| AT+SLWKIO=16,0   | Set IO wakeup         |
 | AT+SLWKTIMER=0,5000 | Set timer wakeup    |
 | AT+SLWKDTIM=10   | Set DTIM              |
 
@@ -426,6 +469,11 @@ The process for using low power mode is as follows:
 1. **Step 1**: Set the wakeup source.
 2. **Step 2**: Enter low power mode.
 3. **Step 3**: Wake up from external conditions or timeout.
+
+
+### Qcc743 Power Consumption Measuremen
+
+![host-wakeup-qcc743.png](./pic/power.png)
 
 ## 4. Possible Reasons for Not Entering Sleep Mode
 
@@ -474,11 +522,64 @@ The overall framework for host and Qcc74x low power is as follows:
 2. When the Qcc74x has data to send, it will pull a GPIO to notify the host. After data transmission, the GPIO is restored.
 3. After entering low power mode, the Qcc74x's SPI peripherals lose power. When woken up, if there is data to send or the wake-up source is the host, SPI communication is immediately restored.
 
-```mermaid
-graph LR
-    HOST[HOST] -->|SPI trigger Wakeup| Qcc74x
-    Qcc74x -->|GPIO Wakeup| HOST
-    HOST <-->|SPI sync| Qcc74x
-    Qcc74x <-->|Keep Alive| AP[AP]
+### Wakeup 
+When the host needs to send data, it sets GPIO16 high, which triggers the QCC743 to wake up (or if it is already awake） it sends a wakeup command to the host.
+Once the host receives this wakeup command, it begins sending and recieiving data.
+After the host finishes sending and receiving the data, indicating that the QCC743 can go to sleep, the host sets GPIO21 low and then sends a sleep command to the QCC743.
 
 
+When the qcc743 needs to send data, it sets GPIO high, which triggers the Host to wake up (or if it is already awake） it sends a wakeup command to the host.
+Once the qcc743 receives this wakeup command, it begins sending and recieiving data.
+After the qcc743 finishes sending the data, indicating that the QCC743 can go to sleep, the host sets GPIO low and then sends a sleep command to the Host.
+
+![host-wakeup-qcc743.png](./pic/qcc_lp_arch.png)
+
+
+### Qcc743 Power managerment
+This is the qcc743 power management state machine. The QCC743 decides whether to enter low power mode based on various factors. Firstly, it considers the GPIO21 level managed by the host and the low power command sent by the host. Additionally, the QCC743 determines whether to enter low power mode based on its own status, including the current system tasks and the state of the WiFi, making a comprehensive decision.
+
+![qcc743-power-manager.png](./pic/qcc743-power-manager.png)
+
+
+### Qcc743 Sleep And wakeup Timing
+
+The QCC743 receives a beacon indicating that the AP has buffered packets, and then the QCC743 wakes up. It takes approximately 4ms to wake up and enter active mode. It then spends another 1.5ms sending null data to inform the AP that the QCC743 has exited low power mode and is ready to receive the buffered packets. The wake-up time lasts approximately 10ms or more, depending on the current network environment and whether the AP sends the packets to the QCC743 in a timely manner. After about 15ms, the QCC743 sends null data to inform the AP that it is going to sleep, and then it enters PDS15 mode. It will wake up every 1024ms (DTIM10) to receive beacons. Each beacon reception takes approximately 3ms.
+![timing.png](./pic/timing.png)
+
+### Qcc743 Bluetooth Power Consumption Measuremen
+
+Prerequisites for Bluetooth Power Consumption Testing: Prior to measuring the power consumption, ensure that the QCC743 has transitioned into its low power state. It is imperative to sever the SPI GPIO and WAKEUP GPIO connections between the STM32 microcontroller and the QCC743 device. Measurement should commence only after the power consumption has achieved a stable state.
+![blelpkpi.png](./pic/blelp.png)
+
+#### 1.28 sec LE ADV(20 Bytes) with RTC clock
+
+| Command Name     | Description                                                        | 
+|------------------|--------------------------------------------------------------------|
+| AT+BLEINIT=2     | BLE peripheral init                                                |
+| AT+BLETXPWR=0    | Set BLE TX Power 0 dBm                                             |
+| AT+BLEADVDATA="020106110957575757575757575757575757575757" | Set 20 Bytes ADV DATA    |
+| AT+BLEADVPARAM=2048,2048,2,7   | Set 1.28 sec ADV interval                            |
+| AT+BLEADVSTART   | Start BLE ADV                                                      |
+| AT+SLWKDTIM=10   | Set DTIM                                                           |
+| AT+PWR=2   | Enter low power mode                                                     |
+
+
+#### 1.28 sec Bluetooth Classcic PageScan with  RTC clock
+
+| Command Name     | Description           |
+|------------------|-----------------------|
+| AT+BREDR_INI     | BREDR Init            |
+| AT+BREDR_CONNECTABLE=1 | Start PageScan  |
+| AT+SLWKDTIM=10   | Set DTIM              |
+| AT+PWR=2   | Enter low power mode        |
+
+#### 1 sec BLE connection interval with RTC clock
+
+| Command Name     | Description                                                                      |
+|------------------|----------------------------------------------------------------------------------|
+| AT+BLEINIT=2     | BLE peripheral init                                                              |
+| AT+BLETXPWR=0    | Set BLE TX Power 0 dBm                                                           |
+| AT+BLEADVSTART   | Start BLE ADV                                                                    |
+| AT+BLECONNPARAM=0,800,800,0,1500 | Set 1 sec connection interval after the connection is established|
+| AT+SLWKDTIM=10   | Set DTIM                                                                         |
+| AT+PWR=2   | Enter low power mode                                                                   |

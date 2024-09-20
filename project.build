@@ -4,9 +4,9 @@ MAKEFLAGS += --no-print-directory
 endif
 
 command_flash = $(QCC74x_FLASH_PROGRAM) --interface=uart --baudrate=$(BAUDRATE) \
-	--port=$(COMX) --chipname=$(CHIP) --cpu_id=$(CPU_ID) --config=flash_prog_cfg.ini
+	--port=$(COMX) --cpu_id=$(CPU_ID) --config=flash_prog_cfg.ini
 command_efuse = $(QCC74x_FLASH_PROGRAM) --interface=uart --baudrate=$(BAUDRATE) \
-	--port=$(COMX) --chipname=$(CHIP) --efuse=build/build_out/efusedata.bin
+	--port=$(COMX) --efuse=build/build_out/efusedata.bin
 command_puncover = $(PUNCOVER_PROGRAM) \
 	--elf_file ./build/build_out/*.elf --map_file ./build/build_out/*.map \
 	--build_dir ./build --src_root ${QCC74x_SDK_BASE} --port 5001

@@ -11,11 +11,11 @@ This is an example for OpenThread NCP and RCP example.
 
 |      CHIP        | Remark |
 |:----------------:|:------:|
-|QCC743/QCC74x_undef       |        |
+|qcc743/qcc744       |        |
 
 ## Compile
 
-- QCC743/QCC74x_undef
+- qcc743/qcc744
     ```shell
     make CHIP=qcc743 BOARD=qcc743dk
     ```

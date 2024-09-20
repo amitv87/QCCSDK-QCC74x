@@ -11,7 +11,7 @@ endif()
 
 set(QCC74x_FW_POST_PROC ${QCC74x_SDK_BASE}/tools/qcc74x_tools/QConn_Secure/QConn_Secure${TOOL_SUFFIX})
 
-set(QCC74x_FW_POST_PROC_CONFIG --chipname=${CHIP} --imgfile=${BIN_FILE})
+set(QCC74x_FW_POST_PROC_CONFIG --imgfile=${BIN_FILE})
 
 if(BOARD_DIR)
 list(APPEND QCC74x_FW_POST_PROC_CONFIG --brdcfgdir=${BOARD_DIR}/${BOARD}/config)
@@ -70,6 +70,11 @@ foreach(item ${CONFIG_POST_BUILDS})
     if("${item}" STREQUAL "GENERATE_ROMFS")
     list(APPEND post_build_cmds COMMAND ${CMAKE} -E echo "[romfs] generate romfs.bin using romfs directory"
                                 COMMAND ${QCC74x_SDK_BASE}/tools/genromfs/genromfs${TOOL_SUFFIX} -d romfs/ -f ./build/build_out/romfs.bin)
+    endif()
+
+    if("${item}" STREQUAL "GENERATE_LITTLEFS")
+    list(APPEND post_build_cmds COMMAND ${CMAKE} -E echo "[littlefs] generate littlefs.bin using littlefs directory"
+                                COMMAND ${QCC74x_SDK_BASE}/tools/genlfs/mklfs${TOOL_SUFFIX} -c lfs -b 4096 -p 256 -r 256 -s 0x71000 -i ./build/build_out/littlefs.bin)
     endif()
 
 endforeach()

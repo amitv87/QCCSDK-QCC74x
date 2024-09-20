@@ -214,6 +214,18 @@ static bool tcp_timer_calculate_next_wake(u32_t * next_wake_ms)
       min_wake_time = LWIP_MIN(2 * TCP_MSL - (tcp_ticks - pcb->tmr) * TCP_SLOW_INTERVAL, min_wake_time);
     }
 
+    if (ip_get_option(pcb, SOF_KEEPALIVE) && ((pcb->state == ESTABLISHED) || (pcb->state == CLOSE_WAIT))) {
+#if LWIP_TCP_KEEPALIVE
+#define TCP_KEEP_DUR(pcb)   ((pcb)->keep_cnt * (pcb)->keep_intvl)
+#define TCP_KEEP_INTVL(pcb) ((pcb)->keep_intvl)
+#else /* LWIP_TCP_KEEPALIVE */
+#define TCP_KEEP_DUR(pcb)   TCP_MAXIDLE
+#define TCP_KEEP_INTVL(pcb) TCP_KEEPINTVL_DEFAULT
+#endif /* LWIP_TCP_KEEPALIVE */
+
+      min_wake_time = LWIP_MIN((pcb->keep_idle + TCP_KEEP_DUR(pcb)) - (tcp_ticks - pcb->tmr) * TCP_SLOW_INTERVAL, min_wake_time);
+      min_wake_time = LWIP_MIN((pcb->keep_idle + pcb->keep_cnt_sent * TCP_KEEP_INTVL(pcb)) - (tcp_ticks - pcb->tmr) * TCP_SLOW_INTERVAL, min_wake_time);
+    }
     pcb = pcb->next;
   }
 
@@ -273,49 +285,6 @@ s32_t xTimerIsTimerActive(void *xTimer);
 
 #define xTimerDelete( xTimer, xTicksToWait ) \
     xTimerGenericCommand( ( xTimer ), tmrCOMMAND_DELETE, 0U, NULL, ( xTicksToWait ) )
-
-void tcp_keepalive_os_timeout(void *timer)
-{
-  struct tcp_pcb *pcb = (struct tcp_pcb *)pvTimerGetTimerID(timer);
-  sys_timeout(100, tcp_keepalive_tmr, (void *)pcb);
-}
-
-void tcp_keepalive_timer_start(struct tcp_pcb *pcb)
-{
-  if (pcb != NULL && pcb->state == ESTABLISHED && ip_get_option(pcb, SOF_KEEPALIVE)) {
-    if (pcb->keepalive_os_timer == NULL) {
-      pcb->keepalive_os_timer = xTimerCreate("keepalive", TCP_KEEPIDLE_DEFAULT / portTICK_PERIOD_MS,
-                                pdFALSE, (void *)pcb, tcp_keepalive_os_timeout);
-    }
-    uint32_t keepalive_timeout = TCP_KEEPIDLE_DEFAULT;
-    if (pcb->keep_cnt_sent > 0) {
-      keepalive_timeout = TCP_KEEPINTVL_DEFAULT;
-    }
-
-    if (pcb->keepalive_os_timer != NULL) {
-      if (xTimerIsTimerActive(pcb->keepalive_os_timer)) {
-        xTimerStop(pcb->keepalive_os_timer, 0);
-      }
-      if (xTimerChangePeriod(pcb->keepalive_os_timer, keepalive_timeout / portTICK_PERIOD_MS, 0) != pdPASS) {
-        LWIP_DEBUGF(TCP_DEBUG, ("tcp_keepalive_timer_start, ChangePeriod timer fail\n"));
-      }
-      xTimerStart(pcb->keepalive_os_timer, 0);
-    } else {
-      LWIP_DEBUGF(TCP_DEBUG, ("tcp_keepalive_timer_start, create timer fail\n"));
-    }
-  }
-}
-
-void tcp_keepalive_timer_stop(struct tcp_pcb *pcb)
-{
-  if (pcb != NULL && ip_get_option(pcb, SOF_KEEPALIVE)) {
-    if (pcb->keepalive_os_timer != NULL) {
-      xTimerStop(pcb->keepalive_os_timer, 0);
-      xTimerDelete(pcb->keepalive_os_timer, 0);
-      pcb->keepalive_os_timer = NULL;
-    }
-  }
-}
 
 void tcpip_tmr_compensate_tick(void)
 {

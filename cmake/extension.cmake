@@ -11,6 +11,8 @@ macro(sdk_generate_library)
   add_library(${library_name} STATIC)
   set_property(GLOBAL APPEND PROPERTY SDK_LIBS ${library_name})
   target_link_libraries(${library_name} PUBLIC sdk_intf_lib)
+  add_library(${library_name}_high_priority_intf_lib INTERFACE)
+  target_link_libraries(${library_name} PUBLIC ${library_name}_high_priority_intf_lib)
 endmacro()
 
 function(sdk_library_add_sources)
@@ -115,6 +117,10 @@ endfunction()
 
 function(sdk_add_private_compile_options)
   target_compile_options(${CURRENT_STATIC_LIBRARY} PRIVATE ${ARGV})
+endfunction()
+
+function(sdk_add_high_prior_compile_options)
+  target_compile_options(${CURRENT_STATIC_LIBRARY}_high_priority_intf_lib INTERFACE ${ARGV})
 endfunction()
 
 function(sdk_add_compile_options_ifdef feature)

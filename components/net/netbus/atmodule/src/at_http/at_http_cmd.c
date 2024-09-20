@@ -14,6 +14,8 @@
 #include "at_main.h"
 #include "at_core.h"
 #include "at_httpc_main.h"
+#include <FreeRTOS.h>
+#include <semphr.h>
 
 struct at_http_ctx {
     httpc_connection_t settings;
@@ -52,17 +54,20 @@ static void cb_httpc_result(void *arg, httpc_result_t httpc_result, u32_t rx_con
 
 static err_t cb_httpc_headers_done_fn(httpc_state_t *connection, void *arg, struct pbuf *hdr, u16_t hdr_len, u32_t content_len)
 {
+    char buf[16];
     struct at_http_ctx *ctx = (struct at_http_ctx *)arg;
 
     printf("[HEAD] hdr->tot_len is %u, hdr_len is %u, content_len is %lu\r\n", hdr->tot_len, hdr_len, content_len);
     printf((char *)hdr->payload);
     if (ctx->settings.req_type == REQ_TYPE_HEAD) {
-        at_response_string("+HTTPC:%d,", hdr_len);
+        snprintf(buf, sizeof(buf), "+HTTPC:%d,", hdr_len);
+        AT_CMD_DATA_SEND(buf, strlen(buf));
         if (hdr->tot_len) {
             AT_CMD_DATA_SEND(hdr->payload, hdr->tot_len);
         }
     } else {
-        at_response_string("+HTTPC:%d,", content_len);
+        snprintf(buf, sizeof(buf), "+HTTPC:%d,", content_len);
+        AT_CMD_DATA_SEND(buf, strlen(buf));
     }
     return ERR_OK;
 }
@@ -80,8 +85,10 @@ static int at_httpc_request(struct at_http_ctx *ctx,
     ip_addr_t ip_addr;
     char *p_port;
     int port;
-    uint8_t is_https = 0;
 
+#if LWIP_ALTCP_TLS && LWIP_ALTCP_TLS_MBEDTLS
+    ctx->settings.tls_config = NULL;
+#endif
     ctx->settings.result_fn = result_fn;
     ctx->settings.headers_done_fn = headers_done_fn;
 
@@ -91,7 +98,9 @@ static int at_httpc_request(struct at_http_ctx *ctx,
     } else if (0 == strncmp(url_buf, "https://", 8)) {
         port = 443;
         url = url_buf + 8;
-        is_https = 1;
+#if LWIP_ALTCP_TLS && LWIP_ALTCP_TLS_MBEDTLS
+        ctx->settings.tls_config = altcp_tls_create_config_client(NULL, 0);
+#endif
     } else {
         free(ctx);
         return AT_RESULT_CODE_ERROR;
@@ -265,9 +274,11 @@ static void cb_httpcget_result(void *arg, httpc_result_t httpc_result, u32_t rx_
 
 static err_t cb_httpcget_headers_done_fn(httpc_state_t *connection, void *arg, struct pbuf *hdr, u16_t hdr_len, u32_t content_len)
 {
+    char buf[32];
     struct at_http_ctx *ctx = (struct at_http_ctx *)arg;
 
-    at_response_string("+HTTPCGET:%d,", content_len);
+    snprintf(buf, sizeof(buf), "+HTTPCGET:%d,", content_len);
+    AT_CMD_DATA_SEND(buf, strlen(buf));
     xSemaphoreGive(ctx->sem);
 
     return ERR_OK;

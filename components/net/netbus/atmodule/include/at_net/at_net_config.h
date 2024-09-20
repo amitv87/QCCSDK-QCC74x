@@ -39,6 +39,7 @@ typedef struct {
     int so_linger;
     int tcp_nodelay;
     int so_sndtimeo;
+    int keep_alive;
 } net_tcp_opt;
 
 typedef int net_server_maxconn;

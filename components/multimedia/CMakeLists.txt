@@ -23,5 +23,3 @@ sdk_add_subdirectory_ifdef(CONFIG_XPORT xport)
 sdk_add_subdirectory_ifdef(CONFIG_XUTILS xutils)
 sdk_add_subdirectory_ifdef(CONFIG_XRECORD xrecord)
 sdk_add_subdirectory_ifdef(CONFIG_XWEBSOCKET xwebsocket)
-
-sdk_add_compile_options(-fno-inline)

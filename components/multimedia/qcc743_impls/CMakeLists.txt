@@ -6,7 +6,7 @@ sdk_add_include_directories(include
                            )
 
 
-sdk_add_compile_options(-Wno-nonnull-compare -Wno-unused-function -Wno-unused-but-set-variable)
+sdk_add_private_compile_options(-Wno-nonnull-compare -Wno-unused-function -Wno-unused-but-set-variable)
 
 # sdk_add_compile_definitions()
 

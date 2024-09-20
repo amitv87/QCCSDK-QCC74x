@@ -58,7 +58,7 @@ int at_ble_conn_update_datalen(int idx, int data_len, int time);
 
 int at_ble_conn_get_mtu(int idx, int *mtu_size);
 
-int at_ble_conn_update_mtu(int idx, int mtu_size);
+int at_ble_conn_update_mtu(int idx);
 
 int at_ble_gatts_service_get(int srv_idx, uint8_t *srv_uuid, uint8_t *srv_type);
 
@@ -89,6 +89,42 @@ int at_ble_gattc_service_read(int idx, int srv_idx, int char_idx, int timeout);
 int at_ble_subscribe(int idx, int ccc_handle, int value_handle,int value);
 
 int at_ble_unsubscribe(int idx, int value_handle);
+
+int at_ble_sec_paramter_setup(int sec);
+
+int at_ble_sec_auth_cancel(int idx);
+
+int at_ble_sec_auth_passkey_confirm(int idx);
+
+int at_ble_sec_auth_pairing_confirm(int idx);
+
+int at_ble_sec_auth_passkey(int idx, int passkey);
+
+void at_ble_get_ltk_list(void);
+
+int at_ble_get_unpair(char *addr, int type);
+
+int at_ble_sec_start_security(int idx, int level);
+
+#if defined(CONFIG_BT_BAS_SERVER)
+int at_ble_register_bas(void);
+int at_ble_unregister_bas(void);
+int at_ble_get_battery_level(void);
+int at_ble_set_battery_level(int idx, int lvl);
+#endif
+
+#if defined (CONFIG_BT_IAS_SERVER)
+int at_ble_register_ias(void);
+int at_ble_unregister_ias(void);
+#endif
+
+#if defined (CONFIG_BT_DIS_SERVER)
+
+int at_ble_register_dis(int at_vid_src, int at_vid, int at_pid, int at_pnp_ver);
+int at_ble_unregister_dis(void);
+int at_ble_dis_set(char* dis_name, char* dis_value, int dis_value_len);
+
+#endif
 
 #ifdef __cplusplus
 }

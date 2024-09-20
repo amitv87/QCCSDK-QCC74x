@@ -66,37 +66,11 @@ int at_port_deinit(void)
 
 int at_port_read_data(uint8_t*data, int len)
 {
-#if 0
-    int ret = 0;
     int nBytes = 0;
-    long long nTime = 0;
+    spisync_msg_t m;
 
-    if (at_serial_fd < 0) {
-        AT_PORT_PRINTF("uart is not open!\r\n");
-        return -1;
-    }
-
-    aos_ioctl(at_serial_fd, IOCTL_UART_IOC_READ_BLOCK, 1000);
-    nBytes = aos_read(at_serial_fd, data, 1);
-    if (nBytes <= 0)
-        return 0;
-    aos_ioctl(at_serial_fd, IOCTL_UART_IOC_READ_NOBLOCK, 0);
-
-    nTime = aos_now_ms();
-    while(nBytes < len && aos_now_ms()-nTime < 50) {
-        ret = aos_read(at_serial_fd, data+nBytes, len-nBytes);
-        if (ret > 0) {
-            nTime = aos_now_ms();
-            nBytes += ret;
-        }
-    }
-
-    return nBytes;
-#else
-    int nBytes = 0;
-
-    //printf("--->at_port_read_data input   :%d\r\n", len);
-    nBytes = spisync_read(at_spisync, 0, data, len, portMAX_DELAY);
+    spisync_build_msg(&m, SPISYNC_TYPESTREAM_AT, data, len, portMAX_DELAY);
+    nBytes = spisync_read(at_spisync, &m, 0);
 #if 0
     if (nBytes) {
         printf("<---at_port_read_data reaturn :%d\r\n", nBytes);
@@ -107,52 +81,32 @@ int at_port_read_data(uint8_t*data, int len)
     }
 
     return nBytes;
-#endif
 }
 
 #define AT_PORT_WRITE_TIMEOUT      (30000)// 30s
 int at_port_write_data(uint8_t *data, int len)
 {
-#if 0
-    if (at_serial_fd < 0) {
-        AT_PORT_PRINTF("uart is not open!\r\n");
-        return -1;
-    }
-
-    return aos_write(at_serial_fd, data, len);
-#else
     int msg_len;
+    spisync_msg_t m;
 
-#if 1// debug assic and hexdump 
     if (at->fakeoutput) {
         //printf("[AT_WRITE]:%d-->", len);
         for (int i = 0; i < len; i++) {
-            printf("%c", data[i]);
+            putchar(data[i]);
         }
     }
-#if 0
-    printf(":");
-    for (int i = 0; i < ((len>20)?20:len); i++) {
-        printf("%02X ", data[i]);
-    }
-    if (len>20) {
-        printf("... %02X", data[len-1]);
-    }
-    printf("\r\n");
-#endif
-#endif
     if (at->fakeoutput) {
         return len;
     }
     if (!data) {
     	return 0;
     }
-    msg_len = spisync_write(at_spisync, 0, data, len, AT_PORT_WRITE_TIMEOUT);
+    spisync_build_msg(&m, SPISYNC_TYPESTREAM_AT, data, len, AT_PORT_WRITE_TIMEOUT);
+    msg_len = spisync_write(at_spisync, &m, 0);
     if (msg_len > 0) {
         return msg_len;
     }
     return 0;
-#endif
 }
 
 int at_port_para_set(int baudrate, uint8_t databits, uint8_t stopbits, uint8_t parity, uint8_t flow_control)

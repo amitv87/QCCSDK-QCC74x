@@ -45,6 +45,8 @@
 #include "lwip/prot/iana.h"
 #include "lwip/pbuf.h"
 
+#include "lwip/altcp_tls.h"
+
 #if LWIP_TCP && LWIP_CALLBACK_API
 
 #ifdef __cplusplus
@@ -148,6 +150,11 @@ typedef struct _httpc_connection {
   /* this callback is called after receiving the http headers
      It can abort the connection by returning != ERR_OK */
   httpc_headers_done_fn headers_done_fn;
+
+#if LWIP_ALTCP_TLS && LWIP_ALTCP_TLS_MBEDTLS
+  struct altcp_tls_config *tls_config;
+#endif
+
 } httpc_connection_t;
 
 err_t at_httpc_get_file(const ip_addr_t* server_addr, u16_t port, const char* uri, const httpc_connection_t *settings,

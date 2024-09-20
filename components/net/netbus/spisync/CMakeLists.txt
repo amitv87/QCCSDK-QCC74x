@@ -5,6 +5,7 @@ sdk_add_include_directories(src)
 sdk_add_include_directories(src/port)
 
 sdk_library_add_sources(src/port/spisync_port.c)
+sdk_library_add_sources(src/port/desc_buf.c)
 sdk_library_add_sources(src/ramsync.c)
 sdk_library_add_sources(src/spisync.c)
 #sdk_library_add_sources(test/spisync_test.c)

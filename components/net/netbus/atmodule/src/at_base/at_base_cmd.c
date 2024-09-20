@@ -23,10 +23,30 @@
 #include "qcc74x_boot2.h"
 #include "partition.h"
 #include "qcc743_glb.h"
+#include "qcc74x_flash.h"
 #include "at_ota.h"
 #include "mem.h"
 #include "at_through.h"
 #include "qcc743_sys.h"
+#include "qcc74x_adc.h"
+#include "at_fs.h"
+#include <sys/fcntl.h>
+
+#define AT_FS_TYPE_LFS        0 // default littlefs
+
+#define AT_FS_DELETE          0 
+#define AT_FS_CREATE          1 
+#define AT_FS_WRITE           2 
+#define AT_FS_READ            3 
+#define AT_FS_QUERY_SIZE      4 
+#define AT_FS_QUERY_LIST      5 
+
+#define OTP_PN_ADDR_START               0x100
+#define OTP_QC_PN_LEN                   (24)
+
+#define AT_GPIO_PULL_NONE     0
+#define AT_GPIO_PULL_UP       1
+#define AT_GPIO_PULL_DOWN     2
 
 #define AT_CMD_GET_VERSION(v) (int)((v>>24)&0xFF),(int)((v>>16)&0xFF),(int)((v>>8)&0xFF),(int)(v&0xFF)
 
@@ -560,7 +580,7 @@ static int at_setup_efuse_read(int argc, const char **argv)
     printf("efuse read 0x%x %d \r\n", address, word);
     qcc74x_ef_ctrl_read_direct(efuse_dev, address, (uint32_t *)buffer, word, reload_valid ? reload : 0);
     
-    at_response_string("+EFUSE-R:");
+    AT_CMD_DATA_SEND("+EFUSE-R:", strlen("+EFUSE-R:"));
     send_num = AT_CMD_DATA_SEND(buffer, nbytes);
 
     vPortFree(buffer);
@@ -654,7 +674,7 @@ static int at_setup_flash_read(int argc, const char **argv)
         vPortFree(buffer);
         return AT_RESULT_CODE_ERROR;
     }
-    at_response_string("+FLASH-R:");
+    AT_CMD_DATA_SEND("+FLASH-R:", strlen("+FLASH-R:"));
     send_num = AT_CMD_DATA_SEND(buffer, nbytes);
 
     vPortFree(buffer);
@@ -672,7 +692,6 @@ static int at_setup_flash_erase(int argc, const char **argv)
     char addr[12] = {0};
     char *endptr;
     uint32_t address = 0;
-    int send_num = 0;
     int ret = 0;
 
     AT_CMD_PARSE_NUMBER(0, &nbytes);
@@ -690,17 +709,22 @@ static int at_setup_flash_erase(int argc, const char **argv)
 
 static int at_setup_gpio_output(int argc, const char **argv)
 {
-    int pin, pupd;
+    int pin, pull_state, cfgset;
     struct qcc74x_device_s *gpio = qcc74x_device_get_by_name("gpio");
 
     AT_CMD_PARSE_NUMBER(0, &pin);
-    AT_CMD_PARSE_NUMBER(1, &pupd);
+    AT_CMD_PARSE_NUMBER(1, &pull_state);
 
-    if (pupd) {
-        qcc74x_gpio_init(gpio, pin, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0);
+    if (pull_state == AT_GPIO_PULL_NONE) {
+        cfgset = GPIO_OUTPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_0;
+    } else if (pull_state == AT_GPIO_PULL_UP) {
+        cfgset = GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0;
+    } else if (pull_state == AT_GPIO_PULL_DOWN) {
+        cfgset = GPIO_OUTPUT | GPIO_PULLDOWN | GPIO_SMT_EN | GPIO_DRV_0;
     } else {
-        qcc74x_gpio_init(gpio, pin, GPIO_OUTPUT | GPIO_PULLDOWN | GPIO_SMT_EN | GPIO_DRV_0);
+        return AT_RESULT_CODE_ERROR;
     }
+    qcc74x_gpio_init(gpio, pin, cfgset);
 
     return AT_RESULT_CODE_OK;
 }
@@ -724,19 +748,29 @@ static int at_setup_gpio_set(int argc, const char **argv)
 
 static int at_setup_gpio_input(int argc, const char **argv)
 {
-    int pin, state;
+    int pin, pull_state, cfgset;
     struct qcc74x_device_s *gpio = qcc74x_device_get_by_name("gpio");
 
     AT_CMD_PARSE_NUMBER(0, &pin);
+    AT_CMD_PARSE_NUMBER(1, &pull_state);
 
-    qcc74x_gpio_init(gpio, pin, GPIO_INPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0);
+    if (pull_state == AT_GPIO_PULL_NONE) {
+        cfgset = GPIO_INPUT | GPIO_FLOAT | GPIO_SMT_EN | GPIO_DRV_0;
+    } else if (pull_state == AT_GPIO_PULL_UP) {
+        cfgset = GPIO_INPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0;
+    } else if (pull_state == AT_GPIO_PULL_DOWN) {
+        cfgset = GPIO_INPUT | GPIO_PULLDOWN | GPIO_SMT_EN | GPIO_DRV_0;
+    } else {
+        return AT_RESULT_CODE_ERROR;
+    }
+    qcc74x_gpio_init(gpio, pin, cfgset);
 
     return AT_RESULT_CODE_OK;
 }
 
 static int at_query_gpio_input(int argc, const char **argv)
 {
-    int pin, state;
+    int pin;
     struct qcc74x_device_s *gpio = qcc74x_device_get_by_name("gpio");
 
     if (argc != 1) {
@@ -750,7 +784,7 @@ static int at_query_gpio_input(int argc, const char **argv)
 
 static int at_setup_gpio_analog_input(int argc, const char **argv)
 {
-    int pin, state;
+    int pin;
     struct qcc74x_device_s *gpio = qcc74x_device_get_by_name("gpio");
 
     AT_CMD_PARSE_NUMBER(0, &pin);
@@ -814,7 +848,6 @@ static int at_setup_ota_send(int argc, const char **argv)
     int len, recv_size = 0;
     uint8_t *buffer;
     int head_offset = 0;
-    at_ota_header_t *ota_head;
 
     AT_CMD_PARSE_NUMBER(0, &len);
 
@@ -988,6 +1021,293 @@ static int at_query_cmd_flash(int argc, const char **argv)
 }
 #endif
 
+static int at_setup_fs(int argc, const char **argv)
+{
+    int ret = -1;
+    int type, opt, offset, len, recv_size = 0;
+    uint8_t offset_valid = 0;
+    uint8_t len_valid = 0;
+    char filename[128] = {0};
+    char *buffer, *buf;
+    struct at_direct dir_res;
+    at_dir_t dir;
+
+    AT_CMD_PARSE_NUMBER(0, &type);
+    AT_CMD_PARSE_NUMBER(1, &opt);
+    AT_CMD_PARSE_STRING(2, filename, sizeof(filename));
+    AT_CMD_PARSE_OPT_NUMBER(3, &offset, offset_valid);
+    AT_CMD_PARSE_OPT_NUMBER(4, &len, len_valid);
+
+    if (type != AT_FS_TYPE_LFS) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    switch (opt) {
+        case AT_FS_DELETE:
+            ret = at_fs_remove(filename);
+        break;
+        case AT_FS_CREATE:
+            ret = at_fs_open(filename, O_CREAT | O_RDWR);
+            if (ret < 0) {
+                break;
+            }
+            at_fs_close(ret);
+            ret = AT_RESULT_CODE_OK;
+        break;
+        case AT_FS_WRITE:
+
+            if (!offset_valid || !len_valid) {
+                return AT_RESULT_CODE_ERROR;
+            }
+
+            buffer = calloc(len, 1);
+            if (!buffer) {
+                return AT_RESULT_CODE_ERROR;
+            }
+            at_response_result(AT_RESULT_CODE_OK);
+            AT_CMD_RESPONSE(AT_CMD_MSG_WAIT_DATA);
+
+            while(recv_size < len) {
+                recv_size += AT_CMD_DATA_RECV(buffer + recv_size, len - recv_size);
+            }
+
+            if (at_write_file(filename, offset, buffer, len) != len) {
+                free(buffer);
+                return AT_RESULT_CODE_ERROR;
+            }
+            free(buffer);
+
+            if (len == recv_size) {
+                ret = AT_RESULT_CODE_SEND_OK;
+            } else {
+                ret = AT_RESULT_CODE_SEND_FAIL;
+            }
+        break;
+        case AT_FS_READ:
+            if (!offset_valid || !len_valid) {
+                return AT_RESULT_CODE_ERROR;
+            }
+
+            buffer = calloc(len + 1, 1);
+            if (!buffer) {
+                return AT_RESULT_CODE_ERROR;
+            }
+
+            buf = malloc(len + 32);
+            if (!buf) {
+                return AT_RESULT_CODE_ERROR;
+            }
+
+            ret = at_read_file(filename, offset, buffer, len); 
+            if (ret < 0) {
+                return AT_RESULT_CODE_ERROR;
+            }
+            ret = snprintf(buf, len + 32, "+FS:READ,%d,%s\r\n", ret, buffer);
+            AT_CMD_DATA_SEND(buf, ret);
+            free(buffer);
+            free(buf);
+            ret = AT_RESULT_CODE_OK;
+        break;
+        case AT_FS_QUERY_SIZE:
+            ret = at_filesize_get(filename);
+            if (ret < 0) {
+                return AT_RESULT_CODE_ERROR;
+            }
+            at_response_string("+FS:SIZE,%d\r\n", ret);
+            ret = AT_RESULT_CODE_OK;
+        break;
+        case AT_FS_QUERY_LIST:
+            dir = at_fs_opendir(filename);
+            if (!dir) {
+                return AT_RESULT_CODE_ERROR;
+            }
+            at_response_string("+FS:LIST\r\n");
+            while (at_fs_readdir(dir, &dir_res) == 0) {
+                at_response_string("%s\r\n", dir_res.d_name);
+            }
+            at_fs_closedir(dir);
+            ret = AT_RESULT_CODE_OK;
+        break;
+        default:
+        break;
+    }
+    
+    return ret;
+}
+
+static int otp_get_mac_addr(uint8_t mac_0[6], uint8_t mac_1[6], uint8_t mac_2[6])
+{
+    int ret_0,ret_1,ret_2;
+         
+    ret_0 = qcc74x_efuse_read_mac_address_opt(0, mac_0, 1);
+    ret_1 = qcc74x_efuse_read_mac_address_opt(1, mac_1, 1); 
+    ret_2 = qcc74x_efuse_read_mac_address_opt(2, mac_2, 1);
+    
+    if ((ret_0 == 0) && (ret_1 == 0) && (ret_2 == 0)) {
+        return -1;
+    } else {        
+        return 0;
+    }
+}
+
+static int at_query_gmac(int argc, const char **argv)
+{
+    uint8_t mac0[6], mac1[6], mac2[6];
+
+    if (otp_get_mac_addr(mac0, mac1, mac2) != 0) {
+        return AT_RESULT_CODE_ERROR;
+    }
+    at_response_string("+GMACSLOT0:%02x:%02x:%02x:%02x:%02x:%02x\r\n",
+                      mac0[0], mac0[1], mac0[2], mac0[3], mac0[4], mac0[5]);
+    at_response_string("+GMACSLOT1:%02x:%02x:%02x:%02x:%02x:%02x\r\n",
+                      mac1[0], mac1[1], mac1[2], mac1[3], mac1[4], mac1[5]);
+    at_response_string("+GMACSLOT2:%02x:%02x:%02x:%02x:%02x:%02x\r\n",
+                      mac2[0], mac0[1], mac2[2], mac2[3], mac2[4], mac2[5]);
+    
+    return AT_RESULT_CODE_OK;
+}
+
+static int otp_get_part_number(char *pnstr_buf, int buflen)
+{
+    int n, off = 0;
+    int is_null = 1;
+    uint32_t pn_value[OTP_QC_PN_LEN / 4];
+    int i,j;
+    char pn_char;
+
+    for (int i = 0; i < (OTP_QC_PN_LEN / 4); i++){
+        qcc74x_ef_ctrl_read_direct(NULL, OTP_PN_ADDR_START + 4*i, &pn_value[i], 1, 1);
+    }
+
+    for (i = 0; i < (OTP_QC_PN_LEN / 4); i++){
+        if (pn_value[i] != 0) {
+            is_null = 0;
+        }
+    }
+
+    if (is_null) {
+        n = snprintf(pnstr_buf + off, buflen - off, "(null)");
+        if (n > 0) {
+            off += n;
+        }
+        goto __end;
+    }
+
+    for (i = 0; i < (OTP_QC_PN_LEN / 4); i++){
+        for (j = 0; j < 4; j++) {
+            pn_char = (pn_value[i] >> (j * 8)) & 0xFF;
+            if (pn_char == 0x3){ /*end of text*/
+                //mfg_atcmd_print("\n");
+                //return QC_AT_CMD_RESPONSE(result, field_value);
+                goto __end;
+            }
+            //mfg_atcmd_print("%c", pn_char);
+            n = snprintf(pnstr_buf + off, buflen - off, "%c", pn_char);
+            if (n > 0) {
+                off += n;
+            }
+        }
+    }
+
+__end:
+    return off;
+}
+
+static void part_number_dump(void)
+{
+    char buffer[64] = {0};
+
+    otp_get_part_number(buffer, sizeof(buffer));
+
+    printf("Part number:%s\r\n", buffer);
+}
+
+static int at_query_pn(int argc, const char **argv)
+{
+    int n, off = 0;
+    char buffer[64];
+
+    n = snprintf(buffer + off, sizeof(buffer), "+PN:");
+    if (n > 0) {
+        off += n;
+    }
+
+    n = otp_get_part_number(buffer + off, sizeof(buffer) - off);
+    if (n > 0) {
+        off += n;
+    }
+    AT_CMD_DATA_SEND(buffer, off);
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_mfg(int argc, const char **argv)
+{
+    extern void mfg_config(void); 
+
+    mfg_config();
+
+    at_response_result(AT_RESULT_CODE_OK);
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    qcc74x_sys_reset_por();
+
+    return AT_RESULT_CODE_OK;
+}
+
+static void adc_vbat_init(void)
+{
+    struct qcc74x_adc_channel_s chan;
+    struct qcc74x_device_s *adc = qcc74x_device_get_by_name("adc");
+
+    /* adc clock = XCLK / 2 / 32 */
+    struct qcc74x_adc_config_s cfg;
+    cfg.clk_div = ADC_CLK_DIV_32;
+    cfg.scan_conv_mode = false;
+    cfg.continuous_conv_mode = false;
+    cfg.differential_mode = false;
+    cfg.resolution = ADC_RESOLUTION_16B;
+    cfg.vref = ADC_VREF_3P2V;
+
+    chan.pos_chan = ADC_CHANNEL_VABT_HALF;
+    chan.neg_chan = ADC_CHANNEL_GND;
+
+    qcc74x_adc_init(adc, &cfg);
+    qcc74x_adc_channel_config(adc, &chan, 1);
+    qcc74x_adc_vbat_enable(adc);
+}
+
+static int adc_vbat_get(void)
+{
+    struct qcc74x_adc_result_s result;
+    struct qcc74x_device_s *adc = qcc74x_device_get_by_name("adc");
+
+    qcc74x_adc_start_conversion(adc);
+    while (qcc74x_adc_get_count(adc) == 0) {
+    }
+    uint32_t raw_data = qcc74x_adc_read_raw(adc);
+
+    qcc74x_adc_parse_result(adc, &raw_data, &result, 1);
+    qcc74x_adc_stop_conversion(adc);
+
+    return (uint32_t)(result.millivolt * 2);
+}
+
+static int at_query_vbat(int argc, const char **argv)
+{
+    int vbat_mv;
+    //uint64_t time_us = qcc74x_mtimer_get_time_us();
+    vbat_mv = adc_vbat_get();   
+    //time_us = qcc74x_mtimer_get_time_us() - time_us;
+
+    at_response_string("+VBAT:%d\r\n",vbat_mv);
+
+    //printf("vBat = %d mV conver_time:%lld us\r\n", (uint32_t)(vbat_mv), time_us);
+
+    return AT_RESULT_CODE_OK;
+}
+
 static const at_cmd_struct at_base_cmd[] = {
     {"+RST", NULL, NULL, NULL, at_exe_cmd_rst, 0, 0},
     {"+GMR", NULL, NULL, NULL, at_exe_cmd_gmr, 0, 0},
@@ -1027,12 +1347,17 @@ static const at_cmd_struct at_base_cmd[] = {
     {"+FLASH-E", NULL, NULL, at_setup_flash_erase, NULL, 2, 2},
     {"+IOPUPD", NULL, NULL, at_setup_gpio_output, NULL, 2, 2},
     {"+IOOUT", NULL, NULL, at_setup_gpio_set, NULL, 2, 2},
-    {"+IOIN", NULL, at_query_gpio_input, at_setup_gpio_input, NULL, 1, 1},
+    {"+IOIN", NULL, at_query_gpio_input, at_setup_gpio_input, NULL, 2, 2},
     {"+IORST", NULL, NULL, at_setup_gpio_analog_input, NULL, 1, 1},
     {"+PART", NULL, at_query_part, NULL, NULL, 0, 0},
     {"+OTASTART", NULL, at_query_ota_start, at_setup_ota_start, NULL, 1, 1},
     {"+OTASEND", NULL, NULL, at_setup_ota_send, NULL, 1, 1},
     {"+OTAFIN", NULL, NULL, NULL, at_setup_ota_finish_reset, 0, 0},
+    {"+FS", NULL, NULL, at_setup_fs, NULL, 2, 5},
+    {"+GMAC", NULL, at_query_gmac, NULL, NULL, 0, 0},
+    {"+PN", NULL, at_query_pn, NULL, NULL, 0, 0},
+    {"+MFG", NULL, NULL, NULL, at_setup_mfg, 0, 0},
+    {"+VBAT", NULL, at_query_vbat, NULL, NULL, 0, 0},
 };
 
 bool at_base_cmd_regist(void)
@@ -1045,6 +1370,8 @@ bool at_base_cmd_regist(void)
             at_base_config->uart_cfg.parity,
             at_base_config->uart_cfg.flow_control);
 
+    adc_vbat_init();
+    part_number_dump();
     at_register_function(at_base_config_default, NULL);
 
     if (at_cmd_register(at_base_cmd, sizeof(at_base_cmd) / sizeof(at_base_cmd[0])) == 0)

@@ -100,6 +100,9 @@ int at_arg_get_number(const char *arg, int *value)
 {
     int i;
 
+    if (!arg) {
+        return 0;
+    }
     for (i=0; i<strlen(arg); i++) {
         if (!((arg[i] >= '0' && arg[i] <= '9') || (i == 0 && arg[i] == '-')))
             return 0;

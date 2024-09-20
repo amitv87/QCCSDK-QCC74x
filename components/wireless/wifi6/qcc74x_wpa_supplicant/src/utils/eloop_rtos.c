@@ -16,6 +16,7 @@
 #include "common.h"
 #include "trace.h"
 #include "list.h"
+#include "os.h"
 #include "eloop.h"
 #include "rtos_def.h"
 

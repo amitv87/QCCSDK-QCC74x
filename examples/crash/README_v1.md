@@ -8,6 +8,7 @@
 |:----------------:|:------:|
 |qcc743/qcc744       |        |
 
+
 ## Compile
 
 - qcc743/qcc744
@@ -16,6 +17,25 @@
 ```
 make CHIP=qcc743 BOARD=qcc743dk
 ```
+
+## tools
+
+|      OS          | tools suffix|
+|:----------------:|:-----------:|
+|ubuntu            |-ubuntu      |
+
+
+## perl environment
+
+in linux, perl is POSIX standard environment.
+
+
+## Run environment
+
+|      OS          | env               |
+|:----------------:|:-----------------:|
+|ubuntu            |bash terminal      |
+
 
 ## Flash
 
@@ -27,15 +47,15 @@ make flash CHIP=chip_name COMX=xxx # xxx is your com name
 
 1. Enter crash in cli, wait log print. At the same time, a coredump will be generated in the core partition.
 
-2. Get bin format crash binary
+2. Get bin format crash binary  (press CHIP_EN, click RESET and release CHIP_EN)
 
 ```
 (qcc743dk)
-../../tools/qcc74x_tools/QConn_Flash/QConn_Flash_Cmd-ubuntu --read --start 0x2f8000 --len 0x80000 --file crash.bin
+../../tools/qcc74x_tools/QConn_Flash/QConn_Flash_Cmd-ubuntu --port your-serial-port --read --start 0x2f8000 --len 0x80000 --file crash.bin
 mv ../../tools/qcc74x_tools/QConn_Flash/crash.bin .
 
 (qcc744dk)
-../../tools/qcc74x_tools/QConn_Flash/QConn_Flash_Cmd-ubuntu --read --start 0x6e0000 --len 0x480000 --file crash.bin
+../../tools/qcc74x_tools/QConn_Flash/QConn_Flash_Cmd-ubuntu --port your-serial-port --read --start 0x6e0000 --len 0x480000 --file crash.bin
 mv ../../tools/qcc74x_tools/QConn_Flash/crash.bin .
 ```
 
@@ -79,6 +99,8 @@ comment `restore build/build_out/crash_qcc743.elf` and `restore crash.bin` in gd
 riscv64-unknown-elf-gdb -x gdb.init -se build/build_out/crash_qcc743.elf
 ```
 
-## note
+## Note
 
-lease kill bugkiller_linux_amd64 process after debug.
+1. please kill bugkiller_linux_amd64 process after debug.
+
+2. Because of the driver of linux ch347, after a crash outputs a large amount of logs, the devices needs to be unplugged to make ch347 work correctly.

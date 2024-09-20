@@ -152,7 +152,6 @@
 /* ---------- Multi-cast options ---- */
 #define LWIP_IGMP               1
 #define LWIP_IPV6_MLD           1
-#define LWIP_ND6_RDNSS_MAX_DNS_SERVERS 1
 #define MEMP_NUM_MLD6_GROUP 300
 #define LWIP_MULTICAST_PING 1
 #define LWIP_MULTICAST_TX_OPTIONS 1
