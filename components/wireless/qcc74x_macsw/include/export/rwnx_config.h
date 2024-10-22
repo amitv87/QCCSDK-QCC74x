@@ -202,7 +202,7 @@
   #undef CFG_MFP
   #define CFG_MFP
   // Force Radio Measurement module
-  // #define NX_RM 1
+  #define NX_RM 1
   #ifdef CFG_RM
     #define NX_RM 1
   #endif

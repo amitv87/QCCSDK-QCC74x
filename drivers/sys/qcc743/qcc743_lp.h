@@ -499,6 +499,8 @@ int qcc74x_lp_get_bcn_delay_ready();
 /* bcn loss cfg */
 void qcc74x_lp_fw_bcn_loss_cfg(lp_fw_bcn_loss_level_t *cfg_table, uint16_t table_num, uint16_t loop_start, uint16_t loss_max);
 
+void qcc74x_lp_fw_bcn_loss_cfg_dtim_default(uint8_t dtim_num);
+
 /* bcn loss rate */
 int qcc74x_lp_fw_bcn_loss_info_get(uint32_t *try_num, uint32_t *loss_num);
 int qcc74x_lp_fw_bcn_loss_info_clear();

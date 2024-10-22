@@ -336,6 +336,9 @@ static int cli_handle_one(const char *argv)
 
 static int _console_to_at(const char *buf, uint32_t len)
 {
+	if (strstr(buf, "AT") == NULL && strstr(buf, "+++") == NULL) {
+		return -1;
+	}
     int ret = at_host_send(g_at_handle, 0, (uint8_t *)buf, len);
 
     if (ret < len) {
@@ -358,7 +361,7 @@ static int console_cli_run(const char *cmd)
     return -1;
 }
 
-#define CONSOLE_AT_ENABLE 1
+#define CONSOLE_AT_ENABLE 0
 
 static void uart_console_task(void *param)
 {
@@ -391,14 +394,21 @@ static void uart_console_task(void *param)
             }
             in = 0;
 #else 
+#if 0
 		    /* echo */
 			for (int i = 0; i < ret; i++) {
 				putchar(buf[in + i]);
 				fflush(stdout);
 			}
-
+#endif
 			/* new data arrives */
 			in += ret;
+
+            if (strstr(buf, "+++") != NULL) {
+                _console_to_at(buf, 3);
+                out = 3;
+                in -= out;
+            }
 			/* parse received data */
 			while (in > out) {
 				char ch = buf[out++];
@@ -415,9 +425,13 @@ static void uart_console_task(void *param)
 						 * Copy the current command to buffer and make sure
 						 * it has a terminating NULL.
 						 */
-						memcpy(cmd, buf, out - 1);
+						memcpy(cmd, buf, out);
 						cmd[out] = '\0';
-						cli_handle_one(cmd);
+
+                        if (console_cli_run(cmd) != 0) {
+                            _console_to_at(cmd, strlen(cmd));
+                        }
+						//cli_handle_one(cmd);
 						/* Shift out the old command. */
 						memmove(buf, &buf[out], in - out);
 						in -= out;

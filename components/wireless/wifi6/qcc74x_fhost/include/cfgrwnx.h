@@ -212,6 +212,17 @@ enum cfgrwnx_msg_index {
     /// Requset to send raw packet
     CFGRWNX_RAW_SEND_CMD,
     CFGRWNX_RAW_SEND_RESP,
+    /// Requset to config TWT setup
+    CFGRWNX_TWT_SETUP_CMD,
+    CFGRWNX_TWT_SETUP_RESP,
+    /// Requset to config TWT teardown
+    CFGRWNX_TWT_TEARDOWN_CMD,
+    CFGRWNX_TWT_TEARDOWN_RESP,
+#ifdef CFG_QCC74x_WIFI_PS_ENABLE
+    /// Requset to send null packet
+    CFGRWNX_NULL_DATA_SEND_CMD,
+    CFGRWNX_NULL_DATA_SEND_RESP,
+#endif
 };
 
 /// CFGRWNX status
@@ -384,6 +395,15 @@ struct cfgrwnx_raw_send {
     void *pkt;
     uint32_t len;
 };
+
+#ifdef CFG_QCC74x_WIFI_PS_ENABLE
+struct cfgrwnx_null_data_send {
+    /// header
+    struct cfgrwnx_msg_hdr hdr;
+    /// Vif idx
+    int fhost_vif_idx;
+};
+#endif
 
 /// structure for CFGRWNX_SCAN_CMD
 struct cfgrwnx_scan {
@@ -832,6 +852,40 @@ struct cfgrwnx_set_ps_mode {
     bool enabled;
     /// PS mode
     uint8_t ps_mode;
+};
+
+/// structure for CFGRWNX_TWT_SETUP_CMD
+struct cfgrwnx_twt_setup_req {
+    /// header
+    struct cfgrwnx_msg_hdr hdr;
+    /// Vif idx
+    uint16_t fhost_vif_idx;
+    /// Setup request type
+    uint8_t setup_type;
+    /// Flow Type (0: Announced, 1: Unannounced)
+    uint8_t flow_type;
+    /// Wake interval Exponent
+    uint8_t wake_int_exp;
+    /// Unit of measurement of TWT Minimum Wake Duration (0:256us, 1:tu)
+    bool wake_dur_unit;
+    /// Nominal Minimum TWT Wake Duration
+    uint8_t min_twt_wake_dur;
+    /// TWT Wake Interval Mantissa
+    uint16_t wake_int_mantissa;
+};
+
+/// structure for CFGRWNX_TWT_TEARDOWN_CMD
+struct cfgrwnx_twt_teardown_req {
+    /// header
+    struct cfgrwnx_msg_hdr hdr;
+    /// Vif idx
+    uint16_t fhost_vif_idx;
+    /// TWT Negotiation type
+    uint8_t neg_type;
+    /// All TWT
+    uint8_t all_twt;
+    /// TWT flow ID
+    uint8_t id;
 };
 
 enum CFGRWNX_ME_PARAM_ID_E {

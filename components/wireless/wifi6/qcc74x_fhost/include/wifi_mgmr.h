@@ -59,6 +59,11 @@ typedef struct wifi_mgmr {
     uint8_t max_sta_supported;
     uint8_t num_sta;
     uint32_t flags;
+
+    #define WIFI_MGMR_CONFIG_NON_PREF_CHAN_LIST     (4)
+    /*non_pref_chan list, formatted with <oper_class>:<chan>:<preference>:<reason>*/
+    char non_pref_chan_list[WIFI_MGMR_CONFIG_NON_PREF_CHAN_LIST][6*4+3+1];// support 4 non_pref_chan item
+    int non_pref_chan_list_valid;
 } wifi_mgmr_t;
 extern wifi_mgmr_t wifiMgmr;
 

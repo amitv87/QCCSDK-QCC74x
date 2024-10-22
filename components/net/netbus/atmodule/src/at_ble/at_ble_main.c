@@ -716,22 +716,22 @@ void ble_dynamic_noti_cb(const struct bt_gatt_attr* attr ,u8_t data)
     {
         if (data == BT_GATT_CCC_INDICATE)
         {
-            at_response_string("+BLE:INDICATION:1 %d,%d\r\n",srv_idx,char_idx);
+            at_response_string("+BLE:INDICATION:1,%d,%d\r\n",srv_idx,char_idx);
         }
         else
         {
-            at_response_string("+BLE:INDICATION:0 %d,%d\r\n",srv_idx,char_idx);
+            at_response_string("+BLE:INDICATION:0,%d,%d\r\n",srv_idx,char_idx);
         }
     }
     if( g_ble_srv_data[srv_idx].srv_char[char_idx].char_prop &BLE_GATT_CHAR_PROP_NOTIFY)
     {
         if (data == BT_GATT_CCC_NOTIFY)
         {
-            at_response_string("+BLE:NOTIFICATION:1%d,%d\r\n",srv_idx,char_idx);
+            at_response_string("+BLE:NOTIFICATION:1,%d,%d\r\n",srv_idx,char_idx);
         }
         else
         {
-            at_response_string("+BLE:NOTIFICATION:0 %d,%d\r\n",srv_idx,char_idx);
+            at_response_string("+BLE:NOTIFICATION:0,%d,%d\r\n",srv_idx,char_idx);
         }
     }
 

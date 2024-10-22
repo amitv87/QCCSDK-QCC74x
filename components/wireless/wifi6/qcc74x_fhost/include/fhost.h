@@ -42,7 +42,7 @@
 uint32_t dbg_vsnprintf_offset(char *buffer, uint32_t size, uint32_t offset, const char *fmt, va_list args);
 #define dbg_vsnprintf(buffer, size, fmt, args) dbg_vsnprintf_offset(buffer, size, 0, fmt, args)
 
-#if defined(FHOST_PRINTF_DIABLE)
+#if defined(FHOST_PRINTF_DISABLE)
 #define fhost_printf(...)
 #define fhost_print(x, ...) fhost_printf(__VA_ARGS__)
 #else

@@ -92,6 +92,8 @@ void at_response_result(uint8_t result_code);
 
 void at_response_string(const char *format, ... );
 
+void at_write(const char *format , ...);
+
 int at_set_work_mode(at_work_mode mode);
 
 at_work_mode at_get_work_mode(void);

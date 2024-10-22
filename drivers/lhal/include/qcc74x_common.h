@@ -110,6 +110,22 @@ void *qcc74x_get_no_cache_addr(const void *addr);
 
 #endif
 
+typedef struct
+{
+    uint8_t anti_rollback; /* anti-rollback version */
+    uint8_t x;             /* custom version x */
+    uint8_t y;             /* custom version y */
+    uint8_t z;             /* custom version z */
+    uint32_t name;         /* app name pointer */
+    uint32_t build_time;   /* app build time pointer */
+    uint32_t commit_id;    /* app build commit id pointer */
+    uint32_t rsvd0;        /* rsvd0 */
+    uint32_t rsvd1;        /* rsvd1 */
+} qcc74xverinf_t;
+
+int32_t qcc74x_get_app_version_from_efuse(uint8_t *version);
+int32_t qcc74x_set_app_version_to_efuse(uint8_t version);
+
 #ifdef __cplusplus
 }
 #endif

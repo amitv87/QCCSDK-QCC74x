@@ -175,7 +175,7 @@ int at_iperf_stop(at_host_handle_t at, int is_cli)
 	return 0;
 }
 
-osSemaphoreId_t g_recvsem;
+SemaphoreHandle_t g_recvsem;
 
 static int _at_to_console(uint8_t *buf, uint32_t len, void *arg)
 {
@@ -192,7 +192,7 @@ static int _net_data_recv(int linkid, uint8_t *buf, uint32_t size, void *arg)
 		if (buf == NULL) {
 			//recv_size = at_host_recvdata(at, linkid, recvdata, size);
 			//at_ota_update(at, recvdata, recv_size);
-			osSemaphoreRelease(g_recvsem);
+			//xSemaphoreGive(g_recvsem);
 		}
 	}
 	return 0;
@@ -203,8 +203,21 @@ static int _read_data(void *arg, void *data, int len)
 	spisync_msg_t msg;
 	spisync_t *ctx = (spisync_t *)arg;
 
+	int ret;
+
 	spisync_build_msg(&msg, SPISYNC_TYPESTREAM_AT, data, len, 10000);
-	return spisync_read(ctx, &msg, 10000);
+	ret = spisync_read(ctx, &msg, 0);
+
+#if 0
+	if (ret > 0) {
+		printf("[read] %d===>", len);
+		for (int i = 0; i < 25; i++) {
+			printf("%c", ((char *)data)[i]);
+		}
+		printf("\r\n");
+	}
+#endif
+	return ret;
 }
 
 static int _write_data(void *arg, const void *data, int len)
@@ -212,12 +225,29 @@ static int _write_data(void *arg, const void *data, int len)
 	spisync_msg_t msg;
 	spisync_t *ctx = (spisync_t *)arg;
 
+	int ret;
+
+#if 0
+	printf("[write] %d===>", len);
+	for (int i = 0; i < 25; i++) {
+		printf("%c", ((char *)data)[i]);
+	}
+	printf("\r\n");
+#endif
+
 	spisync_build_msg(&msg, SPISYNC_TYPESTREAM_AT, data, len, 10000);
-	return spisync_write(ctx, &msg, 10000);
+	ret = spisync_write(ctx, &msg, 0);
+	return ret;
 }
+
+
+static uint8_t ota_started = 0;
 
 int at_ota_start(at_host_handle_t at, char ip_addr[20], int port)
 {
+	if (ota_started) {
+		return -1;
+	}
 	at_host_recvmode_set(at, AT_NET_RECV_MODE_PASSIVE);
 	osDelay(10);
 
@@ -229,8 +259,9 @@ int at_ota_start(at_host_handle_t at, char ip_addr[20], int port)
 
     at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+CWEVT=0\r\n");
     osDelay(10);
-//    at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+WIPS=0\r\n");
-//    osDelay(10);
+    at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+CIPEVT=0\r\n");
+    osDelay(10);
+
 	at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+OTASTART=1\r\n");
 	osDelay(10);
 
@@ -238,21 +269,25 @@ int at_ota_start(at_host_handle_t at, char ip_addr[20], int port)
 	at_host_receive_register(at, NULL, NULL);
 
 	at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+CIPSTART=0,\"TCP\",\"%s\",%d\r\n", ip_addr, port);
-	osDelay(10);
+	osDelay(100);
+
+    ota_started = 1;
+    xSemaphoreGive(g_recvsem);
 	return 0;
 }
 
 int at_ota_finish(at_host_handle_t at)
 {
+	ota_started = 0;
 	at_host_net_recv_register(at, NULL, NULL);
 	at_host_receive_register(at, _at_to_console, NULL);
 
-    at_host_printf(at, AT_HOST_RESP_EVT_NONE, "AT+CIPCLOSE=0\r\n");
+//    at_host_printf(at, AT_HOST_RESP_EVT_NONE, "AT+CIPCLOSE=0\r\n");
     osDelay(10);
     at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+CWEVT=1\r\n");
     osDelay(10);
-//    at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+WIPS=1\r\n");
-//    osDelay(10);
+    at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+CIPEVT=1\r\n");
+    osDelay(10);
     at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+OTAFIN\r\n");
     osDelay(10);
     return 0;
@@ -306,6 +341,7 @@ int at_ota_update(at_host_handle_t at, uint8_t *buf, uint32_t len)
     	file_size = 0;
     	ota_size = 0;
         at_ota_finish(at);
+        return 1;
     }
     return 0;
 }
@@ -316,12 +352,21 @@ static void __app_task(void *arg)
 	int recv_size;
 	at_host_handle_t at = (at_host_handle_t)arg;
 
-	g_recvsem = osSemaphoreNew(1, 0, NULL);
+	g_recvsem = xSemaphoreCreateBinary();
 
 	while (1) {
-		osSemaphoreAcquire(g_recvsem, 0xffffffff);
-		while ((recv_size = at_host_recvdata(at, 0, recvdata, sizeof(recvdata))) > 0) {
-			at_ota_update(at, recvdata, recv_size);
+		xSemaphoreTake(g_recvsem, 0);
+		xSemaphoreTake(g_recvsem, 0xffffffff);
+		while (1) {
+			recv_size = at_host_recvdata(at, 0, recvdata, sizeof(recvdata));
+			if (recv_size <= 0) {
+				osDelay(5);
+				printf("wait recvdata\r\n");
+				continue;
+			}
+			if (at_ota_update(at, recvdata, recv_size) == 1) {
+				break;
+			}
 			//osDelay(10);
 		}
 	}

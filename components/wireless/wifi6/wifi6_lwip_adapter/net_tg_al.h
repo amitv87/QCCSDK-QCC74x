@@ -23,6 +23,15 @@
 struct fhost_tg_stream;
 struct fhost_ping_stream;
 
+/// Time structure
+struct tg_time
+{
+    /// second
+    uint32_t sec;
+    /// microsecond
+    uint32_t usec;
+};
+
 /*
  * FUNCTIONS
  ****************************************************************************************
@@ -115,5 +124,17 @@ int net_tg_recv_transc_start(struct fhost_tg_stream *stream);
  ****************************************************************************************
  **/
 int net_ping_send(struct fhost_ping_stream *stream);
+
+/**
+ ****************************************************************************************
+ * @brief Calculate the time difference
+ *
+ * @param[in] t1  TG time structure
+ * @param[in] t2  TG time structure
+ *
+ * @return the time difference t2 - t1 in us (could be negative)
+ ****************************************************************************************
+ **/
+int net_time_diff(struct tg_time *t1, struct tg_time *t2);
 
 #endif // NET_TG_AL_H_

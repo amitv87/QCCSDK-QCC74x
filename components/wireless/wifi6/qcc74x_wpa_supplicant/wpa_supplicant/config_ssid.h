@@ -1180,14 +1180,14 @@ struct wpa_ssid {
 	 * 2 = both hunting-and-pecking loop and hash-to-element enabled
 	 */
 	int sae_pwe;
-#ifdef CONFIG_EXTRA_WPA_SSID_FLAG
+#ifdef CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG
     /**
      * Extra flags passed by fhost.
      *
      * Flags are defined in fhost_wpa.h.
      */
     int qcc74x_flags;
-#endif /* CONFIG_EXTRA_WPA_SSID_FLAG */
+#endif /* CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG */
 };
 
 #endif /* CONFIG_SSID_H */

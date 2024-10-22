@@ -98,7 +98,7 @@ int at_wifi_config_init(void)
     }
     if (!at_config_read(AT_CONFIG_KEY_WIFI_COUNTRY_CODE, &at_wifi_config->wifi_country, sizeof(wifi_country_code))) {
         at_wifi_config->wifi_country.country_policy = 1;
-        at_wifi_config->wifi_country.country_code = WIFI_COUNTRY_CODE_CN;
+        at_wifi_config->wifi_country.country_code = WIFI_COUNTRY_CODE_WORLD;
         at_wifi_config->wifi_country.start_channel = 1;
         at_wifi_config->wifi_country.total_channel_count = 13;
     }

@@ -20,9 +20,9 @@
  * INCLUDE FILES
  ****************************************************************************************
  */
-#include "rwnx_config.h"
+#include "export/rwnx_config.h"
 #include "fhost.h"
-#include "fhost_tg.h"
+#include "net_tg_al_priv.h"
 #include "net_tg_al.h"
 
 #if NX_TG
@@ -165,7 +165,7 @@ int fhost_tg_start(uint32_t stream_id)
             return 1;
         }
         if (rtos_task_create(tg_send_main, "TG_SEND", TG_SEND_TASK,
-                            FHOST_TG_SEND_STACK_SIZE, stream, FHOST_TG_SEND_PRIORITY,
+                            FHOST_TG_SEND_STACK_SIZE, stream, fhost_tg_priority,
                             &stream->tg_handle))
         {
             rtos_semaphore_delete(stream->tg_semaphore);

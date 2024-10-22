@@ -185,6 +185,7 @@ extern qcc74x_lp_fw_cfg_t lpfw_cfg;
 void set_dtim_config(int dtim)
 {
     lpfw_cfg.dtim_origin = dtim;
+    qcc74x_lp_fw_bcn_loss_cfg_dtim_default(lpfw_cfg.dtim_origin);
 
     wifi_mgmr_sta_ps_enter();
 }
@@ -198,6 +199,7 @@ static void cmd_tickless(int argc, char **argv)
         lpfw_cfg.dtim_origin = 10;
     }
 
+    qcc74x_lp_fw_bcn_loss_cfg_dtim_default(lpfw_cfg.dtim_origin);
     printf("sta_ps %ld\r\n", wifi_mgmr_sta_ps_enter());
     enable_tickless = 1;
 }
@@ -317,12 +319,13 @@ static void lp_io_wakeup_callback(uint64_t wake_up_io_bits)
 
 static qcc74x_lp_io_cfg_t lp_wake_io_cfg = {
     .io_16_ie = QCC74x_LP_IO_INPUT_ENABLE,
+    .io_20_34_ie = QCC74x_LP_IO_INPUT_ENABLE,
 };
 
 int lp_set_wakeup_by_io(uint8_t io, uint8_t mode)
 {
-    if (io != 16) {
-        printf("only support gpio 16.\r\n");
+    if (io != 16 && io != 28) {
+        printf("only support gpio 16, 28\r\n");
         return -1;
     }
     
@@ -331,11 +334,21 @@ int lp_set_wakeup_by_io(uint8_t io, uint8_t mode)
         return -1;
     } 
 
-    if (mode == 0) {
-        lp_wake_io_cfg.io_16_19_aon_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_HIGH_LEVEL;
-    } else if (mode == 1) {
-        lp_wake_io_cfg.io_16_19_aon_trig_mode = QCC74x_LP_AON_IO_TRIG_SYNC_RISING_FALLING_EDGE;
+    if (io == 16) {
+        if (mode == 0) {
+            lp_wake_io_cfg.io_16_19_aon_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_HIGH_LEVEL;
+        } else{
+            lp_wake_io_cfg.io_16_19_aon_trig_mode = QCC74x_LP_AON_IO_TRIG_SYNC_RISING_FALLING_EDGE;
+        }
+        lp_wake_io_cfg.io_16_res = QCC74x_LP_IO_RES_PULL_DOWN;
     } else {
+        printf("set gpio 28 wakeup.\r\n");
+        if (mode == 0) {
+            lp_wake_io_cfg.io_28_34_pds_trig_mode = QCC74x_LP_PDS_IO_TRIG_SYNC_HIGH_LEVEL;
+        } else if (mode == 1) {
+            lp_wake_io_cfg.io_28_34_pds_trig_mode = QCC74x_LP_AON_IO_TRIG_SYNC_RISING_FALLING_EDGE;
+        }
+        lp_wake_io_cfg.io_20_34_res = QCC74x_LP_IO_RES_PULL_DOWN;
     }
 
 #if 0
@@ -345,7 +358,6 @@ int lp_set_wakeup_by_io(uint8_t io, uint8_t mode)
     }
 #endif
 
-    lp_wake_io_cfg.io_16_res = QCC74x_LP_IO_RES_PULL_DOWN;
 
     lp_wake_io_cfg.io_wakeup_unmask |= ((uint64_t)1 << io);
 
@@ -405,14 +417,14 @@ static void xtal32k_input(void)
     modify_bit(0x2000F204, 17, 0x0);
 }
 
-static TaskHandle_t rc32k_coarse_trim_task_hd = NULL;
 static TaskHandle_t xtal32k_check_entry_task_hd = NULL;
+static uint32_t xtal_reg_val = 0;
 static TaskHandle_t hello_entry_task_hd = NULL;
 
 /**********************************************************
     rc32k coarse trim task func
  **********************************************************/
-static void rc32k_coarse_trim_task(void *pvParameters)
+static void rc32k_coarse_trim_task(void)
 {
     uint32_t retry_cnt = 0;
     uint64_t timeout_start;
@@ -426,8 +438,7 @@ static void rc32k_coarse_trim_task(void *pvParameters)
     printf("rc32k_coarse_trim task enable, freq_mtimer must be 1MHz!\r\n");
     timeout_start = qcc74x_mtimer_get_time_us();
 
-    vTaskDelay(20);
-
+    qcc74x_mtimer_delay_ms(20);
     while(1){
         retry_cnt += 1;
 
@@ -442,9 +453,7 @@ static void rc32k_coarse_trim_task(void *pvParameters)
 
         rtc_record_us = QCC74x_PDS_CNT_TO_US(rtc_cnt);
 
-        /* delay */
-        vTaskDelay(50);
-
+        qcc74x_mtimer_delay_ms(50);
         /* disable irq */
         __disable_irq();
 
@@ -467,7 +476,7 @@ static void rc32k_coarse_trim_task(void *pvParameters)
         if(error_ppm > 2000 || error_ppm < -2000){
             /*  */
             printf("rc32k_coarse_trim: retry_cnt:%d, ppm:%d, continue...\r\n", retry_cnt, error_ppm);
-            vTaskDelay(5);
+            qcc74x_mtimer_delay_ms(5);
         }else{
             /* finish */
             printf("rc32k_coarse_trim: retry_cnt:%d, ppm:%d, finish!\r\n", retry_cnt, error_ppm);
@@ -477,21 +486,11 @@ static void rc32k_coarse_trim_task(void *pvParameters)
 
     printf("rc32k coarse trim success!, total time:%dms\r\n", (int)(qcc74x_mtimer_get_time_us() - timeout_start) / 1000);
 
-    /* coarse_adj success */
-    if(xtal32k_check_entry_task_hd){
-        /* resume xtal32k_check task */
-        printf("rc32k_coarse_trim: Resume xtal32k_check task!\r\n");
-        xTaskNotifyGive(xtal32k_check_entry_task_hd);
-    }else{
-        /* set qcc74x_lp 32k clock ready */
-        printf("rc32k_coarse_trim: set lp_32k ready!\r\n");
-        qcc74x_lp_set_32k_clock_ready(1);
-    }
+    /* set qcc74x_lp 32k clock ready */
+    printf("rc32k_coarse_trim: set lp_32k ready!\r\n");
+    qcc74x_lp_set_32k_clock_ready(1);
 
     printf("rc32k_coarse_trim: rc32k code:%d\r\n", iot2lp_para->rc32k_fr_ext);
-
-    printf("rc32k_coarse task: vTaskDelete\r\n");
-    vTaskDelete(NULL);
 }
 
 static void hello_entry_task(void *pvParameters)
@@ -506,7 +505,7 @@ static void hello_entry_task(void *pvParameters)
 /**********************************************************
     xtal32k check task func
  **********************************************************/
-static void xtal32k_check_entry_task(void *pvParameters)
+static int xtal32k_check_entry_task(int crystal_flag)
 {
     uint32_t xtal32_regulator_flag = 0;
 
@@ -522,6 +521,10 @@ static void xtal32k_check_entry_task(void *pvParameters)
 
     uint32_t success_flag = 0;
 
+    int ret = 0;
+
+    qcc74x_lp_set_32k_clock_ready(0);
+
     vTaskDelay(10);
     printf("xtal32k_check_entry task enable, freq_mtimer must be 1MHz!\r\n");
 
@@ -534,30 +537,31 @@ static void xtal32k_check_entry_task(void *pvParameters)
         .smtCtrl = 1
     };
 
-#ifndef CFG_ACTIVE_CRYSTAL
-    gpioCfg.gpioPin = 16;
-    GLB_GPIO_Init(&gpioCfg);
-#endif
+    if (crystal_flag) {
+        gpioCfg.gpioPin = 16;
+        GLB_GPIO_Init(&gpioCfg);
+        printf("--------------------------- use passive crystal.\r\n");
+    } else {
+        printf("----------------------- use active crtstal.\r\n");
+    }
+
     gpioCfg.gpioPin = 17;
     GLB_GPIO_Init(&gpioCfg);
 
-#ifndef CFG_ACTIVE_CRYSTAL
-    /* power on */
-    HBN_Set_Xtal_32K_Inverter_Amplify_Strength(3);
-    HBN_Power_On_Xtal_32K();
-#else    
-    xtal32k_input();
-#endif
+    if (crystal_flag) {
+        *(uint32_t*)(0x2000F204) = xtal_reg_val;
+        /* power on */
+        HBN_Set_Xtal_32K_Inverter_Amplify_Strength(3);
+        HBN_Power_On_Xtal_32K();
+    } else {
+        xtal32k_input();
+    }
 
     timeout_start = qcc74x_mtimer_get_time_us();
 
     printf("xtal32k_check: delay 100 ms\r\n");
     vTaskDelay(500);
 
-    if(rc32k_coarse_trim_task_hd){
-        printf("xtal32k_check: wait rc32k_coarse_trim finish\r\n");
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    }
 
     printf("xtal32k_check: start check\r\n");
 
@@ -637,6 +641,7 @@ static void xtal32k_check_entry_task(void *pvParameters)
         /* GPIO17 no pull */
         *((volatile uint32_t *)0x2000F014) &= ~(1 << 16);
 
+        ret = 1;
         printf("select xtal32k\r\n");
 
     }else{
@@ -650,8 +655,7 @@ static void xtal32k_check_entry_task(void *pvParameters)
     printf("xtal32k_check: set lp_32k ready!\r\n");
     qcc74x_lp_set_32k_clock_ready(1);
 
-    printf("xtal32k_check task: vTaskDelete\r\n");
-    vTaskDelete(NULL);
+    return ret;
 }
 
 void timerCallback(TimerHandle_t xTimer)
@@ -736,6 +740,87 @@ void app_pm_enter_pds15(void)
     enable_tickless = 1;
 }
 
+TimerHandle_t keepalive_timer = NULL;
+
+void keepalive_callback(TimerHandle_t xTimer)
+{
+    wifi_mgmr_null_data_send();
+}
+
+int app_create_keepalive_timer(uint32_t periods)
+{
+    TickType_t timerPeriod = pdMS_TO_TICKS(periods * 1000);
+
+    if (keepalive_timer == NULL) {
+        keepalive_timer = xTimerCreate("keepalive_timer", timerPeriod, pdTRUE, 0, keepalive_callback);
+        if (keepalive_timer == NULL)
+        {
+            printf("Failed to create timer.\n");
+            return -1;
+        }
+
+        if (xTimerStart(keepalive_timer, 0) != pdPASS)
+        {
+            printf("Failed to start timer.\n");
+            return -1;
+        }
+    } else {
+        if (xTimerChangePeriod(keepalive_timer, timerPeriod, 0) != pdPASS)
+        {
+            printf("Failed to change timer period.\n");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int app_delete_keepalive_timer(void)
+{
+    if (keepalive_timer != NULL) {
+        if (xTimerStop(keepalive_timer, 0) != pdPASS) {
+            printf("Failed to stop timer.\n");
+            return -1;
+        }
+
+        if (xTimerDelete(keepalive_timer, 0) != pdPASS) {
+            printf("Failed to delete timer.\n");
+            return -1;
+        }
+
+        keepalive_timer = NULL;
+        printf("Timer successfully deleted.\n");
+    } else {
+        printf("No timer to delete.\n");
+        return 0;
+    }
+
+    return 0;
+}
+
+
+static void xtal32k_select_task(void *pvParameters)
+{
+    if (xtal32k_check_entry_task(1)) {
+    } else {
+        xtal32k_check_entry_task(0);
+    }
+
+    printf("xtal32k_check task: vTaskDelete\r\n");
+    xtal32k_check_entry_task_hd = NULL;
+    vTaskDelete(NULL);
+}
+
+int app_pm_use_crystal_oscillator(void)
+{
+    if (xtal32k_check_entry_task_hd) {
+        printf("xtal check is on processing.\r\n");
+
+        return -1;
+    }
+    xTaskCreate(xtal32k_select_task, (char*)"xtal32k_select_task", 512, NULL, 10, &xtal32k_check_entry_task_hd);
+}
+
 int app_pm_init(void)
 {
     uint8_t soc_v, rt_v, aon_v;
@@ -754,13 +839,10 @@ int app_pm_init(void)
     qcc74x_lp_sys_callback_register(lp_enter, NULL, lp_exit, NULL);
 #endif
 
+    rc32k_coarse_trim_task();
+    xtal_reg_val = *(uint32_t*)(0x2000F204);
+
+    app_pm_use_crystal_oscillator();
+
     //xTaskCreate(hello_entry_task, (char*)"hello_check_entry", 512, NULL, 10, &hello_entry_task_hd);
-
-    /* coarse trim rc32k */
-    puts("[OS] Create rc32k_coarse_trim task...\r\n");
-    xTaskCreate(rc32k_coarse_trim_task, (char*)"rc32k_coarse_trim", 512, NULL, 31, &rc32k_coarse_trim_task_hd);
-
-    /* auto check xtal32k, only test */
-    puts("[OS] Create xtal32k_check_entry task...\r\n");
-    xTaskCreate(xtal32k_check_entry_task, (char*)"xtal32k_check_entry", 512, NULL, 31, &xtal32k_check_entry_task_hd);
 }

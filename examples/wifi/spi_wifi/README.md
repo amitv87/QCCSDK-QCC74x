@@ -126,6 +126,12 @@ NOTE:Currently, edge wake-up is not supported. Edge awakening will be supported 
 4. Execute the command `AT+PWR=2` (enter standby mode) in serial port tool.
 5. You can see that the current has decreased, and then measure the subsequent average power consumption.
 
+#### Enable keepalive
+
+1. Reset the demo board.
+2. Connect to the Access Point (AP).
+3. Execute the command `AT+START_KEEPALIVE=55` in serial port tool.You have enabled the 55-second keep-alive. The STA will send a null packet every 55 seconds.
+
 ## OTA Test
 
 Ensure that the PC and qcc74x are connected to the same router.
@@ -472,8 +478,8 @@ The process for using low power mode is as follows:
 
 
 ### Qcc743 Power Consumption Measuremen
+![wifi_lowpower_kpi.png](./pic/wifi_lowpower_kpi.png)
 
-![host-wakeup-qcc743.png](./pic/power.png)
 
 ## 4. Possible Reasons for Not Entering Sleep Mode
 
@@ -516,30 +522,13 @@ d. Enable debug log in `tickless.c` to identify any events or reasons preventing
 
 ## 7. SPI Sync Protocol with Low Power
 
-The overall framework for host and Qcc74x low power is as follows:
+The diagram below illustrates the low-power architecture for host and slave:
 
-1. The host can wake up the Qcc74x through GPIO when it has data to send via SPI.
-2. When the Qcc74x has data to send, it will pull a GPIO to notify the host. After data transmission, the GPIO is restored.
-3. After entering low power mode, the Qcc74x's SPI peripherals lose power. When woken up, if there is data to send or the wake-up source is the host, SPI communication is immediately restored.
+1.The host and slave can wake each other up via GPIO.
+2.State management for both the host and slave.
+3.Wake-up and acknowledgment procedures for the host and slave.
 
-### Wakeup 
-When the host needs to send data, it sets GPIO16 high, which triggers the QCC743 to wake up (or if it is already awake） it sends a wakeup command to the host.
-Once the host receives this wakeup command, it begins sending and recieiving data.
-After the host finishes sending and receiving the data, indicating that the QCC743 can go to sleep, the host sets GPIO21 low and then sends a sleep command to the QCC743.
-
-
-When the qcc743 needs to send data, it sets GPIO high, which triggers the Host to wake up (or if it is already awake） it sends a wakeup command to the host.
-Once the qcc743 receives this wakeup command, it begins sending and recieiving data.
-After the qcc743 finishes sending the data, indicating that the QCC743 can go to sleep, the host sets GPIO low and then sends a sleep command to the Host.
-
-![host-wakeup-qcc743.png](./pic/qcc_lp_arch.png)
-
-
-### Qcc743 Power managerment
-This is the qcc743 power management state machine. The QCC743 decides whether to enter low power mode based on various factors. Firstly, it considers the GPIO21 level managed by the host and the low power command sent by the host. Additionally, the QCC743 determines whether to enter low power mode based on its own status, including the current system tasks and the state of the WiFi, making a comprehensive decision.
-
-![qcc743-power-manager.png](./pic/qcc743-power-manager.png)
-
+![spi_lowpower.png](./pic/spi_lowpower.png)
 
 ### Qcc743 Sleep And wakeup Timing
 
@@ -560,7 +549,6 @@ Prerequisites for Bluetooth Power Consumption Testing: Prior to measuring the po
 | AT+BLEADVDATA="020106110957575757575757575757575757575757" | Set 20 Bytes ADV DATA    |
 | AT+BLEADVPARAM=2048,2048,2,7   | Set 1.28 sec ADV interval                            |
 | AT+BLEADVSTART   | Start BLE ADV                                                      |
-| AT+SLWKDTIM=10   | Set DTIM                                                           |
 | AT+PWR=2   | Enter low power mode                                                     |
 
 
@@ -570,7 +558,6 @@ Prerequisites for Bluetooth Power Consumption Testing: Prior to measuring the po
 |------------------|-----------------------|
 | AT+BREDR_INI     | BREDR Init            |
 | AT+BREDR_CONNECTABLE=1 | Start PageScan  |
-| AT+SLWKDTIM=10   | Set DTIM              |
 | AT+PWR=2   | Enter low power mode        |
 
 #### 1 sec BLE connection interval with RTC clock
@@ -581,5 +568,4 @@ Prerequisites for Bluetooth Power Consumption Testing: Prior to measuring the po
 | AT+BLETXPWR=0    | Set BLE TX Power 0 dBm                                                           |
 | AT+BLEADVSTART   | Start BLE ADV                                                                    |
 | AT+BLECONNPARAM=0,800,800,0,1500 | Set 1 sec connection interval after the connection is established|
-| AT+SLWKDTIM=10   | Set DTIM                                                                         |
 | AT+PWR=2   | Enter low power mode                                                                   |

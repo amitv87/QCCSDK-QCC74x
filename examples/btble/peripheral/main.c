@@ -20,22 +20,44 @@
 #include "ble_tp_svc.h"
 #include "hci_driver.h"
 #include "hci_core.h"
+#include "bt_log.h"
 
 #include "qcc74x_mtd.h"
 #include "easyflash.h"
 #if defined(CONFIG_BT_OAD_SERVER)
 #include "oad_main.h"
 #endif
+
+#if defined(CONFIG_BT_BAS_SERVER)
+#include "bas.h"
+#endif
+
+#if defined(CONFIG_BT_DIS_SERVER)
+#include "dis.h"
+#endif
+
+#if defined(CONFIG_BT_IAS_SERVER)
+#include "ias.h"
+#endif
+
+#if defined(CONFIG_BT_CONN)
+static struct bt_conn *default_conn = NULL;
+#endif
+
 static struct qcc74x_device_s *uart0;
 
 extern void shell_init_with_task(struct qcc74x_device_s *shell);
 
 static void ble_connected(struct bt_conn *conn, u8_t err)
 {
+	
     if(err || conn->type != BT_CONN_TYPE_LE)
     {
         return;
     }
+    
+    default_conn = conn;
+
     printf("%s",__func__);
 }
 
@@ -47,15 +69,32 @@ static void ble_disconnected(struct bt_conn *conn, u8_t reason)
     {
         return;
     }
-
-    printf("%s",__func__);
+    default_conn = NULL;
+    BT_WARN("%s",__func__);
 
     // enable adv
     ret = set_adv_enable(true);
     if(ret) {
-        printf("Restart adv fail. \r\n");
+        BT_WARN("Restart adv fail. \r\n");
     }
 }
+
+#if defined(CONFIG_BT_BAS_SERVER)
+void set_bat_level (int argc, char **argv)
+{
+	u8_t level;
+	
+	if (!default_conn) {
+		BT_WARN("Not connected\r\n");
+		return;
+	}
+	
+	get_uint8_from_string(&argv[1], &level);
+	bt_gatt_bas_set_battery_level (default_conn, level);
+   
+}
+SHELL_CMD_EXPORT_ALIAS(set_bat_level, set_bat_level, cmd set_bat_level);
+#endif
 
 static struct bt_conn_cb ble_conn_callbacks = {
 	.connected	=   ble_connected,
@@ -94,6 +133,25 @@ bool ble_check_oad(u32_t cur_file_ver, u32_t new_file_ver)
 }
 #endif
 
+#if defined (CONFIG_BT_IAS_SERVER)
+
+static void ias_recv(struct bt_conn *conn, void *buf, u8_t len)
+{
+    struct net_buf_simple data;
+    net_buf_simple_init_with_data(&data, (void *)buf, len);
+    u8_t alert_val = net_buf_simple_pull_u8(&data);
+	if (alert_val < 0x00 || alert_val > 0x02) {
+		BT_WARN("Unkown IAS Level");
+        return;
+	}
+    if(alert_val == 0x00 )
+        BT_WARN("No alert");
+    else if (alert_val == 0x01 )
+        BT_WARN("Mild alert");
+    else 
+        BT_WARN("High alert");
+}
+#endif
 void bt_enable_cb(int err)
 {
     if (!err) {
@@ -107,6 +165,21 @@ void bt_enable_cb(int err)
 #if defined(CONFIG_BT_OAD_SERVER)
         oad_service_enable(ble_check_oad);
 #endif
+
+#if defined(CONFIG_BT_BAS_SERVER)
+        bas_init();
+#endif
+
+#if defined(CONFIG_BT_IAS_SERVER)
+        ias_init();
+        ias_register_recv_callback(ias_recv);
+#endif
+
+#if defined(CONFIG_BT_DIS_SERVER)
+        dis_init(0x10, 0x12, 0xab, 0xff);
+#endif
+
+
         // start advertising
         ble_start_adv();
     }

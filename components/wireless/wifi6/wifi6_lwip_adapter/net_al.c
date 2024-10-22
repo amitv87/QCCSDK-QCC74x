@@ -62,8 +62,17 @@ uint8_t fhost_tx_get_staid(void *vif, struct mac_addr *dst_addr, bool mgmt_frame
 extern uint32_t _sshram[];
 /// end of shared memory section
 extern uint32_t _eshram[];
-#define TST_SHRAM_PTR(ptr) ((((uint32_t)(ptr)) < (uint32_t)_sshram) ||                   \
-                            (((uint32_t)(ptr)) >= (uint32_t)_eshram))
+extern uint32_t _heap_wifi_start[];
+extern uint32_t _heap_wifi_size[];
+#define TST_SHRAM_PTR(ptr) (((((uint32_t)(ptr)) < (uint32_t)_sshram) ||                    \
+                             (((uint32_t)(ptr)) >= (uint32_t)_eshram)) &&                  \
+                            (((uint32_t)(ptr)) < (uint32_t)_heap_wifi_start ||             \
+                             ((uint32_t)(ptr)) >= ((uint32_t)_heap_wifi_start + (uint32_t)_heap_wifi_size)) && \
+                            (((uint32_t)(ptr)) < 0x23028800 ||                             \
+                             ((uint32_t)(ptr)) >= 0x23030000))
+
+#define TST_SHEAP_PTR(ptr)  (((uint32_t)(ptr)) < (uint32_t)_heap_wifi_start ||             \
+                             ((uint32_t)(ptr)) >= ((uint32_t)_heap_wifi_start + (uint32_t)_heap_wifi_size))
 
 #define NX_NB_L2_FILTER 2
 
@@ -246,6 +255,15 @@ net_al_if_t net_if_find_from_name(const char *name)
     LOCK_TCPIP_CORE();
     net_if = (net_al_if_t)netif_find(name);
     UNLOCK_TCPIP_CORE();
+
+    return net_if;
+}
+
+net_al_if_t net_if_find_from_name_nolock(const char *name)
+{
+    net_al_if_t net_if;
+
+    net_if = (net_al_if_t)netif_find(name);
 
     return net_if;
 }
@@ -436,7 +454,16 @@ void *net_buf_tx_info(net_al_tx_t *net_buf, uint16_t *tot_len, int *seg_cnt,
     start_payload = (uint32_t)buf->payload;
 
     // Get pointer to reserved headroom
+#if QCC74x_HOSTROUTER_ENABLE
+    /* The pbuf structure and payload used by sdio are not in a contiguous ram, 
+     * we use the pbuf_header_force api just for adjusts the payload pointer
+     * to reveal headers in the payload. The pbuf_header api used for pbuf structure 
+     * and payload are in a contiguous ram.
+     */
+    if (pbuf_header_force(buf, PBUF_LINK_ENCAPSULATION_HLEN))
+#else
     if (pbuf_header(buf, PBUF_LINK_ENCAPSULATION_HLEN))
+#endif
     {
         // Sanity check - we shall have enough space in the buffer
         ASSERT_ERR(0);

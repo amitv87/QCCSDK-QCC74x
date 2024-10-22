@@ -95,6 +95,13 @@ volatile uint64_t * pullMachineTimerCompareRegister = NULL;
 BaseType_t TrapNetCounter = 0;
 const BaseType_t * pTrapNetCounter = &TrapNetCounter;
 
+#ifdef CONFIG_HIGH_ISR_STACK
+    BaseType_t LowIrqContext[3];
+    const BaseType_t *pLowIrqContext = LowIrqContext;
+    extern const uint32_t __freertos_high_irq_stack_top[];
+    const StackType_t xHighISRStackTop = ( StackType_t ) __freertos_high_irq_stack_top;
+#endif
+
 /* Holds the critical nesting value - deliberately non-zero at start up to
  * ensure interrupts are not accidentally enabled before the scheduler starts. */
 /* disable restore xCriticalNesting to stack.

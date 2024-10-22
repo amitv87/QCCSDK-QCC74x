@@ -9,6 +9,9 @@
 #include "ip/umac/src/sm/sm_task.h"
 #include "ip/umac/src/me/me_task.h"
 #include "ip/umac/src/apm/apm_task.h"
+#if NX_TWT
+#include "ip/umac/src/twt/twt_task.h"
+#endif
 #if RW_MESH_EN
 #include "modules/mesh/src/mesh_task.h"
 #endif

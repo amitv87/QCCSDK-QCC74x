@@ -31,6 +31,8 @@ extern "C" {
 #define AT_CONFIG_KEY_WIFI_HOSTNAME         "WIFIHOSTNAME"
 #define AT_CONFIG_KEY_WIFI_LAPOPT           "WIFILAPOPT"
 
+#define AT_WIFI_COUNTRY_CODE                {"CN", "JP", "US", "EU", "Wd"}
+
 #define IP_SET_ADDR(a,b,c,d) (((uint32_t)((a) & 0xff)) | \
                                             ((uint32_t)((b) & 0xff) << 8) | \
                                             ((uint32_t)((c) & 0xff) << 16) | \
@@ -57,6 +59,7 @@ typedef struct {
     uint8_t scan_mode;
     uint8_t pmf;
     uint8_t wep_en;
+    uint8_t store;
     uint16_t jap_timeout;
 } wifi_sta_info;
 
@@ -123,6 +126,7 @@ typedef enum {
     WIFI_COUNTRY_CODE_JP,
     WIFI_COUNTRY_CODE_US,
     WIFI_COUNTRY_CODE_EU,
+    WIFI_COUNTRY_CODE_WORLD,
     WIFI_COUNTRY_CODE_MAX
 } country_code_type;
 

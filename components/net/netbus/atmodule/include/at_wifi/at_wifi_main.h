@@ -14,6 +14,10 @@
 extern "C" {
 #endif
 
+#define AT_WIFI_ENC_OPEN     0
+#define AT_WIFI_ENC_WPA_PSK  2
+#define AT_WIFI_ENC_WPA2_PSK 3
+
 int at_wifi_start(void);
 
 int at_wifi_stop(void);

@@ -1,0 +1,15 @@
+
+make CONFIG_QCC74x_INTF=SDIO
+
+
+sudo systemctl stop dhcpcd
+
+
+sudo rmmod qcwnet
+sudo killall qcctld
+
+
+sudo insmod qcwnet.ko
+sudo ./userspace/qcctld  $PWD/userspace/sta.sh
+
+

@@ -1390,6 +1390,7 @@ enum mac_ht_oper_prot_val
 #define MAC_EXT_CAPA_MIN_LEN                    3
 
 // Extended Capabilities values
+#define MAC_EXT_CAPA_MULTIPLE_BSSID_POS         22
 #define MAC_EXT_CAPA_FTM_RESPONDER_POS          70
 #define MAC_EXT_CAPA_FTM_INITIATOR_POS          71
 

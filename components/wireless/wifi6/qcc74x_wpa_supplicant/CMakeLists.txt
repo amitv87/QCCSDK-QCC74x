@@ -6,6 +6,7 @@ sdk_library_add_sources(wpa_supplicant/scan.c)
 sdk_library_add_sources(wpa_supplicant/notify.c)
 sdk_library_add_sources(wpa_supplicant/bss.c)
 sdk_library_add_sources(wpa_supplicant/wmm_ac.c)
+sdk_library_add_sources(wpa_supplicant/wnm_sta.c)
 sdk_library_add_sources(wpa_supplicant/wpas_glue.c)
 sdk_library_add_sources(wpa_supplicant/eap_register.c)
 sdk_library_add_sources(wpa_supplicant/config.c)
@@ -34,6 +35,7 @@ sdk_library_add_sources(src/crypto/aes-omac1.c)
 sdk_library_add_sources(src/crypto/random.c)
 sdk_library_add_sources(src/crypto/tls_none.c)
 sdk_library_add_sources(wpa_supplicant/sme.c)
+sdk_library_add_sources(wpa_supplicant/mbo.c)
 sdk_library_add_sources(src/common/sae.c)
 sdk_library_add_sources(src/common/dragonfly.c)
 sdk_library_add_sources(src/crypto/crypto_mbedtls.c)
@@ -74,6 +76,7 @@ sdk_library_add_sources(src/ap/neighbor_db.c)
 sdk_library_add_sources(src/ap/rrm.c)
 sdk_library_add_sources(src/utils/crc32.c)
 sdk_library_add_sources(src/ap/wmm.c)
+sdk_library_add_sources(src/ap/mbo_ap.c)
 sdk_library_add_sources(src/ap/ap_list.c)
 sdk_library_add_sources(src/ap/ieee802_11.c)
 sdk_library_add_sources(src/ap/hw_features.c)
@@ -107,3 +110,14 @@ sdk_add_compile_definitions(-DCONFIG_USE_MBEDTLS)
 sdk_add_compile_definitions(-DCONFIG_NO_STDOUT_DEBUG)
 #sdk_add_compile_definitions(-DCONFIG_WPA_LOG_LEVEL=MSG_EXCESSIVE)
 #MSG_EXCESSIVE, MSG_MSGDUMP, MSG_DEBUG, MSG_INFO, MSG_WARNING, MSG_ERROR
+
+if(CONFIG_MBEDTLS_AES_USE_HW
+   AND CONFIG_MBEDTLS_BIGNUM_USE_HW
+   AND CONFIG_MBEDTLS_ECC_USE_HW
+   AND CONFIG_MBEDTLS_SHA1_USE_HW
+   AND CONFIG_MBEDTLS_SHA256_USE_HW
+   AND CONFIG_MBEDTLS_SHA512_USE_HW)
+    message(WARNING "WPA SUPPLICNAT USE SMALL STACK")
+else()
+    sdk_add_compile_definitions(-DWPA_SUPPLICANT_USE_NORMAL_STACK)
+endif()

@@ -43,6 +43,7 @@ static uint8_t g_scan_filter_ssid_flag = 0;
 static uint8_t g_scan_filter_mac[6];
 static char g_scan_filter_ssid[33];
 static uint8_t g_scan_filter_channel = 0;
+static uint32_t g_scan_tick = 0;
 
 static int get_mac_from_string(char *string, uint8_t mac[6])
 {
@@ -174,7 +175,7 @@ static int at_query_cmd_cwstate(int argc, const char **argv)
         if ((at_wifi_config->wifi_mode != WIFI_STATION_MODE) && (at_wifi_config->wifi_mode != WIFI_AP_STA_MODE)) {
             at_response_string("+CWSTATE:%d,\"\"\r\n", 0);
         } else {
-            at_response_string("+CWSTATE:%d,\"%s\"\r\n", 4, at_wifi_config->sta_info.ssid);
+            at_response_string("+CWSTATE:%d,\"\"\r\n", 4);
         }
     } else if (state == FHOST_STA_CONNECTED) {
         at_response_string("+CWSTATE:%d,\"%s\"\r\n", 1, at_wifi_config->sta_info.ssid);
@@ -194,13 +195,12 @@ static int at_query_cmd_cwjap(int argc, const char **argv)
     if (state == FHOST_STA_CONNECTED && !ip4_addr_isany(&ipaddr)) {
         wifi_mgmr_sta_connect_ind_stat_get(&info);
         wifi_mgmr_sta_rssi_get(&rssi);
-        at_response_string("+CWJAP:\"%s\",\"%02x:%02x:%02x:%02x:%02x:%02x\",%d,%d,%d,%d\r\n",
+        at_response_string("+CWJAP:\"%s\",\"%02x:%02x:%02x:%02x:%02x:%02x\",%d,%d,%d\r\n",
             info.ssid,
             info.bssid[0], info.bssid[1], info.bssid[2], info.bssid[3], info.bssid[4], info.bssid[5],
             info.channel,
             rssi,
-            at_wifi_config->sta_info.wep_en,
-            at_wifi_config->reconn_cfg.interval_second);
+            at_wifi_config->sta_info.wep_en);
     }
     return AT_RESULT_CODE_OK;
 }
@@ -214,7 +214,6 @@ static int at_setup_cmd_cwjap(int argc, const char **argv)
     int bssid_valid = 0;
     uint8_t bssid[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
     int wep_enable_valid = 0, wep_enable = 0;
-    int reconn_interval_valid = 0, reconn_interval = 1;
     int listen_interval_valid = 0, listen_interval = 3;
     int scan_mode_valid = 0, scan_mode = 1;
     int jap_timeout_valid = 0, jap_timeout = 15;
@@ -224,11 +223,10 @@ static int at_setup_cmd_cwjap(int argc, const char **argv)
     AT_CMD_PARSE_STRING(1, password, sizeof(password));
     AT_CMD_PARSE_OPT_STRING(2, bssidString, sizeof(bssidString), bssid_valid);
     AT_CMD_PARSE_OPT_NUMBER(3, &wep_enable, wep_enable_valid);
-    AT_CMD_PARSE_OPT_NUMBER(4, &reconn_interval, reconn_interval_valid);
-    AT_CMD_PARSE_OPT_NUMBER(5, &listen_interval, listen_interval_valid);
-    AT_CMD_PARSE_OPT_NUMBER(6, &scan_mode, scan_mode_valid);
-    AT_CMD_PARSE_OPT_NUMBER(7, &jap_timeout, jap_timeout_valid);
-    AT_CMD_PARSE_OPT_NUMBER(8, &pmf, pmf_valid);
+    AT_CMD_PARSE_OPT_NUMBER(4, &listen_interval, listen_interval_valid);
+    AT_CMD_PARSE_OPT_NUMBER(5, &scan_mode, scan_mode_valid);
+    AT_CMD_PARSE_OPT_NUMBER(6, &jap_timeout, jap_timeout_valid);
+    AT_CMD_PARSE_OPT_NUMBER(7, &pmf, pmf_valid);
 
     if (bssid_valid && (get_mac_from_string(bssidString, bssid) != 0)) {
         printf("err bssid_valid\r\n");
@@ -236,10 +234,6 @@ static int at_setup_cmd_cwjap(int argc, const char **argv)
     }
     if (wep_enable_valid && (wep_enable != 0 && wep_enable != 1)) {
         printf("err pci_enable_valid\r\n");
-        return AT_RESULT_CODE_ERROR;
-    }
-    if (reconn_interval_valid && (reconn_interval < 1 || reconn_interval > 100)) {
-        printf("err reconn_interval_valid\r\n");
         return AT_RESULT_CODE_ERROR;
     }
     if (listen_interval_valid && (listen_interval < 1 || listen_interval > 100)) {
@@ -278,14 +272,8 @@ static int at_setup_cmd_cwjap(int argc, const char **argv)
     at_wifi_config->sta_info.pmf = pmf;
     wifi_mgmr_psk_cal(password, ssid, strlen(ssid), at_wifi_config->sta_info.pmk);
     at_wifi_config->sta_info.freq = 0;
-    if (at->store) {
-        at_wifi_config_save(AT_CONFIG_KEY_WIFI_STA_INFO);
-    }
-
-    at_wifi_config->reconn_cfg.interval_second = reconn_interval;
-    if (at->store) {
-        at_wifi_config_save(AT_CONFIG_KEY_WIFI_RECONN_CFG);
-    }
+    at_wifi_config->sta_info.store = 0;
+   
     at_wifi_sta_set_reconnect();
 
     ret = at_wifi_sta_connect(at_wifi_config->sta_info.jap_timeout*1000);
@@ -401,7 +389,9 @@ static int at_setup_cmd_cwlapopt(int argc, const char **argv)
 
 void at_scan_done_event_tigger(void)
 {
-    at_scan_dump();
+    wifi_mgmr_sta_scanlist();
+    at_scan_dump(rtos_now(0) - g_scan_tick);
+    g_scan_tick = 0;
 }
 
 static int at_scan_wifi(uint8_t *channels, uint16_t channel_num, uint8_t mac[6], const char *ssid, uint8_t scan_mode, uint32_t scan_time)
@@ -430,6 +420,9 @@ static int at_scan_wifi(uint8_t *channels, uint16_t channel_num, uint8_t mac[6],
     }
 
     wifi_mgmr_sta_scan(&scan_cfg);
+    if (!g_scan_tick) {
+        g_scan_tick = rtos_now(0);
+    }
 
     return ret;
 }
@@ -496,11 +489,11 @@ static int at_scan_get_cipher(uint8_t cipher)
     }
 }
 
-static int _wifi_mgmr_scan_item_is_timeout(wifi_mgmr_t *mgmr, wifi_mgmr_scan_item_t *item)
+static int _wifi_mgmr_scan_item_is_timeout(wifi_mgmr_t *mgmr, wifi_mgmr_scan_item_t *item, uint32_t timeout)
 {
-    return ((unsigned int)rtos_now(0) - (unsigned int)item->timestamp_lastseen) >= mgmr->scan_item_timeout ? 1 : 0;
+    return ((unsigned int)rtos_now(0) - (unsigned int)item->timestamp_lastseen) >= (timeout + 1000) ? 1 : 0;
 }
-void at_scan_dump(void)
+void at_scan_dump(uint32_t timeout)
 {
 #if 1
     int i;
@@ -515,7 +508,7 @@ void at_scan_dump(void)
 
     for (i = 0; i < sizeof(wifiMgmr.scan_items)/sizeof(wifiMgmr.scan_items[0]); i++) {
         scan = &wifiMgmr.scan_items[i];
-        if (scan->is_used && (!_wifi_mgmr_scan_item_is_timeout(&wifiMgmr, &(wifiMgmr.scan_items[i])))) {
+        if (scan->is_used && (!_wifi_mgmr_scan_item_is_timeout(&wifiMgmr, &(wifiMgmr.scan_items[i]), timeout))) {
             /* ssid filter */
             if (g_scan_filter_ssid_flag && strlen(g_scan_filter_ssid) > 0) {
                 if (strcmp(g_scan_filter_ssid, scan->ssid)) {
@@ -706,7 +699,6 @@ static int at_setup_cmd_cwlap(int argc, const char **argv)
     //at_scan_dump();
     g_scan_filter_mac_flag = 0;
     g_scan_filter_ssid_flag = 0;
-    g_scan_filter_channel = 0;
     return AT_RESULT_CODE_OK;
 }
 
@@ -769,7 +761,7 @@ static int at_setup_cmd_cwsap(int argc, const char **argv)
     if (channel < 1 || channel > 13) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (!(ecn == 0 || (ecn >= 2 && ecn <= 4)) || (ecn >= 2 && ecn <= 4 && strlen(pwd) < 8)) {
+    if (!(ecn == AT_WIFI_ENC_OPEN || (ecn >= AT_WIFI_ENC_WPA_PSK && ecn <= AT_WIFI_ENC_WPA2_PSK)) || (ecn >= AT_WIFI_ENC_WPA_PSK  && ecn <= AT_WIFI_ENC_WPA2_PSK && strlen(pwd) < 8)) {
         return AT_RESULT_CODE_ERROR;
     }
     if (max_conn_valid && (max_conn < 1 || max_conn > 10)) {
@@ -783,6 +775,7 @@ static int at_setup_cmd_cwsap(int argc, const char **argv)
     strlcpy(at_wifi_config->ap_info.pwd, pwd, sizeof(at_wifi_config->ap_info.pwd));
     at_wifi_config->ap_info.channel = channel;
     at_wifi_config->ap_info.ecn = ecn;
+
     if (max_conn_valid) {
         at_wifi_config->ap_info.max_conn = max_conn;
     }
@@ -1445,7 +1438,7 @@ static int at_query_cmd_cwcountry(int argc, const char **argv)
 static int at_setup_cmd_cwcountry(int argc, const char **argv)
 {
     char code[5] = {0};
-    char *country_code_string[WIFI_COUNTRY_CODE_MAX] = {"CN", "JP", "US", "EU"};
+    char *country_code_string[WIFI_COUNTRY_CODE_MAX] = AT_WIFI_COUNTRY_CODE;
     int country_policy;
     int country_code;
     int start_channel;
@@ -1505,7 +1498,7 @@ static const at_cmd_struct at_wifi_cmd[] = {
     {"+WIFISP",       NULL, at_query_cmd_wifisp,      at_setup_cmd_wifisp,       NULL,                    1, 1},
     {"+CWMODE",       NULL, at_query_cmd_cwmode,      at_setup_cmd_cwmode,       NULL,                    1, 2},
     {"+CWSTATE",      NULL, at_query_cmd_cwstate,     NULL,                      NULL,                    0, 0},
-    {"+CWJAP",        NULL, at_query_cmd_cwjap,       at_setup_cmd_cwjap,        at_exe_cmd_cwjap,        2, 9},
+    {"+CWJAP",        NULL, at_query_cmd_cwjap,       at_setup_cmd_cwjap,        at_exe_cmd_cwjap,        2, 7},
     {"+CWRECONNCFG",  NULL, at_query_cmd_cwreconncfg, at_setup_cmd_cwreconncfg,  NULL,                    2, 2},
     {"+CWLAPOPT",     NULL, at_query_cmd_cwlapopt,    at_setup_cmd_cwlapopt,     NULL,                    2, 5},
     {"+CWLAP",        NULL, NULL,                     at_setup_cmd_cwlap,        at_exe_cmd_cwlap,        1, 6},

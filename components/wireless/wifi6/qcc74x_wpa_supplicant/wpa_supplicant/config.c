@@ -2649,7 +2649,7 @@ static const struct parse_data ssid_fields[] = {
 	{ INT_RANGE(transition_disable, 0, 255) },
 	{ INT_RANGE(sae_pk, 0, 2) },
 #endif
-#ifdef CONFIG_EXTRA_WPA_SSID_FLAG
+#ifdef CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG
 	{ INT(qcc74x_flags) },
 #endif
 };
@@ -3167,9 +3167,9 @@ void wpa_config_set_network_defaults(struct wpa_ssid *ssid)
 #endif /* CONFIG_MACSEC */
 	ssid->mac_addr = -1;
 	ssid->max_oper_chwidth = DEFAULT_MAX_OPER_CHWIDTH;
-#ifdef CONFIG_EXTRA_WPA_SSID_FLAG
+#ifdef CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG
     ssid->qcc74x_flags = 0;
-#endif /* CONFIG_EXTRA_WPA_SSID_FLAG */
+#endif /* CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG */
 }
 
 

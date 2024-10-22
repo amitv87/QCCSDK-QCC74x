@@ -64,11 +64,14 @@ if (CONFIG_SPI_3PIN_MODE_ENABLE)
     sdk_add_compile_definitions(-DCONFIG_SPI_3PIN_MODE_ENABLE=1)
 endif()
 
-sdk_add_compile_definitions(-DFHOST_PRINTF_DISABLE=0)
 sdk_add_compile_definitions(-DMQTT_USE_CUSTOM_SOCKET_HANDLE=1)
 
 if (CONFIG_IPV6)
     sdk_add_compile_definitions(-DCONFIG_IPV6=1)
+endif()
+
+if (CONFIG_ANTI_ROLLBACK)
+    sdk_add_compile_definitions(-DCONFIG_ANTI_ROLLBACK)
 endif()
 
 sdk_add_include_directories(.)

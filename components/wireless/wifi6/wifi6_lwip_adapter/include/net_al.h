@@ -144,6 +144,7 @@ const uint8_t *net_if_get_mac_addr(net_al_if_t net_if);
  ****************************************************************************************
  */
 net_al_if_t net_if_find_from_name(const char *name);
+net_al_if_t net_if_find_from_name_nolock(const char *name);
 
 /**
  ****************************************************************************************

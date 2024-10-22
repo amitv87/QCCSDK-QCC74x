@@ -832,6 +832,9 @@ ATTR_TCM_SECTION void pm_hbn_mode_enter(enum pm_hbn_sleep_level hbn_level,
     }
 
     if (hbn_level >= PM_HBN_LEVEL_2) {
+        HBN_32K_Sel(0);
+        /* In HBN2 mode, xtal32k must be turned off, otherwise, the current will be high.  */
+        HBN_Power_Off_Xtal_32K();
         HBN_Power_Off_RC32K();
     } else {
         HBN_Keep_On_RC32K();

@@ -130,12 +130,14 @@ uint32_t ping(char *target_name, uint16_t interval, uint16_t size, uint32_t coun
     int s, ttl, recv_len;
     ip_addr_t target_addr;
     uint32_t send_times;
+    uint32_t recv_times;
     uint32_t recv_start_tick;
     struct addrinfo hint, *res = NULL;
     struct sockaddr_in *h = NULL;
     struct in_addr ina;
 
     send_times = 0;
+    recv_times = 0;
     ping_seq_num = 0;
 
     if (size == 0) {
@@ -169,6 +171,7 @@ uint32_t ping(char *target_name, uint16_t interval, uint16_t size, uint32_t coun
         if (lwip_ping_send(s, &target_addr, size) == ERR_OK) {
             recv_start_tick = sys_now();
             if ((recv_len = lwip_ping_recv(s, &ttl)) >= 0) {
+                recv_times++;
                 elapsed_time = (sys_now() - recv_start_tick) * 1000UL / (1000 * portTICK_PERIOD_MS);
                 printf("%d bytes from %s icmp_seq=%d ttl=%d time=%d ms\n\r", recv_len, inet_ntoa(ina), send_times,
                        ttl, elapsed_time);
@@ -189,6 +192,7 @@ uint32_t ping(char *target_name, uint16_t interval, uint16_t size, uint32_t coun
     }
 
     lwip_close(s);
+    printf("Ping Done. Statistic is: %lu sent %lu received\n", send_times, recv_times);
 
     return 0;
 }

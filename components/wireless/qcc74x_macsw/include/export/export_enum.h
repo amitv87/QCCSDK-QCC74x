@@ -455,6 +455,24 @@ enum amsdu_tx
     AMSDU_TX_DIS,
 };
 
+/// Message API of the TWT task
+enum twt_msg_tag
+{
+    /// Request Individual TWT Establishment
+    TWT_SETUP_REQ = KE_FIRST_MSG(TASK_TWT),
+    /// Confirm Individual TWT Establishment
+    TWT_SETUP_CFM,
+    /// Indicate TWT Setup response from peer
+    TWT_SETUP_IND,
+    /// Request to destroy a TWT Establishment or all of them
+    TWT_TEARDOWN_REQ,
+    /// Confirm to destroy a TWT Establishment or all of them
+    TWT_TEARDOWN_CFM,
+
+    /// MAX number of messages
+    TWT_MAX,
+};
+
 enum rx_status_bits
 {
     /// The buffer can be forwarded to the networking stack

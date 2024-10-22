@@ -107,7 +107,10 @@ typedef struct {
     uint8_t wips_enable;
     uint8_t ipv6_enable;
     net_ssl_conf_t sslconf[AT_NET_CLIENT_HANDLE_MAX];
-    ip_addr_t dns[DNS_MAX_SERVERS];
+    struct {
+        ip_addr_t dns[DNS_MAX_SERVERS];
+        uint8_t dns_isset;
+    } dns;
 }net_config;
 
 extern net_config *at_net_config;

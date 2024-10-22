@@ -32,6 +32,7 @@
 #define LWIP_NETIF_LOOPBACK           1
 #define LWIP_HAVE_LOOPIF              1
 #define LWIP_LOOPBACK_MAX_PBUFS       0
+#define LWIP_DHCP_DOES_ACD_CHECK      0
 
 #define LWIP_ALTCP_TLS_MBEDTLS        1
 #define LWIP_ALTCP                    1
@@ -107,7 +108,6 @@
 #define ARP_TIMER_PRECISE_NEEDED        1
 #define IP4_FRAG_TIMER_PRECISE_NEEDED   1
 #define DNS_TIMER_PRECISE_NEEDED        1
-#define LWIP_DHCP_DOES_ACD_CHECK        0
 
 #define LWIP_IGMP                       0
 #else
@@ -122,11 +122,7 @@ extern int *__errno(void);
 #define ETHARP_SUPPORT_STATIC_ENTRIES 1
 
 #define LWIP_SUPPORT_CUSTOM_PBUF      1
-#ifdef HIGH_PERFORMANCE_PBUF
-#define LWIP_NETIF_TX_SINGLE_PBUF 0
-#else
 #define LWIP_NETIF_TX_SINGLE_PBUF 1
-#endif
 #define LWIP_RAND()                                      ((u32_t)random())
 
 #endif /* LWIP_HDR_LWIPOPTS_H__ */

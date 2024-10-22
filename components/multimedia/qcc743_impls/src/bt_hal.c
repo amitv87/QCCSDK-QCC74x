@@ -194,13 +194,14 @@ static void t_avrcp_chain(struct bt_conn *conn, u8_t state);
 static void t_avrcp_absvol(u8_t vol);
 static void t_avrcp_play_status(u32_t song_len, u32_t song_pos, u8_t status);
 static void t_avrcp_tg_ntf_evt_status(u8_t evt, u8_t *para,u16_t para_len);
-
+static void t_avrcp_tg_rp_passthrough(uint8_t released,uint8_t option_id);
 static struct avrcp_callback t_avrcp_callbacks =
 {
-    t_avrcp_chain,
-    t_avrcp_absvol,
-    t_avrcp_play_status,
-    t_avrcp_tg_ntf_evt_status,
+    .chain = t_avrcp_chain,
+    .abs_vol = t_avrcp_absvol,
+    .play_status = t_avrcp_play_status,
+    .tg_reg_ntf_evt=t_avrcp_tg_ntf_evt_status,
+    .rp_passthrough = t_avrcp_tg_rp_passthrough,
 };
 
 bt_dev_addr_t t_remote_addr;
@@ -894,7 +895,10 @@ static void t_avrcp_tg_ntf_evt_status(u8_t evt, u8_t *para,u16_t para_len)
     }
 }
 
-
+static void t_avrcp_tg_rp_passthrough(uint8_t released,uint8_t option_id)
+{
+    BT_HAL_DBG("%s, released: 0x%x option_id 0x%x\n",__func__,released, option_id);
+}
 /**
  * @brief      register callback function.
  * @param[in]  callback         callback function
@@ -1519,4 +1523,3 @@ bool hal_bt_is_connected(void)
 }
 
 #endif
-

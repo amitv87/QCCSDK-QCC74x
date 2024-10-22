@@ -7,7 +7,7 @@
 #define MGMR_SSID_LEN   32
 #define MGMR_KEY_LEN    64
 #define MGMR_BSSID_LEN  18
-#define MGMR_AKM_LEN    10
+#define MGMR_AKM_LEN    15
 
 /* WiFi async event */
 #define  EV_WIFI                  0x0002
@@ -187,6 +187,11 @@ typedef struct wifi_mgmr_ap_params {
     bool hidden_ssid;
     /// whether enable isolation
     bool isolation;
+    /// Additional vendor specific elements for Beacon and Probe Response frames
+    /// a hexdump of the raw information elements (id+len+payload for one or more elements),
+    //  the maximum length supported is MAX_AP_VENDOR_ELEMENTS_LEN,
+    /// ref wap_supplicant.conf
+    char *ap_vendor_elements;
 } wifi_mgmr_ap_params_t;
 
 /**
@@ -275,6 +280,33 @@ typedef struct
     uint8_t ucPWD[65];          /**< WPA/WPA2 passphrase. */
     uint8_t ucChannel;          /**< Channel number. */
 } wifi_mgmr_ap_info_t;
+
+/**
+ * @brief Struct for TWT setup parameters
+ *
+ * This structure is used to store the parameters needed for setting up TWT.
+ */
+typedef struct
+{
+    uint8_t setup_type;          ///< TWT Setup command (0: Request, 1: Suggest, 2: Demand, 3: Grouping, 4: Accept, 5: Alternate, 6: Dictate, 7: Reject)
+    uint8_t flow_type;           ///< Flow Type (0: Announced, 1: Unannounced)
+    uint8_t wake_int_exp;        ///< Wake interval Exponent
+    bool wake_dur_unit;          ///< Unit of measurement of TWT Minimum Wake Duration (false: 256us, true: tu)
+    uint8_t min_twt_wake_dur;    ///< Nominal Minimum TWT Wake Duration
+    uint16_t wake_int_mantissa;  ///< TWT Wake Interval Mantissa
+} twt_setup_params_struct_t;
+
+/**
+ * @brief Struct for TWT teardown parameters
+ *
+ * This structure is used to store the parameters needed for tearing down TWT.
+ */
+typedef struct
+{
+    uint8_t neg_type;  ///< TWT negotiation type
+    uint8_t all_twt;   ///< Flag indicating whether to teardown all TWT flows
+    uint8_t id;        ///< TWT flow ID
+} twt_teardown_params_struct_t;
 
 typedef void (*scan_item_cb_t)(void *env, void *arg, wifi_mgmr_scan_item_t *item);
 
@@ -616,6 +648,33 @@ int wifi_mgmr_sta_autoconnect_enable(void);
 int wifi_mgmr_sta_autoconnect_disable(void);
 
 /**
+ * wifi_mgmr_sta_non_pref_chan_set - Set the non-preferred channel list for Wi-Fi management
+ * @argc: The number of arguments passed to the function
+ * @argv: An array of strings representing the arguments, typically formatted as <oper_class>:<chan>:<preference>:<reason>
+ *
+ * This function processes the list of non-preferred channels provided as arguments, validating each entry's format.
+ * If any entry is malformed, the entire list is discarded. The function is intended to help the Wi-Fi manager
+ * adjust channel preferences according to user specifications, enhancing management capabilities for scenarios like MBO (Multi-Band Operation).
+ *
+ * Returns 0 on success or a negative error code on failure.
+ */
+int wifi_mgmr_sta_non_pref_chan_set(int argc, char **argv);
+
+/**
+ * wifi_mgmr_sta_non_pref_chan_notify - Notify the Wi-Fi management system of non-preferred channel changes
+ *
+ * This function checks if the Wi-Fi management system is ready and if the Wi-Fi Protected Access (WPA) state
+ * is active. If the system is not ready or if WPA is stopped, the function exits early. Otherwise, if the
+ * non-preferred channel list is valid, it sends a command to the WPA subsystem to set the non-preferred channels
+ * based on the current list. The function helps synchronize the non-preferred channel configuration with the
+ * Wi-Fi manager, ensuring proper operation in scenarios where channel preferences need to be adjusted, such as
+ * in MBO (Multi-Band Operation).
+ *
+ * Returns 0 on success or a negative error code on failure.
+ */
+int wifi_mgmr_sta_non_pref_chan_notify(void);
+
+/**
  * wifi_mgmr_sta_ps_enter
  * Enter powersave mode
  * return:
@@ -634,6 +693,40 @@ int wifi_mgmr_sta_ps_enter(void);
  *  Others is Failed
  */
 int wifi_mgmr_sta_ps_exit(void);
+/**
+ * wifi_mgmr_sta_ps_active_time
+ * set ps active time  
+ * param:
+ *      ms: time for active time ,unit: ms 
+ * return:
+ *  0 : Success
+ *  -1 : Failed
+ *  Others is Failed
+ */
+
+int wifi_mgmr_sta_ps_active_time(uint32_t ms);
+
+/**
+ * @brief Set up WiFi Manager STA TWT (Target Wake Time) functionality
+ *
+ * This function is used to set up the WiFi Manager's STA TWT functionality
+ * in order to achieve target wake time under specified conditions.
+ *
+ * @param twt_params_ptr Pointer to the structure containing all the necessary parameters for TWT setup
+ * @return Returns the result of the function execution, 0 for success and -1 for failure
+ */
+int wifi_mgmr_sta_twt_setup(twt_setup_params_struct_t *twt_setup_params_ptr);
+
+/**
+ * @brief Tear down WiFi Manager STA TWT (Target Wake Time) functionality
+ *
+ * This function tears down the WiFi Manager's STA TWT functionality
+ * based on the provided parameters.
+ *
+ * @param twt_params_ptr Pointer to the structure containing TWT teardown parameters
+ * @return Returns the result of the function execution, 0 for success and -1 for failure
+ */
+int wifi_mgmr_sta_twt_teardown(twt_teardown_params_struct_t *twt_teardown_params_ptr);
 
 /**
  * wifi_mgmr_sta_set_listen_itv
@@ -801,6 +894,18 @@ int wifi_mgmr_ap_sta_delete(uint8_t sta_idx);
  */
 int wifi_mgmr_raw_80211_send(const wifi_mgmr_raw_send_params_t *config);
 
+#ifdef CFG_QCC74x_WIFI_PS_ENABLE
+/**
+ * wifi_mgmr_null_data_send
+ * Send null packet
+ * return:
+ *  0 : Success
+ *  -1 : Failed
+ *  Others is Failed
+ */
+int wifi_mgmr_null_data_send(void);
+#endif
+
 /**
  * wifi_mgmr_psk_cal
  * Calucate psk by using passpharse
@@ -856,3 +961,17 @@ int wifi_mgmr_rate_config(uint16_t fixed_rate_cfg);
  */
 void wifi_mgmr_coex_enable(bool en);
 #endif
+
+/**
+ * wifi_mgmr_set_ht40_enable
+ * Toggle state of HT40 mode
+ * Attention: configuration takes effect only 
+ *            before the initiation of the WiFi task.
+ * param:
+ *  value : 1 = enable; 0 = disable
+ * return:
+ *  0 : Success
+ *  -1 : Failed
+ *  Others is Failed
+ */
+int wifi_mgmr_set_ht40_enable(uint8_t value);

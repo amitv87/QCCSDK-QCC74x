@@ -52,3 +52,11 @@
 
     struct_func_alloc_def(me_traffic_ind_req);
     struct_func_alloc_def(dbg_get_sys_stat_cfm);
+
+#if NX_TWT
+    struct_func_alloc_def(twt_setup_req);
+    struct_func_alloc_def(twt_setup_cfm);
+
+    struct_func_alloc_def(twt_teardown_req);
+    struct_func_alloc_def(twt_teardown_cfm);
+#endif

@@ -19,3 +19,5 @@ endif()
 if(CONFIG_FREERTOS)
 sdk_add_compile_definitions(-DconfigSTACK_ALLOCATION_FROM_SEPARATE_HEAP=1)
 endif()
+
+sdk_add_private_compile_definitions_ifdef(CONFIG_MM_SUSPEND_ALL_LOCKER -DCONFIG_MM_SUSPEND_ALL_LOCKER)

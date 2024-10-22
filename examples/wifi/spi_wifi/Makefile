@@ -13,4 +13,7 @@ CROSS_COMPILE ?= riscv64-unknown-elf-
 CONFIG_USE_LPAPP ?= 0
 cmake_definition+=-DCONFIG_USE_LPAPP=$(CONFIG_USE_LPAPP)
 
+CONFIG_ANTI_ROLLBACK ?= 0
+cmake_definition+=-DCONFIG_ANTI_ROLLBACK=$(CONFIG_ANTI_ROLLBACK)
+
 include $(QCC74x_SDK_BASE)/project.build 

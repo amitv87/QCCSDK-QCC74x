@@ -15,6 +15,8 @@ __RFTLV_SIZE_HOLE = 2K;
 __RFTLV_HEAD1_H = (0x46524C42); /* */
 __RFTLV_HEAD1_L = (0x41524150); /* PAPA */
 
+VerOffset = 0xc00;
+
 MEMORY
 {
     fw_header_memory  (rx)  : ORIGIN = 0xA0000000 - 0x1000, LENGTH = 4K
@@ -50,6 +52,16 @@ SECTIONS
         LONG(__RFTLV_HEAD1_H);
         LONG(__RFTLV_HEAD1_L);
         . = ORIGIN(xip_memory) + __RFTLV_SIZE_OFFSET + __RFTLV_SIZE_HOLE;
+    } > xip_memory
+
+    .ver : AT(ORIGIN(xip_memory) + VerOffset)
+    {
+        LONG(0x42464c42);
+        LONG(0x46524556);
+        KEEP (*(.qcc74xverinf))
+        LONG(0x42464c42);
+        LONG(0x46524556);
+        KEEP (*(.verinfo))
     } > xip_memory
 
     .text :

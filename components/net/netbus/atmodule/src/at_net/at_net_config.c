@@ -62,9 +62,9 @@ int at_net_config_init(void)
         at_net_config->ipv6_enable = 0;
     }
     if (!at_config_read(AT_CONFIG_KEY_NET_DNS, &at_net_config->dns, sizeof(at_net_config->dns))) {
-        ipaddr_aton(AT_CONFIG_DEFAULT_DNS1, &at_net_config->dns[0]);
-        ipaddr_aton(AT_CONFIG_DEFAULT_DNS2, &at_net_config->dns[1]);
-    }
+        ipaddr_aton(AT_CONFIG_DEFAULT_DNS1, &at_net_config->dns.dns[0]);
+        ipaddr_aton(AT_CONFIG_DEFAULT_DNS2, &at_net_config->dns.dns[1]);
+    } 
     return 0;
 }
 

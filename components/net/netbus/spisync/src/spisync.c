@@ -403,6 +403,10 @@ static int __check_slot(spisync_t *spisync)
 }
 static void __ramsync_low_rx_cb(spisync_t *spisync)
 {
+    if (1 == spisync->ps_status) {
+        return;
+    }
+
     /* debug */
     if (spisync) {
         spisync->isr_rxcnt++;
@@ -420,6 +424,10 @@ static void __ramsync_low_tx_cb(void *arg)
     spisync_t *spisync = (spisync_t *)arg;
     int i;
     int have_empty_slot = 0;
+
+    if (1 == spisync->ps_status) {
+        return;
+    }
 
     /* debug */
     if (spisync) {

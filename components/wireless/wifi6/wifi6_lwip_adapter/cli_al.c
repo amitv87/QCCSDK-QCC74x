@@ -14,7 +14,10 @@
 #endif
 #include "arpa/inet.h"
 #include "net_iperf_al_priv.h"
+#include "net_ping_al_priv.h"
+#include "net_tg_al_priv.h"
 #include "fhost.h"
+#include "fhost_ipc.h"
 #ifdef CFG_IPV6
 #include "lwip/tcpip.h"
 #include "lwip/ip_addr.h"
@@ -47,64 +50,6 @@ int utils_al_getopt(getopt_env_t *env, int argc, char * const argv[], const char
 char *utils_al_bin2hex(char *dst, const void *src, size_t count)
 {
     return utils_bin2hex(dst, src, count);
-}
-
-#if NX_IPERF
-/**
- ****************************************************************************************
- * @brief Process function for 'iperf' command
- *
- * Start an iperf server on the specified port.
- *
- * @param[in] params parameters passed to iperf command
- * @return 0 on success and !=0 if error occurred
- ****************************************************************************************
- */
-static int parse_ip4(char *str, uint32_t *ip, uint32_t *mask)
-{
-    char *token;
-    uint32_t a, i, j;
-
-    #define check_is_num(_str)  for (j = 0 ; j < strlen(_str); j++) {  \
-            if (_str[j] < '0' || _str[j] > '9')                        \
-                return -1;                                             \
-        }
-
-    // Check if mask is present
-    token = strchr(str, '/');
-    if (token && mask) {
-        *token++ = '\0';
-        check_is_num(token);
-        a = atoi(token);
-        if (a == 0 || a > 32)
-            return -1;
-        *mask = (1<<a) - 1;
-    }
-    else if (mask)
-    {
-        *mask = 0xffffffff;
-    }
-
-    // parse the ip part
-    *ip = 0;
-    for (i = 0; i < 4; i ++)
-    {
-        if (i < 3)
-        {
-            token = strchr(str, '.');
-            if (!token)
-                return -1;
-            *token++ = '\0';
-        }
-        check_is_num(str);
-        a = atoi(str);
-        if (a > 255)
-            return -1;
-        str = token;
-        *ip += (a << (i * 8));
-    }
-
-    return 0;
 }
 
 void cmd_iperf(int argc, char **argv)
@@ -195,7 +140,7 @@ void cmd_iperf(int argc, char **argv)
             iperf_settings.flags.is_server = 0;
             client_server_set = true;
 
-            if (parse_ip4(getopt_env.optarg, &iperf_settings.host_ip, NULL)) {
+            if (fhost_ipc_parse_ip4(getopt_env.optarg, &iperf_settings.host_ip, NULL)) {
                 printf("invalid IP address %s\n", getopt_env.optarg);
                 return;  //FHOST_IPC_ERROR;
             }
@@ -338,7 +283,362 @@ void cmd_iperf(int argc, char **argv)
 
     fhost_iperf_start(&iperf_settings);
 }
-#endif // NX_IPERF
+
+#define TG_USAGE0    \
+ "TG command can be used for the traffic generation and reception\r\n"  \
+ " First a stream must be configured with the following parameter:\r\n"   \
+ " - id (< @ref FHOST_TG_MAX_TRAFFIC_STREAMS)\r\n"    \
+ " - profile (@ref profile_id)\r\n"   \
+ " - direction (@ref FHOST_TG_DIRECT_SEND, @ref FHOST_TG_DIRECT_RECV)\r\n"    \
+ " - remote ip and port\r\n"  \
+ " - local ip and port\r\n"   \
+ " - rate (in pkt/s, 0 for RX)\r\n"   \
+ " - packet size (in bytes, 0 for RX)\r\n"    \
+ " - duration (in seconds, 0 for RX)\r\n"
+#define TG_USAGE1    \
+ " - tos (Type Of Service) (basically 'tid << 5', 0 for RX).\r\n" \
+ " Once a stream has been configured, it can be started/stopped\r\n" \
+ "   tg config <id> <profile> <direction> <remote_ip> <remote_port> <local_ip> <local_port>\r\n" \
+ "             <rate> <pksize> <duration> <tos>\r\n" \
+ "   tg start  <id1> [<id2> ... <id8>]\r\n" \
+ "   tg stop   <id1> [<id2> ... <id8>]\r\n"
+
+void cmd_tg(int argc, char **argv) {
+    char *str = NULL;
+    uint32_t i, len = 0;
+
+    // 计算字符串总长度
+    for (i = 1; i < argc; i++) {
+        len += strlen(argv[i]) + 1; // 加上空格
+    }
+
+    // 分配内存
+    str = rtos_malloc(1 + len * sizeof(char));
+    if (!str) {
+        fhost_printf("cmd_tg alloc failed\r\n");
+        return;
+    }
+
+    // 连接字符串
+    str[0] = '\0';
+    for (i = 1; i < argc; i++) {
+        strcat(str, argv[i]);
+        if (i < argc - 1) {
+            strcat(str, " ");
+        }
+    }
+    //fhost_printf("tg cmd：%s\n", str);
+
+    char *token, *next = str;
+
+    token = fhost_ipc_next_token(&next);
+    if (!strcmp("config", token))
+    {
+        char *id, *prof, *direction, *remote_ip, *remote_port, *local_ip,
+        *local_port, *rate, *pksize, *duration, *tos;
+        uint32_t stream_id;
+        uint32_t rip, lip;
+        char fmt[] = "Configure stream %d for %s\n";
+
+        id = fhost_ipc_next_token(&next);
+        prof = fhost_ipc_next_token(&next);
+        direction = fhost_ipc_next_token(&next);
+        remote_ip = fhost_ipc_next_token(&next);
+        remote_port = fhost_ipc_next_token(&next);
+        local_ip = fhost_ipc_next_token(&next);
+        local_port = fhost_ipc_next_token(&next);
+        rate = fhost_ipc_next_token(&next);
+        pksize = fhost_ipc_next_token(&next);
+        duration = fhost_ipc_next_token(&next);
+        tos = fhost_ipc_next_token(&next);
+
+        if (!id || !prof || !direction ||
+            !remote_ip || fhost_ipc_parse_ip4(remote_ip, &rip, NULL) || !remote_port ||
+            !local_ip || fhost_ipc_parse_ip4(local_ip, &lip, NULL) || !local_port ||
+            !pksize || !duration || !tos) {
+            //show usage
+            fhost_printf("invaild args, usage:\r\n %s", TG_USAGE0);
+            fhost_printf("%s", TG_USAGE1);
+            goto exit;// FHOST_IPC_SHOW_USAGE;
+        }
+
+        stream_id = atoi(id);
+
+        if (fhost_tg_config(stream_id, atoi(prof), atoi(direction), rip, atoi(remote_port),
+                            lip, atoi(local_port), atoi(rate), atoi(pksize), atoi(duration),
+                            atoi(tos)))
+        {
+            fhost_print(RTOS_TASK_NULL, "Configuration error\n");
+            goto exit; // FHOST_IPC_ERROR;
+        }
+
+        if (atoi(direction) == FHOST_TG_DIRECT_SEND)
+        {
+            fhost_print(RTOS_TASK_NULL, fmt, stream_id, "sending\n");
+        }
+        else
+        {
+            fhost_print(RTOS_TASK_NULL, fmt, stream_id, "receiving\n");
+        }
+    }
+    else if (!strcmp("start", token))
+    {
+        char *id[FHOST_TG_MAX_TRAFFIC_STREAMS + 1];
+        uint32_t stream_id;
+        char fmt[40] = "Start stream id : ";
+        int i = 0;
+        int j = 0;
+
+        id[i] = fhost_ipc_next_token(&next);
+        // If there's the first ID, try to collect all the rest
+        while (id[i] != NULL && i < FHOST_TG_MAX_TRAFFIC_STREAMS)
+        {
+            id[++i] = fhost_ipc_next_token(&next);
+        }
+
+        if (!id[0])
+        {
+            fhost_printf("tg start failed %d\r\n", __LINE__);
+            goto exit;
+        }
+
+        // In this loop, we count all the IDs of streams to start
+        for (j = 0; j <= i - 1; j++)
+        {
+            stream_id = atoi(id[j]);
+            if (fhost_tg_start(stream_id))
+            {
+                fhost_print(RTOS_TASK_NULL, "Can't start stream : %d\n", stream_id);
+                goto exit;
+            }
+            strcat(strcat(fmt, id[j]), " ");
+            // If not, ASSERT (!hal_machw_time_past(value)) at mm_timer.c:116
+            rtos_task_suspend(500);
+        }
+        strcat(fmt, "\n");
+        fhost_print(RTOS_TASK_NULL, fmt);
+    }
+    else if (!strcmp("stop", token))
+    {
+        uint32_t stream_id;
+        struct fhost_tg_stats *stats = NULL;
+
+        token = fhost_ipc_next_token(&next);
+        if (!token)
+        {
+            fhost_printf("tg stop failed %d \r\n", __LINE__);
+            goto exit;
+        }
+
+        do
+        {
+            stream_id = atoi(token);
+            stats = fhost_tg_stop(stream_id);
+
+            if (stats == NULL)
+            {
+                fhost_print(RTOS_TASK_NULL, "Can't stop stream : %d\n", stream_id);
+                goto exit;
+            }
+
+            rtos_task_suspend(1);
+            fhost_print(RTOS_TASK_NULL,
+                        "STOP stream ID : %d\n"
+                        "TX frames : %d\n"
+                        "RX frames : %d\n"
+                        "TX bytes : %d\n"
+                        "RX bytes : %d\n",
+                        stream_id,
+                        stats->tx_frames,
+                        stats->rx_frames,
+                        stats->tx_bytes,
+                        stats->rx_bytes);
+            rtos_task_suspend(10);
+            fhost_print(RTOS_TASK_NULL,
+                        "Throughput : %d bps\n"
+                        "Expected : %d\n"
+                        "Lost : %d\n"
+                        "Unordered : %d\n"
+                        "RTT : %d us\n",
+                        stats->throughput,
+                        stats->expected,
+                        stats->lost,
+                        stats->unordered,
+                        stats->rt_time);
+        } while((token = fhost_ipc_next_token(&next)));
+    }
+    else
+    {
+        //show usage
+        fhost_printf("invaild args, usage:\r\n %s", TG_USAGE0);
+        fhost_printf("%s", TG_USAGE1);
+        goto exit;
+    }
+
+exit:
+    rtos_free(str);
+    return;// FHOST_IPC_SUCCESS;
+}
+
+#define FHOST_PING_USAGE \
+    "ping <dst_ip> [-s pksize (bytes)] [-r rate (pkt/sec)] [-d duration (sec)] [-Q tos]\r\n"    \
+    "ping stop <id1> [<id2> ... <id8>]\r\n"
+
+/**
+ ****************************************************************************************
+ * @brief Process function for 'ping' command
+ *
+ * Ping command can be used to test the reachability of a host on an IP network.
+ *
+   @verbatim
+   ping <dst_ip> [-s pksize (bytes)] [-r rate (pkt/sec)] [-d duration (sec)] [-Q tos]
+   ping stop <id1> [<id2> ... <id8>]
+   @endverbatim
+ *
+ * Note that -s, -r, -d, -t are options for ping command. We could choose any of them to
+ * configure. If not configured, it will set the default values at layer net_tg_al.
+ *
+ * @param[in] params ping command above
+ *
+ * @return 0 on success and !=0 if error occurred
+ ****************************************************************************************
+ */
+#define IPC_MSG_ID_NULL 0
+void cmd_fhost_ping(int argc, char **argv)
+{
+    char *str = NULL;
+    uint32_t i, len = 0;
+
+    for (i = 1; i < argc; i++) {
+        len += strlen(argv[i]) + 1;
+    }
+
+    str = rtos_malloc(1 + len * sizeof(char));
+    if (!str) {
+        fhost_printf("cmd_fhost_ping alloc failed\r\n");
+        return;
+    }
+
+    str[0] = '\0';
+    for (i = 1; i < argc; i++) {
+        strcat(str, argv[i]);
+        if (i < argc - 1) {
+            strcat(str, " ");
+        }
+    }
+    fhost_printf("ping cmd：%s\n", str);
+
+    char *token, *next = str;
+    uint32_t rip = 0, ret;
+    token = fhost_ipc_next_token(&next);
+    uint32_t rate = 0, pksize = 0, duration = 0, tos = 0;
+    //struct fhost_task_msg_id *task_hdl_msg_ptr;
+    bool background = false;
+    struct fhost_ping_task_args args;
+
+    if (!strcmp("stop", token))
+    {
+        uint32_t stream_id;
+        struct fhost_ping_stream* ping_stream;
+
+        token = fhost_ipc_next_token(&next);
+        if (!token)
+            goto usage;
+
+        stream_id = atoi(token);
+        ping_stream = fhost_ping_find_stream_profile(stream_id);
+
+        if (ping_stream)
+        {
+#if 0
+            if (ping_stream->background)
+            {
+                task_hdl_msg_ptr = fhost_search_task_hdl_msg(ping_stream->ping_handle);
+                task_hdl_msg_ptr->msg_id = IPC_MSG_ID_NULL;
+                ret = FHOST_IPC_NO_RESP;
+            }
+#endif
+            fhost_ping_stop(ping_stream);
+        }
+        else
+        {
+            fhost_print(RTOS_TASK_NULL, "Invalid stream_id %d", stream_id);
+        }
+        goto exit;
+    }
+
+    do
+    {
+        // Handle all options of ping command
+        if (token[0] == '-')
+        {
+            switch(token[1])
+            {
+                case ('s'):
+                    token = fhost_ipc_next_token(&next);
+                    if (!token)
+                        goto usage;
+                    pksize = atoi(token);
+                    break;
+                case ('r'):
+                    token = fhost_ipc_next_token(&next);
+                    if (!token)
+                        goto usage;
+                    rate = atoi(token);
+                    break;
+                case ('d'):
+                    token = fhost_ipc_next_token(&next);
+                    if (!token)
+                        goto usage;
+                    duration = atoi(token);
+                    break;
+                case ('Q'):
+                    token = fhost_ipc_next_token(&next);
+                    if (!token)
+                        goto usage;
+                    tos = atoi(token);
+                    break;
+                case ('G'):
+                    //background = true;
+                    fhost_printf("Not supported\r\n");
+                    break;
+                default:
+                    goto usage;
+            }
+        }
+        // If it's neither options, nor IP address, then the input is wrong
+        else if (fhost_ipc_parse_ip4(token, &rip, NULL))
+        {
+            fhost_print(RTOS_TASK_NULL, "Invalid IP address: %s\n", token);
+            goto exit;
+        }
+    } while ((token = fhost_ipc_next_token(&next)));
+
+    // IP destination should be set by the command
+    if (rip == 0)
+        goto usage;
+
+    args.rip = rip;
+    args.rate = rate;
+    args.pksize = pksize;
+    args.duration = duration;
+    args.tos = tos;
+    args.background = background;
+    ret = fhost_ipc_start_task(IPC_MSG_ID_NULL, fhost_ping_start, &args, fhost_ping_sigkill_handler);
+
+    if (ret == FHOST_IPC_ERROR)
+    {
+        fhost_print(RTOS_TASK_NULL, "Send ping error\n");
+    }
+    goto exit;
+
+usage:
+    fhost_printf("%s", FHOST_PING_USAGE);
+
+exit:
+    rtos_free(str);
+    return;
+}
 
 #define SET_IPV4_USAGE                    \
     "set_ipv4 [ip] [dns] [gw] [mask]\r\n"   \
@@ -733,6 +1033,7 @@ SHELL_CMD_EXPORT_ALIAS(wifi_enable_autoreconnect_cmd, wifi_sta_autoconnect_enabl
 SHELL_CMD_EXPORT_ALIAS(wifi_disable_autoreconnect_cmd, wifi_sta_autoconnect_disable, wifi station disable auto reconnect);
 SHELL_CMD_EXPORT_ALIAS(wifi_sta_ps_on_cmd, wifi_sta_ps_on, wifi sta powersave mode on);
 SHELL_CMD_EXPORT_ALIAS(wifi_sta_ps_off_cmd, wifi_sta_ps_off, wifi sta powersave mode off);
+SHELL_CMD_EXPORT_ALIAS(wifi_sta_ps_set_cmd, wifi_sta_ps_set, wifi sta powersave mode set parameters);
 SHELL_CMD_EXPORT_ALIAS(wifi_sta_info_cmd, wifi_sta_info, wifi sta info);
 SHELL_CMD_EXPORT_ALIAS(wifi_ap_sta_list_get_cmd, wifi_sta_list, get sta list in AP mode);
 SHELL_CMD_EXPORT_ALIAS(wifi_ap_sta_delete_cmd, wifi_sta_del, delete one sta in AP mode);
@@ -741,6 +1042,12 @@ SHELL_CMD_EXPORT_ALIAS(wifi_mgmr_ap_stop_cmd, wifi_ap_stop, stop AP mode);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_ap_mac_get, wifi_ap_mac_get, get wifi ap mac);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_ap_conf_max_sta, wifi_ap_conf_max_sta, config AP mac sta);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_raw_send, wifi_raw_send, wifi raw send test);
+#if NX_TG
+SHELL_CMD_EXPORT_ALIAS(cmd_tg, tg, wifi tg);
+#endif
+#if NX_TG
+SHELL_CMD_EXPORT_ALIAS(cmd_fhost_ping, fhost_ping, fhost ping);
+#endif
 #ifdef CONFIG_CLI_WIFI_DUBUG
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi, wifi, wifi);
 #endif
@@ -750,6 +1057,10 @@ SHELL_CMD_EXPORT_ALIAS(cmd_iperf, iperf, iperf test throughput);
 #endif
 SHELL_CMD_EXPORT_ALIAS(cmd_rc, rc, Print the Rate Control Table);
 SHELL_CMD_EXPORT_ALIAS(cmd_rate, rate, set g_fw_rate);
+SHELL_CMD_EXPORT_ALIAS(cmd_non_pref_chan, non_pref_chan, set non_pref_chan);
+SHELL_CMD_EXPORT_ALIAS(cmd_non_pref_chan_notify, non_pref_chan_notify, notify non_pref_chan change);
+SHELL_CMD_EXPORT_ALIAS(cmd_wifi_mgmr_sta_twt_setup, wifi_mgmr_sta_twt_setup, Setup WiFi Manager STA TWT functionality);
+SHELL_CMD_EXPORT_ALIAS(cmd_wifi_mgmr_sta_twt_teardown, wifi_mgmr_sta_twt_teardown, Teardown WiFi Manager STA TWT functionality);
 #if WIFI_STATISTIC_ENABLE
 SHELL_CMD_EXPORT_ALIAS(cmd_fw_dbg, fw_dbg, fw debug param);
 #endif

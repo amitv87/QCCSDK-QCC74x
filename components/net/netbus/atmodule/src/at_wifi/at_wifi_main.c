@@ -102,11 +102,6 @@ int wifi_mgmr_ap_mac_set(uint8_t mac[6])
 
 static void wifi_background_init(uint8_t *ap_mac, uint8_t *sta_mac, uint8_t country_code)
 {
-    wifi_conf_t conf =
-    {
-        .country_code = "CN",
-    };
-    char *country_code_string[WIFI_COUNTRY_CODE_MAX] = {"CN", "JP", "US", "EU"};
     uint8_t mac[6];
 
     /* init ap mac address */
@@ -120,12 +115,6 @@ static void wifi_background_init(uint8_t *ap_mac, uint8_t *sta_mac, uint8_t coun
     if (memcmp(mac, sta_mac, 6)) {
         wifi_mgmr_sta_mac_set(sta_mac);
     }
-
-    /* init wifi background*/
-    strlcpy(conf.country_code, country_code_string[country_code], sizeof(conf.country_code));
-#if 0
-    wifi_mgmr_start_background(&conf);
-#endif
 
 #if 0
     /* enable scan hide ssid */
@@ -391,6 +380,13 @@ static int wifi_ap_start(void)
     config.limit = at_wifi_config->dhcp_server.end - at_wifi_config->dhcp_server.start;
     config.ap_ipaddr = at_wifi_config->ap_ip.ip;
     config.ap_mask = at_wifi_config->ap_ip.netmask;
+    if (at_wifi_config->ap_info.ecn == AT_WIFI_ENC_OPEN) {
+        config.akm = NULL;
+    } else if (at_wifi_config->ap_info.ecn == AT_WIFI_ENC_WPA_PSK) {
+        config.akm = "WPA";
+    } else if (at_wifi_config->ap_info.ecn == AT_WIFI_ENC_WPA2_PSK) {
+        config.akm = "WPA2";
+    }
 
     struct netif *netif = fhost_to_net_if(MGMR_VIF_AP);
 
@@ -512,6 +508,18 @@ static void wifi_sniffer_data_recv(void *env, uint8_t *pkt, int pkt_len)
 #endif
 }
 
+static const char *reason_code_get(int code)
+{
+    if (code == WLAN_FW_BEACON_LOSS) {
+        return "BEACON_LOSS";
+    } else if (code == WLAN_FW_NETWORK_SECURITY_NOMATCH || 
+               code == WLAN_FW_SCAN_NO_BSSID_AND_CHANNEL) {
+        return "NO_SSID";
+    } else {
+        return "PSK_ERR";
+    }
+}
+
 static void at_wifi_event_cb(uint32_t code, void *private_data)
 {
     switch (code) {
@@ -545,8 +553,12 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
                 }
                 g_wifi_sta_is_connected = 0;
                 wifi_sta_enable_reconnect(1);
+            } else {
+                if (at_wifi_config->wevt_enable) {
+                    at_response_string("+CW:ERROR,%s\r\n", reason_code_get(wifi_mgmr_sta_info_status_code_get()));
+                }
             }
-            g_wifi_sta_disconnect_reason = wifi_mgmr_sta_info_status_code_get();// qcc74x_fw_api.h eg: WLAN_FW_BEACON_LOSS
+            g_wifi_sta_disconnect_reason = wifi_mgmr_sta_info_status_code_get();// qcc74x_fw_api.h eg: WLAN_FW_BEACON_LOSS 
             g_wifi_waiting_connect_result = 0;
             at_wifi_config->connecting_state = 0;
         }
@@ -571,6 +583,12 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
                     }
                 }
                 g_wifi_sta_is_connected = 1;
+                if (!at_wifi_config->sta_info.store) {
+                    at_wifi_config->sta_info.store = 1;
+                    if (at->store) {
+                        at_wifi_config_save(AT_CONFIG_KEY_WIFI_STA_INFO);
+                    }
+                }
 
                 if (g_wifi_ap_is_start && at_wifi_config->wifi_mode == WIFI_AP_STA_MODE) {
                     at_wifi_ap_start();
@@ -669,7 +687,7 @@ static void wifi_event_start(uint32_t code)
 }
 
 static wifi_conf_t conf = {
-    .country_code = "CN",
+    .country_code = "Wd",
 };
 void wifi_event_handler(uint32_t code)
 {
@@ -677,7 +695,7 @@ void wifi_event_handler(uint32_t code)
         case CODE_WIFI_ON_INIT_DONE: {
             LOG_I("[APP] [EVT] %s, CODE_WIFI_ON_INIT_DONE\r\n", __func__);
     
-            char *country_code_string[WIFI_COUNTRY_CODE_MAX] = {"CN", "JP", "US", "EU"};
+            char *country_code_string[WIFI_COUNTRY_CODE_MAX] = AT_WIFI_COUNTRY_CODE;
             strlcpy(conf.country_code, country_code_string[at_wifi_config->wifi_country.country_code], sizeof(conf.country_code));
             wifi_mgmr_init(&conf);
         } break;

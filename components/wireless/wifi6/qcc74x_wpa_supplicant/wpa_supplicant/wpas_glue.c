@@ -1298,6 +1298,7 @@ static void wpa_supplicant_transition_disable(void *_wpa_s, u8 bitmap)
 	     (ssid->group_cipher & WPA_CIPHER_TKIP))) {
 		wpa_printf(MSG_DEBUG,
 			   "WPA3-Personal transition mode disabled based on AP notification");
+		printf("WPA3-Personal transition mode disabled based on AP notification");//XXX FIXME use another way to fix WPA3-Personal transition mode
 		disable_wpa_wpa2(ssid);
 		changed = 1;
 	}

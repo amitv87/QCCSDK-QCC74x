@@ -80,7 +80,6 @@ static int at_setup_cmd_ble_init(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
 
     if (at_ble_init(role) != 0) {
-        at_ble_config->work_role = BLE_DISABLE;
         return AT_RESULT_CODE_FAIL;
     }
     at_ble_config->work_role = role;
@@ -332,7 +331,7 @@ static int at_query_cmd_ble_conn(int argc, const char **argv)
 
         for (i = 0; i < BLE_CONN_MAX_NUM; i++) {
             if (at_ble_is_valid_conn_idx(i) && at_ble_is_connected(i) && at_ble_conn_get_addr(i, addr)) {
-                at_response_string("+BLECONN:%d,\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n", i, addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+                at_response_string("+BLECONN:%d,\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n", i, addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
                 conn_num++;
             }
         }

@@ -29,6 +29,9 @@
 #endif
 #include <stdint.h>
 #include <stdbool.h>
+#include "btble_dma_uart.h"
+
+#define QCC74x_DMA_UART 0
 
 /*
  * DEFINES
@@ -203,6 +206,9 @@ __attribute__((weak)) void btble_uart_pin_config(uint8_t uartid, uint8_t tx, uin
 
 __attribute__((weak)) void btble_uart_init(uint8_t uartid)
 {
+    #if (QCC74x_DMA_UART)
+    btble_dma_uart_init();
+    #else
     char uart_name[64];
     struct qcc74x_uart_config_s cfg;
 
@@ -217,7 +223,7 @@ __attribute__((weak)) void btble_uart_init(uint8_t uartid)
     cfg.data_bits = UART_DATA_BITS_8;
     cfg.stop_bits = UART_STOP_BITS_1;
     cfg.parity = UART_PARITY_NONE;
-    cfg.flow_ctrl = 0;
+    cfg.flow_ctrl = 1;
     cfg.tx_fifo_threshold = 7;
     cfg.rx_fifo_threshold = 7;
     qcc74x_uart_init(btble_uart, &cfg);
@@ -231,6 +237,7 @@ __attribute__((weak)) void btble_uart_init(uint8_t uartid)
     qcc74x_irq_attach(btble_uart->irq_num, uart_isr, NULL);
     qcc74x_irq_enable(btble_uart->irq_num);
     #endif 
+    #endif
 }
 
 __attribute__((weak)) int8_t btble_uart_reconfig(uint32_t baudrate, uint8_t flow_ctl_en, uint8_t cts_pin, uint8_t rts_pin)
@@ -258,15 +265,81 @@ __attribute__((weak)) int8_t btble_uart_reconfig(uint32_t baudrate, uint8_t flow
 
 __attribute__((weak)) void btble_uart_flow_on(void)
 {
+    #if (QCC74x_DMA_UART)   
+    return;    
+    #else
     qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_SW_RTS_CONTROL, false);
+    #endif
     //qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_CTS_EN, true);
 }
 
+#if (QCC74x_DMA_UART)
+void btble_uart_read_data_from_dma(void)
+{
+    void (*callback)(void*, uint8_t) = NULL;
+    void* data = NULL;
+
+    if(uart_env.rx.remain_size > 0)
+    {
+        uint16_t data_len = btble_dma_uart_read(uart_env.rx.remain_data, (uint16_t)uart_env.rx.remain_size);
+        if(uart_env.rx.remain_data)
+        {
+           uint8_t *trace_data = uart_env.rx.remain_data;
+          
+          
+        }
+        uart_env.rx.remain_data += data_len;
+        uart_env.rx.remain_size -= data_len;
+        if(uart_env.rx.remain_size == 0)
+        {
+            callback = uart_env.rx.callback;
+            data     = uart_env.rx.dummy;
+            if(callback != NULL)
+            {
+                // Clear callback pointer
+                uart_env.rx.callback = NULL;
+                uart_env.rx.dummy    = NULL;
+                // Call handler
+                callback(data, 0);
+            }
+        }
+    }
+}
+
+void btble_dma_uart_rx_event(void)
+{
+    if(btble_dma_uart_get_rx_count() == 0)
+        return;
+    btble_uart_read_data_from_dma();
+}
+
+
+//handle tx done
+void btble_dma_uart_tx_event(void)
+{
+    void (*callback)(void*, uint8_t) = uart_env.tx.callback;
+    void* data = uart_env.tx.dummy;
+    if(callback != NULL)
+    {
+        // Clear callback pointer
+        uart_env.tx.callback = NULL;
+        uart_env.tx.dummy    = NULL;
+    
+        // Call handler
+        callback(data, 0);
+    }
+}
+#endif
+
 __attribute__((weak)) bool btble_uart_flow_off(void)
 {
+    #if (QCC74x_DMA_UART)
+    return true;
+    #else
     qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_SW_RTS_CONTROL, true);
     qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_CTS_EN, false);
     return true;
+    #endif
 }
 
 __attribute__((weak)) void btble_uart_write(const uint8_t *bufptr, uint32_t size, void (*callback)(void *, uint8_t), void *dummy)
@@ -278,8 +351,11 @@ __attribute__((weak)) void btble_uart_write(const uint8_t *bufptr, uint32_t size
     uart_env.tx.remain_size = size;
     uart_env.tx.callback = callback;
     uart_env.tx.dummy = dummy;
-
+    #if (QCC74x_DMA_UART)
+    btble_dma_uart_write((uint8_t *)bufptr, (uint16_t)size);
+    #else
     qcc74x_uart_txint_mask(btble_uart, false);
+    #endif
 }
 
 __attribute__((weak)) void btble_uart_read(uint8_t *bufptr, uint32_t size, void (*callback)(void *, uint8_t), void *dummy)
@@ -291,13 +367,16 @@ __attribute__((weak)) void btble_uart_read(uint8_t *bufptr, uint32_t size, void 
     uart_env.rx.remain_size = size;
     uart_env.rx.callback = callback;
     uart_env.rx.dummy = dummy;
-
+    #if (QCC74x_DMA_UART)
+    btble_uart_read_data_from_dma();
+    #else
     if (size < 8) {
         qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_RX_FIFO_THREHOLD, size - 1);
     } else {
         qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_RX_FIFO_THREHOLD, 7);
     }
     qcc74x_uart_rxint_mask(btble_uart, false);
+    #endif
 }
 
 __attribute__((weak)) void btble_uart_finish_transfers(void)

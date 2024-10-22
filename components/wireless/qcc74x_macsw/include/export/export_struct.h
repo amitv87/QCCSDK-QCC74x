@@ -330,3 +330,23 @@ struct_func_dcl(dbg_get_sys_stat_cfm, uint32_t, cpu_sleep_time);
 struct_func_dcl(dbg_get_sys_stat_cfm, uint32_t, doze_time);
 struct_func_dcl(dbg_get_sys_stat_cfm, uint32_t, stats_time);
 struct_func_len(dbg_get_sys_stat_cfm);
+
+struct_func_dcl(twt_setup_req, uint8_t, vif_idx);
+struct_func_dcl(twt_setup_req, uint8_t, setup_type);
+struct_func_dcl(twt_setup_req, struct twt_conf_tag, conf);
+void twt_setup_req_set_conf_flow_type(void *pa, uint8_t val);
+void twt_setup_req_set_conf_wake_int_exp(void *pa, uint8_t val);
+void twt_setup_req_set_conf_wake_dur_uint(void *pa, bool val);
+void twt_setup_req_set_conf_min_twt_wake_dur(void *pa, uint8_t val);
+void twt_setup_req_set_conf_wake_int_mantissa(void *pa, uint16_t val);
+struct_func_len(twt_setup_req);
+struct_func_dcl(twt_setup_cfm, uint8_t, status);
+struct_func_len(twt_setup_cfm);
+
+struct_func_dcl(twt_teardown_req, uint8_t, neg_type);
+struct_func_dcl(twt_teardown_req, uint8_t, all_twt);
+struct_func_dcl(twt_teardown_req, uint8_t, id);
+struct_func_dcl(twt_teardown_req, uint8_t, vif_idx);
+struct_func_len(twt_teardown_req);
+struct_func_dcl(twt_teardown_cfm, uint8_t, status);
+struct_func_len(twt_teardown_cfm);

@@ -496,8 +496,16 @@ static int at_query_temp(int argc, const char **argv)
     struct qcc74x_device_s *adc;
     float average_filter = 0.0;
    
+    struct qcc74x_adc_channel_s chan;
+
+    chan.pos_chan = ADC_CHANNEL_TSEN_P;
+    chan.neg_chan = ADC_CHANNEL_GND;
+
     adc = qcc74x_device_get_by_name("adc");
+    qcc74x_adc_tsen_init(adc, ADC_TSEN_MOD_INTERNAL_DIODE);
     
+    qcc74x_adc_channel_config(adc, &chan, 1);
+
     for (int i = 0; i < AVERAGE_COUNT; i++) {
         average_filter += qcc74x_adc_tsen_get_temp(adc);
     }
@@ -569,18 +577,21 @@ static int at_setup_efuse_read(int argc, const char **argv)
     }
     
     word = ((nbytes + 3) & ~3) >> 2;
-    char *buffer = (char *)pvPortMalloc(word * 4);
+    char *buffer = (char *)pvPortMalloc(word * 4 + 2);
     if (!buffer) {
         return AT_RESULT_CODE_FAIL;
     }
-    memset(buffer, 0, word * 4);
+    memset(buffer, 0, word * 4 + 2);
 
     efuse_dev = qcc74x_device_get_by_name("ef_ctrl");
 
     printf("efuse read 0x%x %d \r\n", address, word);
     qcc74x_ef_ctrl_read_direct(efuse_dev, address, (uint32_t *)buffer, word, reload_valid ? reload : 0);
     
-    AT_CMD_DATA_SEND("+EFUSE-R:", strlen("+EFUSE-R:"));
+    at_write("+EFUSE-R:%d,", nbytes);
+    buffer[nbytes] = '\r';
+    buffer[nbytes + 1] = '\n';
+    nbytes += 2;
     send_num = AT_CMD_DATA_SEND(buffer, nbytes);
 
     vPortFree(buffer);
@@ -661,7 +672,7 @@ static int at_setup_flash_read(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
 
-    char *buffer = (char *)pvPortMalloc(nbytes);
+    char *buffer = (char *)pvPortMalloc(nbytes + 2);
     if (!buffer) {
         return AT_RESULT_CODE_FAIL;
     }
@@ -674,7 +685,10 @@ static int at_setup_flash_read(int argc, const char **argv)
         vPortFree(buffer);
         return AT_RESULT_CODE_ERROR;
     }
-    AT_CMD_DATA_SEND("+FLASH-R:", strlen("+FLASH-R:"));
+    at_write("+FLASH-R:%d,", nbytes);
+    buffer[nbytes] = '\r';
+    buffer[nbytes + 1] = '\n';
+    nbytes += 2;
     send_num = AT_CMD_DATA_SEND(buffer, nbytes);
 
     vPortFree(buffer);
@@ -1236,6 +1250,11 @@ static int at_query_pn(int argc, const char **argv)
     if (n > 0) {
         off += n;
     }
+
+    n = snprintf(buffer + off, sizeof(buffer) - off, "\r\n");
+    if (n > 0) {
+        off += n;
+    }
     AT_CMD_DATA_SEND(buffer, off);
 
     return AT_RESULT_CODE_OK;
@@ -1258,7 +1277,6 @@ static int at_setup_mfg(int argc, const char **argv)
 
 static void adc_vbat_init(void)
 {
-    struct qcc74x_adc_channel_s chan;
     struct qcc74x_device_s *adc = qcc74x_device_get_by_name("adc");
 
     /* adc clock = XCLK / 2 / 32 */
@@ -1270,18 +1288,18 @@ static void adc_vbat_init(void)
     cfg.resolution = ADC_RESOLUTION_16B;
     cfg.vref = ADC_VREF_3P2V;
 
-    chan.pos_chan = ADC_CHANNEL_VABT_HALF;
-    chan.neg_chan = ADC_CHANNEL_GND;
-
-    qcc74x_adc_init(adc, &cfg);
-    qcc74x_adc_channel_config(adc, &chan, 1);
     qcc74x_adc_vbat_enable(adc);
 }
 
 static int adc_vbat_get(void)
 {
+    struct qcc74x_adc_channel_s chan;
     struct qcc74x_adc_result_s result;
     struct qcc74x_device_s *adc = qcc74x_device_get_by_name("adc");
+
+    chan.pos_chan = ADC_CHANNEL_VABT_HALF;
+    chan.neg_chan = ADC_CHANNEL_GND;
+    qcc74x_adc_channel_config(adc, &chan, 1);
 
     qcc74x_adc_start_conversion(adc);
     while (qcc74x_adc_get_count(adc) == 0) {

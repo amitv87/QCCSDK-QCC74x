@@ -18,6 +18,7 @@
 #include "list.h"
 #include "os.h"
 #include "eloop.h"
+#include "eloop_rtos.h"
 #include "rtos_def.h"
 
 #define ELOOP_MSGQ_SIZE_MAX (16)
@@ -87,7 +88,7 @@ struct eloop_msg {
     /* actor dispatches msg with event type */
     int type;
     /* supplied by requestor, read-only for actor */
-    char inbuf[256];
+    char inbuf[ELOOP_MSG_INBUF_LEN];
     int inlen;
     /* sync is true if completion notification is needed */
     int sync;
@@ -121,7 +122,7 @@ int eloop_msg_init(struct eloop_msg *msg, int type, int sync,
         wpa_printf(MSG_ERROR, "no mem for msg->outlen\r\n");
         return -1;
     }
-    *msg->outlen = 128;
+    *msg->outlen = ELOOP_MSG_OUTBUF_LEN;
     msg->outbuf = os_calloc(1, *msg->outlen);
     if (!msg->outbuf) {
         wpa_printf(MSG_ERROR, "no mem for msg->outbuf\r\n");

@@ -419,6 +419,16 @@ extern const struct mac_addr mac_addr_bcst;
 
 /**
  ****************************************************************************************
+ * Set a bit in the extended capabilities element.
+ * @param[in] ext_cap Pointer to the HE extended capabilities structure
+ * @param[in] bit     Bit to test
+ * @return true if set, false otherwise
+ ****************************************************************************************
+ */
+#define EXT_CAPA_BIT_SET(ext_cap, bit)   co_bit_set(ext_cap, MAC_EXT_CAPA_##bit##_POS)
+
+/**
+ ****************************************************************************************
  * Set the value of a bit field in the FTM Parameters element.
  * @param[in] params Pointer to the FTM Parameters structure
  * @param[in] field Bit field to be written

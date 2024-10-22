@@ -92,7 +92,7 @@
 #define MEM_MIN                       MEM_MIN_TCP
 #define MEM_ALIGNMENT                 4
 
-#define LWIP_HEAP_SIZE (15 * 1024)
+#define LWIP_HEAP_SIZE (40 * 1024)
 #ifdef LWIP_HEAP_SIZE
 #define MEM_SIZE LWIP_HEAP_SIZE
 #else
@@ -130,11 +130,7 @@ extern int *__errno(void);
 #define ETHARP_SUPPORT_STATIC_ENTRIES 1
 
 #define LWIP_SUPPORT_CUSTOM_PBUF      1
-#ifdef HIGH_PERFORMANCE_PBUF
-#define LWIP_NETIF_TX_SINGLE_PBUF 0
-#else
 #define LWIP_NETIF_TX_SINGLE_PBUF 1
-#endif
 #define LWIP_RAND()                                      ((u32_t)random())
 
 #endif /* LWIP_HDR_LWIPOPTS_H__ */

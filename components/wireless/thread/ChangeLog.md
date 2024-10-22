@@ -1,5 +1,11 @@
 # change log on Thread module
 
+## 2024/10/09
+
+- Version: 1.6.10
+- Changes:
+  - OTBR: Protect all tcp signature code with TCP_SIGNATURE
+
 ## 2024/09/05
 
 - Version: 1.6.9

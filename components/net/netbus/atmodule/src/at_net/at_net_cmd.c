@@ -147,7 +147,7 @@ static int at_query_cmd_cipdns(int argc, const char **argv)
     strlcpy(dns_str1, ipaddr_ntoa((ip_addr_t *)dns1), sizeof(dns_str1));
     strlcpy(dns_str2, ipaddr_ntoa((ip_addr_t *)dns2), sizeof(dns_str2));
     strlcpy(dns_str3, ipaddr_ntoa((ip_addr_t *)dns3), sizeof(dns_str3));
-    at_response_string("+CIPDNS:\"%s\",\"%s\",\"%s\"\r\n", dns_str1, dns_str2, dns_str3);
+    at_response_string("+CIPDNS:%d,\"%s\",\"%s\",\"%s\"\r\n", at_net_config->dns.dns_isset, dns_str1, dns_str2, dns_str3);
 
     return AT_RESULT_CODE_OK;
 }
@@ -176,35 +176,37 @@ static int at_setup_cmd_cipdns(int argc, const char **argv)
         if (ip_addr_isany(&dns1)) {
             return AT_RESULT_CODE_ERROR;
         }
-        at_net_config->dns[0] = dns1;
+        at_net_config->dns.dns[0] = dns1;
     }
     if (dns2_valid) {
         ipaddr_aton(dns_str2, &dns2);
         if (ip_addr_isany(&dns2)) {
             return AT_RESULT_CODE_ERROR;
         }
-        at_net_config->dns[1] = dns2;
+        at_net_config->dns.dns[1] = dns2;
     } else {
-        ip_addr_set_zero(&at_net_config->dns[1]);
+        ip_addr_set_zero(&at_net_config->dns.dns[1]);
     }
     if (dns3_valid) {
         ipaddr_aton(dns_str3, &dns3);
         if (ip_addr_isany(&dns3)) {
             return AT_RESULT_CODE_ERROR;
         }
-        at_net_config->dns[2] = dns3;
+        at_net_config->dns.dns[2] = dns3;
     } else {
-        ip_addr_set_zero(&at_net_config->dns[2]);
+        ip_addr_set_zero(&at_net_config->dns.dns[2]);
     }
+    at_net_config->dns.dns_isset = 1;
 
-    if (enable == 0) {
-        ipaddr_aton(AT_CONFIG_DEFAULT_DNS1, &at_net_config->dns[0]);
-        ipaddr_aton(AT_CONFIG_DEFAULT_DNS2, &at_net_config->dns[1]);
-        ipaddr_aton("0.0.0.0", &at_net_config->dns[2]);
+    if (enable == 0 || ((enable == 1) && (!dns1_valid) && (!dns2_valid) && (!dns3_valid))) {
+        ipaddr_aton(AT_CONFIG_DEFAULT_DNS1, &at_net_config->dns.dns[0]);
+        ipaddr_aton(AT_CONFIG_DEFAULT_DNS2, &at_net_config->dns.dns[1]);
+        ipaddr_aton("0.0.0.0", &at_net_config->dns.dns[2]);
+        at_net_config->dns.dns_isset = 0;
     }
-    dns_setserver(0, &at_net_config->dns[0]);
-    dns_setserver(1, &at_net_config->dns[1]);
-    dns_setserver(2, &at_net_config->dns[2]);
+    dns_setserver(0, &at_net_config->dns.dns[0]);
+    dns_setserver(1, &at_net_config->dns.dns[1]);
+    dns_setserver(2, &at_net_config->dns.dns[2]);
     
     if (at->store) {
         at_net_config_save(AT_CONFIG_KEY_NET_DNS);
@@ -951,11 +953,10 @@ static int at_setup_cmd_ciprecvmode(int argc, const char **argv)
 
 static int at_setup_cmd_ciprecvdata(int argc, const char **argv)
 {
-    int linkid = 0, size, ret = 0, n, offset = 0;
+    int read_len, linkid = 0, size, ret = 0, n, offset = 0;
     uint8_t *buffer;
     uint16_t remote_port;
     ip_addr_t ipaddr;
-    char buf[32];
 
     if (at_net_config->mux_mode == NET_LINK_SINGLE) {
         if (argc != 1) {
@@ -974,28 +975,34 @@ static int at_setup_cmd_ciprecvdata(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
 
-    buffer = (char *)pvPortMalloc(size + 2);
+    buffer = (char *)pvPortMalloc(size + 48);
 
-    ret = at_net_recvbuf_read(linkid, &ipaddr, &remote_port, buffer, size);
+    read_len = at_net_client_get_recvsize(linkid);
+    read_len = read_len > size ? size : read_len;
 
-    n = snprintf(buf + offset, sizeof(buf), "+CIPRECVDATA:%d,", ret);
+    n = snprintf(buffer + offset, 48, "+CIPRECVDATA:%d,", read_len);
     if (n > 0) {
         offset += n;
     }
 
     if (at_net_config->ipd_info == NET_IPDINFO_ENABLE_IPPORT) {
-        n = snprintf(buf + offset, sizeof(buf) - offset, "\"%s\",%d,", ipaddr_ntoa(&ipaddr), remote_port);
+        n = snprintf(buffer + offset, 48 - offset, "\"%s\",%d,", ipaddr_ntoa(&ipaddr), remote_port);
         if (n > 0) {
             offset += n;
         }
     } 
-    AT_CMD_DATA_SEND(buf, strlen(buf));
-   
-    memcpy(buffer + ret, "\r\n", 2);
-    ret += 2;
-    if (ret > 0) {
-        at->device_ops.write_data((uint8_t *)buffer, ret);
+    if (read_len) {
+        ret = at_net_recvbuf_read(linkid, &ipaddr, &remote_port, buffer + offset, read_len);
+        if (ret != read_len) {
+            printf("at_net_recvbuf_read error %d\r\n", ret);
+        }
     }
+    
+    offset += ret;
+   
+    memcpy(buffer + offset, "\r\n", 2);
+    offset += 2;
+    AT_CMD_DATA_SEND((uint8_t *)buffer, offset);
     
     vPortFree(buffer);
 
@@ -1424,30 +1431,6 @@ static int at_setup_cmd_cipsslcpskhex(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
-static int at_query_cmd_cipmode(int argc, const char **argv)
-{
-    at_response_string("+CIPMODE:%d\r\n", at_net_config->work_mode);
-    return AT_RESULT_CODE_OK;
-}
-
-static int at_setup_cmd_cipmode(int argc, const char **argv)
-{
-    int mode;
-
-    AT_CMD_PARSE_NUMBER(0, &mode);
-    if(mode != NET_MODE_NORMAL && mode != NET_MODE_TRANS) {
-        return AT_RESULT_CODE_ERROR;
-    }
-
-    if (at_net_config->mux_mode != NET_LINK_SINGLE) {
-        AT_NET_CMD_PRINTF("CIPMUX must be %d\r\n", NET_LINK_SINGLE);
-        return AT_RESULT_CODE_ERROR;
-    }
-
-    at_net_config->work_mode = mode;
-    return AT_RESULT_CODE_OK;
-}
-
 static int at_query_cmd_cipsto(int argc, const char **argv)
 {
     at_response_string("+CIPSTO:%d\r\n", at_net_config->server_timeout);
@@ -1819,6 +1802,10 @@ static int at_setup_cmd_iperf(int argc, const char **argv)
     if (!is_server && !ip_valid) {
         return AT_RESULT_CODE_ERROR;
     }
+
+    if (fhost_iperf_msg_handle_get() != NULL) {
+        return AT_RESULT_CODE_ERROR;
+    }
  
     snprintf(buffer, sizeof(buffer), 
              "iperf "\
@@ -1832,7 +1819,7 @@ static int at_setup_cmd_iperf(int argc, const char **argv)
              is_udp?"-u":"", 
              is_server?"-s":"-c", 
              is_server?"":ipaddr, 
-             (is_udp && !is_server)?"-b 100M":"", 
+             (is_udp && !is_server)?"-b 200M":"", 
              t, 
              p);
 
@@ -1975,7 +1962,6 @@ static const at_cmd_struct at_net_cmd[] = {
     {"+CIPSSLCALPN", NULL, at_query_cmd_cipsslcalpn, at_setup_cmd_cipsslcalpn, NULL, 2, 8},
     {"+CIPSSLCPSK", NULL, at_query_cmd_cipsslcpsk, at_setup_cmd_cipsslcpsk, NULL, 2, 3},
     {"+CIPSSLCPSKHEX", NULL, at_query_cmd_cipsslcpskhex, at_setup_cmd_cipsslcpskhex, NULL, 2, 3},
-    {"+CIPMODE", NULL, at_query_cmd_cipmode, at_setup_cmd_cipmode, NULL, 1, 1},
     {"+CIPSTO", NULL, at_query_cmd_cipsto, at_setup_cmd_cipsto, NULL,  1, 1},
     {"+SAVETRANSLINK", NULL, NULL, at_setup_cmd_savetranslink, NULL, 1, 5},
     {"+CIPSNTPCFG", NULL, at_query_cmd_cipsntpcfg, at_setup_cmd_cipsntpcfg, NULL, 1, 5},

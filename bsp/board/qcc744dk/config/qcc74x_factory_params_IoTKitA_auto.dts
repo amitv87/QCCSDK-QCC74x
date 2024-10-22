@@ -12,7 +12,7 @@
         #address-cells = <1>;
         #size-cells = <1>;
         region {
-            country_code = <86>;
+            country_code = <01>;
         };
         brd_rf {
             xtal_mode = "MF";
@@ -63,7 +63,7 @@
         #address-cells = <1>;
         #size-cells = <1>;
         brd {
-            country_code = <86>;
+            country_code = <01>;
         };
     };
 };

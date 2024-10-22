@@ -48,6 +48,10 @@
 #define AT_MQTT_OVER_TLS_CLIENT_AUTH     3
 #define AT_MQTT_OVER_TLS_BOTH_AUTH       4
 
+#define AT_MQTT_CLIENTID_MAX_LEN         23
+#define AT_MQTT_USERNAME_MAX_LEN         128
+#define AT_MQTT_PASSWD_MAX_LEN           128
+
 #define _at_offset(type, member) ((size_t) &((type *)0)->member)
 
 #define _at_container_of(ptr, type, member) \
@@ -300,7 +304,7 @@ static uint8_t socketfd_is_connected(mqtt_pal_socket_handle sockfd)
 static void mqtt_close(int linkid)
 {
     if (socketfd_is_connected(&g_at_mqtt[linkid].sockfd)) {
-        at_response_string("+MQTT:%d,DISCONNECTED\r\n", linkid);
+        at_response_string("+MQTT:DISCONNECTED,%d\r\n", linkid);
     }
     socketfd_close(&g_at_mqtt[linkid].sockfd);
 
@@ -320,7 +324,7 @@ static void _mqtt_disconnect(struct mqtt_client *client)
 static void _mqtt_connected_event(int linkid)
 {
     g_at_mqtt[linkid].state = AT_MQTT_STATE_CONNECTED;
-    at_response_string("+MQTT:%d,CONNECTED\r\n", linkid);
+    at_response_string("+MQTT:CONNECTED,%d\r\n", linkid);
 }
 
 static void client_refresher_task(void* arg)
@@ -499,9 +503,9 @@ static int at_setup_cmd_mqttusercfg(int argc, const char **argv)
 {
     int linkid;
     int scheme;
-    char client_id[128] = {0};
-    char user_name[64] = {0};
-    char password[64] = {0};
+    char client_id[AT_MQTT_CLIENTID_MAX_LEN + 1] = {0};
+    char user_name[AT_MQTT_USERNAME_MAX_LEN + 1] = {0};
+    char password[AT_MQTT_PASSWD_MAX_LEN + 1] = {0};
     char cert_file[32] = {0};
     char key_file[32] = {0};
     char ca_file[32] = {0};
@@ -517,6 +521,18 @@ static int at_setup_cmd_mqttusercfg(int argc, const char **argv)
     AT_CMD_PARSE_OPT_STRING(7, ca_file, sizeof(ca_file), ca_file_valid);
 
     if (mqtt_linkid_valid(linkid)) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    if (strlen(client_id) > AT_MQTT_CLIENTID_MAX_LEN) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    if (strlen(user_name) > AT_MQTT_USERNAME_MAX_LEN) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    if (strlen(password) > AT_MQTT_PASSWD_MAX_LEN) {
         return AT_RESULT_CODE_ERROR;
     }
 
@@ -606,7 +622,7 @@ static int at_setup_cmd_mqttclientid(int argc, const char **argv)
     if (mqtt_linkid_valid(linkid)) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (length < 1 || length > 1024) {
+    if (length < 1 || length > AT_MQTT_CLIENTID_MAX_LEN) {
         return AT_RESULT_CODE_ERROR;
     }
 
@@ -626,6 +642,7 @@ static int at_setup_cmd_mqttclientid(int argc, const char **argv)
     while(recv_num < length) {
         recv_num += AT_CMD_DATA_RECV(g_at_mqtt[linkid].client_id + recv_num, length - recv_num);
     }
+    at_response_string("Recv %d bytes\r\n", recv_num);
 
     g_at_mqtt[linkid].client_id[length] = '\0';
     if (length == recv_num) {
@@ -657,7 +674,7 @@ static int at_setup_cmd_mqttusername(int argc, const char **argv)
     if (mqtt_linkid_valid(linkid)) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (length < 1 || length > 1024) {
+    if (length < 1 || length > AT_MQTT_USERNAME_MAX_LEN) {
         return AT_RESULT_CODE_ERROR;
     }
 
@@ -677,6 +694,7 @@ static int at_setup_cmd_mqttusername(int argc, const char **argv)
     while(recv_num < length) {
         recv_num += AT_CMD_DATA_RECV(g_at_mqtt[linkid].user_name + recv_num, length - recv_num);
     }
+    at_response_string("Recv %d bytes\r\n", recv_num);
 
     g_at_mqtt[linkid].user_name[length] = '\0';
     if (length == recv_num) {
@@ -708,7 +726,7 @@ static int at_setup_cmd_mqttpassword(int argc, const char **argv)
     if (mqtt_linkid_valid(linkid)) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (length < 1 || length > 1024) {
+    if (length < 1 || length > AT_MQTT_PASSWD_MAX_LEN) {
         return AT_RESULT_CODE_ERROR;
     }
 
@@ -728,6 +746,7 @@ static int at_setup_cmd_mqttpassword(int argc, const char **argv)
     while(recv_num < length) {
         recv_num += AT_CMD_DATA_RECV(g_at_mqtt[linkid].password + recv_num, length - recv_num);
     }
+    at_response_string("Recv %d bytes\r\n", recv_num);
 
     g_at_mqtt[linkid].password[length] = '\0';
     if (length == recv_num) {
@@ -1026,6 +1045,7 @@ static int at_setup_cmd_mqttpubraw(int argc, const char **argv)
     while(recv_num < length) {
         recv_num += AT_CMD_DATA_RECV(buffer + recv_num, length - recv_num);
     }
+    at_response_string("Recv %d bytes\r\n", recv_num);
 
     buffer[length] = '\0';
     if (length == recv_num) {

@@ -61,6 +61,11 @@
 
 #include <string.h>
 
+#ifdef QCC74x_DUAL_STACK
+#include "lwip/etharp.h"
+#include <qcc74x_dual_stack_input.h>
+#endif
+
 #ifdef LWIP_HOOK_FILENAME
 #include LWIP_HOOK_FILENAME
 #endif
@@ -579,6 +584,18 @@ aborted:
       inseg.p = NULL;
     }
   } else {
+#ifdef QCC74x_DUAL_STACK
+    tcphdr->src = lwip_htons(tcphdr->src);
+    tcphdr->dest = lwip_htons(tcphdr->dest);
+    tcphdr->seqno = lwip_htonl(tcphdr->seqno);
+    tcphdr->ackno = lwip_htonl(tcphdr->ackno);
+    tcphdr->wnd = lwip_htons(tcphdr->wnd);
+    pbuf_header_force(p, (s16_t)(SIZEOF_ETH_HDR + ip_current_header_tot_len() + hdrlen_bytes));
+    pbuf_ref(p);
+    if (qcc74x_dual_stack_peer_input(p, NULL)) {
+      pbuf_free(p);
+    }
+#else
     /* If no matching PCB was found, send a TCP RST (reset) to the
        sender. */
     LWIP_DEBUGF(TCP_RST_DEBUG, ("tcp_input: no PCB match found, resetting.\n"));
@@ -588,6 +605,7 @@ aborted:
       tcp_rst_netif(ip_data.current_input_netif, ackno, seqno + tcplen, ip_current_dest_addr(),
               ip_current_src_addr(), tcphdr->dest, tcphdr->src);
     }
+#endif
     pbuf_free(p);
   }
 

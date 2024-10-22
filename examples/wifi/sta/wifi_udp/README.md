@@ -69,3 +69,13 @@ XXXX
 
 ```
 
+### NAT ping test
+
+uncomment set(CONFIG_WIFI_GATEWAY 1) in proj.conf
+
+qcc74x /> wifi_sta_connect your_ssid 12345678
+... wait GOT_IP event
+
+qcc74x /> wifi_ap_start -s your_ssid_2 -c your_channel_same_with_your_ssid
+
+Another pc connect to your_ssid_2, and ping IP of your_ssid.

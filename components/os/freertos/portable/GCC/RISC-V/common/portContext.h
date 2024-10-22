@@ -135,8 +135,23 @@
 
     portasmSAVE_ADDITIONAL_REGISTERS     /* Defined in freertos_risc_v_chip_specific_extensions.h to save any registers unique to the RISC-V implementation. */
 
-    load_x  t0, pxCurrentTCB             /* Load pxCurrentTCB. */
-    store_x  sp, 0( t0 )                 /* Write sp to first TCB member. */
+    load_x  t0, pTrapNetCounter
+    lw   t1, 0( t0 )
+    addi   t1, t1, 1
+    store_x t1, 0( t0 )
+#ifdef CONFIG_HIGH_ISR_STACK
+    li t0, 2
+    bgeu t1, t0, 1f
+    load_x  t0, pxCurrentTCB
+    j 2f
+1:
+    load_x  t0, pLowIrqContext
+2:
+    store_x  sp, 0( t0 )
+#else
+    load_x  t0, pxCurrentTCB
+    store_x  sp, 0( t0 )
+#endif
 
     .endm
 /*-----------------------------------------------------------*/
@@ -161,8 +176,22 @@
 /*-----------------------------------------------------------*/
 
 .macro portcontextRESTORE_CONTEXT
-    load_x  t1, pxCurrentTCB                /* Load pxCurrentTCB. */
-        load_x  sp, 0( t1 )                 /* Read sp from first TCB member. */
+    load_x  t0, pTrapNetCounter
+    lw   t1, 0 ( t0 )
+    addi   t1, t1, -1
+    store_x t1, 0( t0 )
+#ifdef CONFIG_HIGH_ISR_STACK
+    bnez    t1, 1f
+    load_x  t0, pxCurrentTCB
+    j 2f
+1:
+    load_x  t0, pLowIrqContext
+2:
+    load_x  sp, 0( t0 )
+#else
+    load_x  t1, pxCurrentTCB
+    load_x  sp, 0( t1 )
+#endif
 
     /* Load mepc with the address of the instruction in the task to run next. */
     load_x t0, 0( sp )

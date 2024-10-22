@@ -246,8 +246,10 @@ typedef enum {
     WIFI_MODE_802_11N_5     = 0x10,
     /// 802.11ac at 5GHz
     WIFI_MODE_802_11AC_5    = 0x20,
+    /// 802.11ax at 2.4GHz
+    WIFI_MODE_802_11AX_2_4  = 0x40,
     /// Reserved for future use
-    WIFI_MODE_RESERVED      = 0x40,
+    WIFI_MODE_RESERVED      = 0x80,
 } WiFi_Mode_t;
 
 /// Scan result element, parsed from beacon or probe response frames.

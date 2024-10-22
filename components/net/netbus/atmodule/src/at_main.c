@@ -52,6 +52,26 @@ void at_response_result(uint8_t result_code)
         at->device_ops.write_data((uint8_t *)AT_CMD_MSG_SEND_FAIL, strlen(AT_CMD_MSG_SEND_FAIL));
 }
 
+void at_write(const char *format , ...)
+{
+    va_list ap;
+    char outbuf[128];
+    int outstr_len = 0;
+
+    if (!at) {
+        AT_CMD_PRINTF("ERROR: atcmd has not been initialized\r\n");
+        return;
+    }
+
+    memset(outbuf, 0, sizeof(outbuf));
+    va_start(ap, format);
+    vsnprintf(outbuf, sizeof(outbuf), format, ap);
+    va_end(ap);
+
+    outstr_len = strlen(outbuf);
+    at->device_ops.write_data((uint8_t *)outbuf, outstr_len);
+}
+
 void at_response_string(const char *format , ...)
 {
     va_list ap;

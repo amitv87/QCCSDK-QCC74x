@@ -26,6 +26,7 @@
 #endif
 
 #include "eloop_rtos.h"
+#include "export/mac/mac_ie.h"
 
 #define TX_FRAME_TO_MS 300
 
@@ -370,17 +371,20 @@ static void wpa_rwnx_msg_hdr_init(struct wpa_rwnx_driver_itf_data *drv,
 /******************************************************************************
  * Event processing functions
  *****************************************************************************/
+static bool _wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_itf_data *drv,
+				struct cfgrwnx_scan_result *res, u8 *ie, int ie_len, bool is_beacon,
+				int bssid_index, u8* bssid, u8* multi_ssid_ie, uint16_t capa);
+static bool _wpa_rwnx_driver_process_multi_bssid_scan_result(struct wpa_rwnx_driver_itf_data *drv,
+				struct cfgrwnx_scan_result *res, bool is_beacon, u8 *ie, int ie_len);
 static void wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_data *gdrv)
 {
 	struct wpa_rwnx_driver_itf_data *drv;
 	struct ieee80211_mgmt *mgmt;
 	struct cfgrwnx_scan_result res;
-	struct wpa_rwnx_driver_scan_res *drv_res, *prev_res = NULL;
-	struct wpa_scan_res *wpa_res;
-	u16 fc;
-	u8 *ie, *dst, *prev_src;
+	u16 fc, capa;
+	u8 *ie;
 	bool is_beacon = false;
-	int len = 0, ie_len;
+	int ie_len;
 
     // puts("wpa_rwnx_driver_process_scan_result called\r\n");
 	if ((fhost_cntrl_cfgrwnx_event_get(gdrv->link, &res, sizeof(res)) < 0) ||
@@ -402,20 +406,88 @@ static void wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_data *gdr
 		is_beacon = false;
 		ie = mgmt->u.probe_resp.variable;
 		ie_len = res.length - offsetof(struct ieee80211_mgmt, u.probe_resp.variable);
+		capa = le_to_host16(mgmt->u.probe_resp.capab_info);
 	} else if (WLAN_FC_GET_STYPE(fc) == WLAN_FC_STYPE_BEACON) {
 		is_beacon = true;
 		ie = mgmt->u.beacon.variable;
 		ie_len = res.length - offsetof(struct ieee80211_mgmt, u.beacon.variable);
+		capa = le_to_host16(mgmt->u.beacon.capab_info);
 	} else {
 		goto free_payload;
 	}
 
 	/* TODO: Add suport for filter option in scan request */
 
+	// Process reference BSSID
+	if (false == _wpa_rwnx_driver_process_scan_result(drv, &res, ie, ie_len, is_beacon,
+													  0, mgmt->bssid, NULL, capa)) {
+		goto free_payload;
+	}
+
+    /* XXX:  Only handle Nontransmitted BSSID Profile with (Capability + ssid + index)
+     * TODO: 1. not support other elements (inlcuding Non‐Inheritance) in Nontransmitted BSSID Profile
+     */
+	_wpa_rwnx_driver_process_multi_bssid_scan_result(drv, &res, is_beacon, ie, ie_len);
+
+free_payload:
+	rtos_free(res.payload);
+}
+
+static void _wpa_rwnx_driver_process_scan_ie_buffer(int bssid_index, u8* dst, u8* 
+								ref_ssid_ie, u8* multi_ssid_ie, u8 *ie, int origin_ie_len)
+{
+	u8 *delta1, *delta2;
+	u8 multi_ssid_ie_len, ref_ssid_ie_len;
+
+	if (bssid_index == 0) {
+		os_memcpy(dst, ie, origin_ie_len);
+	} else {
+		multi_ssid_ie_len = multi_ssid_ie[1]+2;
+
+		if (ref_ssid_ie == NULL) {
+			// SSID IE
+			os_memcpy(dst, multi_ssid_ie, multi_ssid_ie_len);
+			dst += multi_ssid_ie_len;
+			// Other IE
+			os_memcpy(dst, ie, origin_ie_len);
+		} else {
+			// SSID IE
+			ref_ssid_ie_len = ref_ssid_ie[1]+2;
+			os_memcpy(dst, multi_ssid_ie, multi_ssid_ie_len);
+			dst += multi_ssid_ie_len;
+			// Other IE
+			if (ref_ssid_ie == ie) {
+				os_memcpy(dst, ie+ref_ssid_ie_len, origin_ie_len-ref_ssid_ie_len);
+			} else {
+				delta1 = ref_ssid_ie;
+				delta2 = ref_ssid_ie + ref_ssid_ie_len;
+				os_memcpy(dst, delta1, delta1-ie);
+				dst += (ref_ssid_ie-ie);
+				os_memcpy(dst, delta2, origin_ie_len-(delta2-ie));
+			}
+		}
+	}
+}
+
+static bool _wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_itf_data *drv,
+				struct cfgrwnx_scan_result *res, u8 *ie, int ie_len, bool is_beacon,
+				int bssid_index, u8* bssid, u8* multi_ssid_ie, uint16_t capa)
+{
+	// TODO: Maybe Drop Multiple BSSID element
+
+	struct wpa_rwnx_driver_scan_res *drv_res, *prev_res = NULL;
+	struct wpa_scan_res *wpa_res;
+	struct ieee80211_mgmt *mgmt;
+	u8 *dst, *prev_src;
+	const u8 *ref_ssid_ie = NULL;
+	int len = 0, origin_ie_len;
+
+	mgmt = (struct ieee80211_mgmt *)res->payload;
+
 	/* Check if result for this bssid is already present */
 	dl_list_for_each(drv_res, &drv->scan_res,
 			 struct wpa_rwnx_driver_scan_res, list) {
-		if (MAC_ADDR_CMP_PACKED(mgmt->bssid, drv_res->res->bssid)) {
+		if (MAC_ADDR_CMP_PACKED(bssid, drv_res->res->bssid)) {
 			prev_res = drv_res;
 			break;
 		}
@@ -425,7 +497,7 @@ static void wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_data *gdr
 		if ((is_beacon && prev_res->res->beacon_ie_len) ||
 		    (!is_beacon && prev_res->res->ie_len)) {
 			/* assume content didn't change */
-			goto free_payload;
+			return false;
 		} else if (is_beacon) {
 			len = prev_res->res->ie_len;
 		} else {
@@ -433,31 +505,43 @@ static void wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_data *gdr
 		}
 		prev_src = (u8 *)prev_res->res + sizeof(struct wpa_scan_res);
 	}
+
+	// Replace SSID element, if Non-transmitted BSSID
+	origin_ie_len = ie_len;
+	if (bssid_index) {
+		ref_ssid_ie = get_ie(ie, ie_len, WLAN_EID_SSID);
+		if (ref_ssid_ie == NULL) {
+			ie_len += (multi_ssid_ie ? (multi_ssid_ie[1]+2) : 0);
+		} else {
+			ie_len -= (ref_ssid_ie[1]+2);
+			ie_len += (multi_ssid_ie ? (multi_ssid_ie[1]+2) : 0);
+		}
+	}
 	len += sizeof(struct wpa_scan_res) + ie_len;
 
 	drv_res = os_malloc(sizeof(struct wpa_rwnx_driver_scan_res));
 	if (!drv_res)
-		goto free_payload;
+		return false;
 
 	wpa_res = os_malloc(len);
 	if (!wpa_res) {
 		os_free(drv_res);
-		goto free_payload;
+		return false;
 	}
 
 	wpa_res->flags = WPA_SCAN_QUAL_INVALID | WPA_SCAN_NOISE_INVALID | WPA_SCAN_LEVEL_DBM;
-	os_memcpy(wpa_res->bssid, mgmt->bssid, ETH_ALEN);
-	wpa_res->freq = res.freq;
+	os_memcpy(wpa_res->bssid, bssid, ETH_ALEN);
+	wpa_res->freq = res->freq;
 	if (is_beacon) {
 		wpa_res->tsf = WPA_GET_LE64(mgmt->u.beacon.timestamp);
 		wpa_res->beacon_int = le_to_host16(mgmt->u.beacon.beacon_int);
-		wpa_res->caps = le_to_host16(mgmt->u.beacon.capab_info);
+		wpa_res->caps = capa;
 	} else {
 		wpa_res->tsf = WPA_GET_LE64(mgmt->u.probe_resp.timestamp);
 		wpa_res->beacon_int = le_to_host16(mgmt->u.probe_resp.beacon_int);
-		wpa_res->caps = le_to_host16(mgmt->u.probe_resp.capab_info);
+		wpa_res->caps = capa;
 	}
-	wpa_res->level = res.rssi;
+	wpa_res->level = res->rssi;
 	wpa_res->age = 0; /* TODO */
 	wpa_res->est_throughput = 0;
 	wpa_res->snr = 0;
@@ -472,10 +556,14 @@ static void wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_data *gdr
 		} else {
 			wpa_res->ie_len = 0;
 		}
-		os_memcpy(dst, ie, wpa_res->beacon_ie_len);
+		// Replace SSID element, if Non-transmitted BSSID
+		_wpa_rwnx_driver_process_scan_ie_buffer(bssid_index, dst, ref_ssid_ie,
+												multi_ssid_ie, ie, origin_ie_len);
 	} else {
 		wpa_res->ie_len = ie_len;
-		os_memcpy(dst, ie, wpa_res->ie_len);
+		// Replace SSID element, if Non-transmitted BSSID
+		_wpa_rwnx_driver_process_scan_ie_buffer(bssid_index, dst, ref_ssid_ie,
+												multi_ssid_ie, ie, origin_ie_len);
 		if (prev_res) {
 			dst += wpa_res->ie_len;
 			wpa_res->beacon_ie_len = prev_res->res->beacon_ie_len;
@@ -487,14 +575,6 @@ static void wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_data *gdr
 
 	drv_res->res = wpa_res;
 	dl_list_add(&drv->scan_res, &drv_res->list);
-    // printf("bssid %02x:%02x:%02x:%02x:%02x:%02x added\r\n",
-    //     mgmt->bssid[0],
-    //     mgmt->bssid[1],
-    //     mgmt->bssid[2],
-    //     mgmt->bssid[3],
-    //     mgmt->bssid[4],
-    //     mgmt->bssid[5]
-    // );
 
 	if (prev_res) {
 		dl_list_del(&prev_res->list);
@@ -502,8 +582,106 @@ static void wpa_rwnx_driver_process_scan_result(struct wpa_rwnx_driver_data *gdr
 		os_free(prev_res);
 	}
 
-free_payload:
-	rtos_free(res.payload);
+	return true;
+}
+
+static bool _wpa_rwnx_driver_process_multi_bssid_scan_result(struct wpa_rwnx_driver_itf_data *drv,
+				struct cfgrwnx_scan_result *res, bool is_beacon, u8 *ie, int ie_len)
+{
+	struct ieee80211_mgmt *mgmt;
+	uint32_t ies = (uint32_t)ie;
+	int ies_len = ie_len;
+	uint16_t capa;
+
+	mgmt = (struct ieee80211_mgmt *)res->payload;
+
+    while (ies_len)
+    {
+        uint32_t mbssid_ie_addr, mbssid_ie_len;
+        uint32_t sub_ie_addr, sub_ie_len;
+        uint32_t sub_ies, bssid_ies;
+        uint16_t subies_len, bssid_ies_len;
+        uint32_t capa_addr = 0, bssid_index_ie_addr = 0, ssid_ie_addr = 0;
+        uint8_t ssid_len, max_bssid_ind, bssid_index;
+		uint8_t bssid[ETH_ALEN];
+
+        // Try to get a Multiple BSSID element
+        mbssid_ie_addr = mac_ie_multi_bssid_find(ies, ies_len);
+        if (!mbssid_ie_addr)
+            return false;
+
+		memcpy(bssid, mgmt->bssid, 6);
+        mbssid_ie_len = ((uint8_t*)mbssid_ie_addr)[MAC_INFOELT_LEN_OFT] + 2;
+        max_bssid_ind = ((uint8_t*)mbssid_ie_addr)[MAC_MULTI_BSSID_MAX_INDICATOR_OFT];
+        sub_ies = mbssid_ie_addr + MAC_MULTI_BSSID_SUB_IES_OFT;
+        subies_len = mbssid_ie_len - MAC_MULTI_BSSID_SUB_IES_OFT;
+
+        while (subies_len)
+        {
+            // A Multiple BSSID element has been found, search for a nonTransmittedBSSID
+            // profile inside it
+            sub_ie_addr = mac_ie_sub_non_txed_bssid_find(sub_ies, subies_len);
+            if (!sub_ie_addr)
+                break;
+
+            sub_ie_len = ((uint8_t*)sub_ie_addr)[MAC_INFOELT_LEN_OFT] + 2;
+            bssid_ies = sub_ie_addr + MAC_MBSSID_NON_TXED_PROF_INFO_OFT;
+            bssid_ies_len = sub_ie_len - MAC_MBSSID_NON_TXED_PROF_INFO_OFT;
+            sub_ies += sub_ie_len;
+            subies_len -= sub_ie_len;
+
+            // Check if this is the start of a BSS profile - To do that we check if the
+            // nonTransmitted BSSID capability element is the first of the sub-element
+            if (mac_ie_non_txed_bssid_capa_find(bssid_ies, MAC_NON_TXED_BSSID_CAPA_LEN))
+            {
+                // New BSS profile, restart the search for both the BSSID index and SSID
+                capa_addr = bssid_ies + MAC_NON_TXED_BSSID_CAPA_OFT;
+                bssid_index_ie_addr = 0;
+                ssid_ie_addr = 0;
+            }
+            else if (!capa_addr)
+                continue;
+
+            // Now search for the BSSID index and SSID
+            if (!bssid_index_ie_addr)
+                bssid_index_ie_addr = mac_ie_multi_bssid_index_find(bssid_ies, bssid_ies_len);
+            if (!ssid_ie_addr)
+                ssid_ie_addr = mac_ie_ssid_find(bssid_ies, bssid_ies_len, &ssid_len);
+
+            // Drop wrong SSID length
+            if (ssid_len > 32)
+                continue;
+
+            // Check length, whether ONLY (CAPA len + SSID len + BSSID id len)
+            if (bssid_ies_len > ((bssid_index_ie_addr ? 4 : 0) +
+                                 (ssid_ie_addr ? 2 + ssid_len : 0) +
+                                 (capa_addr ? 3 : 0)))
+            {
+                printf("[WPA] Multiple BSSID has more elements, not supported!\n\r");
+            }
+
+            // Check if we have all the info related to the nonTransmitted BSSID and configure it
+            if (bssid_index_ie_addr && ssid_ie_addr)
+            {
+				// Get capa
+				capa = co_read16p(capa_addr);
+                capa_addr = 0;
+                // Get BSSID
+                bssid_index = co_read8p(bssid_index_ie_addr + MAC_MULTI_BSSID_INDEX_OFT);
+                bssid[5] &= ~(CO_BIT(max_bssid_ind)-1);
+                bssid[5] |= (bssid[5] + bssid_index) & (CO_BIT(max_bssid_ind)-1);
+                // Save Beacon/Probe_resp
+				if (false == _wpa_rwnx_driver_process_scan_result(drv, res, ie, ie_len, is_beacon,
+								bssid_index, bssid, (u8*)ssid_ie_addr, capa)) {
+					return false;
+				}
+            }
+        }
+        ies_len -= (mbssid_ie_addr - ies) + mbssid_ie_len;
+        ies = mbssid_ie_addr + mbssid_ie_len;
+    }
+
+	return true;
 }
 
 static void wpa_rwnx_driver_process_scan_done_event(struct wpa_rwnx_driver_data *gdrv)
@@ -580,6 +758,12 @@ static void wpa_rwnx_driver_process_connect_event(struct wpa_rwnx_driver_data *g
 		memcpy(drv->bssid, &event.bssid, ETH_ALEN);
 		ssid_ie = get_ie(event.req_resp_ies, event.assoc_req_ie_len, WLAN_EID_SSID);
 		if (ssid_ie) {
+            // Avoid memory leak when reassociate because wpa_rwnx_driver_process_disconnect_event() not be called
+            if (drv->ssid) {
+                os_free(drv->ssid);
+                drv->ssid = NULL;
+                drv->ssid_len = 0;
+            }
 			drv->ssid = os_malloc(ssid_ie[1]);
 			if (drv->ssid) {
 				drv->ssid_len = ssid_ie[1];

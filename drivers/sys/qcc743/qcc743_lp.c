@@ -447,7 +447,7 @@ void qcc74x_lp_fw_init()
     iot2lp_para->debug_io = 0xFF;
 
     iot2lp_para->bcn_loss_level = 0;
-    qcc74x_lp_fw_bcn_loss_cfg(NULL, 0, 0, 0);
+    qcc74x_lp_fw_bcn_loss_cfg_dtim_default(iot2lp_para->dtim_num);
 
     /* Save rc32k code in HBN_RAM */
     iot2lp_para->rc32k_fr_ext = (*((volatile uint32_t *)0x2000F200)) >> 22;
@@ -515,46 +515,8 @@ int qcc74x_lp_beacon_interval_update(uint16_t beacon_interval_tu)
 
 void qcc74x_lp_fw_bcn_loss_cfg(lp_fw_bcn_loss_level_t *cfg_table, uint16_t table_num, uint16_t loop_start, uint16_t loss_max)
 {
-    /* bcn loss ctrl */
-    static lp_fw_bcn_loss_level_t bcn_loss_cfg_table[] = {
-        {10,  0,  2000,   4000},     /* loss 0, unused */
-        {6,  0,  2000,   4000},     /* loss 1 */
-        {6,  0,  3000,   6000},     /* loss 2 */
-        {3,  0,  4000,   8000},     /* loss 3 */
-        {3,  0,  6000,   14000},    /* loss 4 */
-        {3,  1,  20000,  40000},    /* loss 5, wakeup */
-
-        {10, 0, 2000,   4000},      /* loss 1 */
-        {6,  0, 4000,   8000},      /* loss 2 */
-        {6,  0, 6000,   12000},     /* loss 3 */
-        {3,  0, 6000,   12000},     /* loss 4 */
-        {3,  1, 8000,   20000},     /* loss 5, wakeup */
-
-        {10, 0, 2000,   4000},      /* loss 1 */
-        {6,  0, 4000,   8000},      /* loss 2 */
-        {6,  0, 6000,   12000},     /* loss 3 */
-        {3,  0, 6000,   12000},     /* loss 4 */
-        {3,  1, 20000,  50000},     /* loss 5, wakeup */
-
-        {10, 0, 2000,   4000},      /* loss 1 */
-        {6,  0, 4000,   8000},      /* loss 2 */
-        {6,  0, 6000,   12000},     /* loss 3 */
-        {3,  0, 6000,   12000},     /* loss 4 */
-        {3,  1, 8000,   20000},     /* loss 5, wakeup */
-
-        {10, 0, 2000,   4000},      /* loss 1 */
-        {6,  0, 4000,   8000},      /* loss 2 */
-        {6,  0, 6000,   12000},     /* loss 3 */
-        {3,  0, 6000,   12000},     /* loss 4 */
-        {3,  1, 50000,  110000},    /* loss 5, wakeup */
-                                    /* cfg table over */
-    };
-
-    if(cfg_table == NULL) {
-        cfg_table = bcn_loss_cfg_table;
-        table_num = sizeof(bcn_loss_cfg_table) / sizeof(lp_fw_bcn_loss_level_t);
-        loop_start = 6;
-        loss_max = 6 + 20 * 10;
+    if (cfg_table == NULL || table_num == 0) {
+        return;
     }
 
     if(loop_start >= table_num){
@@ -575,6 +537,166 @@ void qcc74x_lp_fw_bcn_loss_cfg(lp_fw_bcn_loss_level_t *cfg_table, uint16_t table
     /* clear */
     iot2lp_para->bcn_loss_level = 0;
     iot2lp_para->continuous_loss_cnt = 0;
+}
+
+void qcc74x_lp_fw_bcn_loss_cfg_dtim_default(uint8_t dtim_num)
+{
+    int32_t cfg_table_num;
+    int32_t cfg_loop_start;
+    uint32_t cfg_loss_max;
+    static lp_fw_bcn_loss_level_t bcn_loss_cfg_buff[20];
+
+    /* dtim10 */
+    int32_t dtim10_table_num = 18;
+    int32_t dtim10_loop_start = 6;
+    uint32_t dtim10_loss_max = 6 + 12 * 20;
+    static const lp_fw_bcn_loss_level_t dtim10_cfg_table[18] = {
+        { 10, 0, 2000, 4000 },  /* loss 0, unused */
+        { 8, 0, 2000, 6000 },   /* loss 1 */
+        { 6, 0, 3000, 10000 },  /* loss 2 */
+        { 6, 0, 4000, 10000 },  /* loss 3 */
+        { 3, 0, 6000, 14000 },  /* loss 4 */
+        { 3, 1, 15000, 40000 }, /* loss 5, wakeup */
+
+        { 9, 0, 2000, 5000 },   /* loss 1 */
+        { 8, 0, 3000, 8000 },   /* loss 2 */
+        { 8, 0, 4000, 12000 },  /* loss 3 */
+        { 6, 0, 5000, 12000 },  /* loss 4 */
+        { 6, 0, 6000, 12000 },  /* loss 5 */
+        { 6, 1, 20000, 50000 }, /* loss 6, wakeup */
+
+        { 9, 0, 2000, 4000 },    /* loss 1 */
+        { 8, 0, 4000, 8000 },    /* loss 2 */
+        { 8, 0, 6000, 12000 },   /* loss 3 */
+        { 6, 0, 6000, 12000 },   /* loss 4 */
+        { 6, 0, 6000, 12000 },   /* loss 5 */
+        { 6, 1, 50000, 110000 }, /* loss 6, wakeup */
+                                 /* cfg table over */
+    };
+
+    /* dtim6 */
+    int32_t dtim6_table_num = 20;
+    int32_t dtim6_loop_start = 6;
+    uint32_t dtim6_loss_max = 6 + 14 * 20;
+    static const lp_fw_bcn_loss_level_t dtim6_cfg_table[20] = {
+        { 6, 0, 2000, 4000 },   /* loss 0, unused */
+        { 6, 0, 2000, 6000 },   /* loss 1 */
+        { 5, 0, 3000, 10000 },  /* loss 2 */
+        { 4, 0, 4000, 8000 },   /* loss 3 */
+        { 3, 0, 6000, 14000 },  /* loss 4 */
+        { 3, 1, 15000, 40000 }, /* loss 5, wakeup */
+
+        { 6, 0, 2000, 4000 },   /* loss 1 */
+        { 6, 0, 3000, 8000 },   /* loss 2 */
+        { 5, 0, 4000, 8000 },   /* loss 3 */
+        { 5, 0, 4000, 10000 },  /* loss 4 */
+        { 4, 0, 3000, 10000 },  /* loss 5 */
+        { 4, 0, 5000, 10000 },  /* loss 6 */
+        { 3, 1, 20000, 50000 }, /* loss 7, wakeup */
+
+        { 6, 0, 2000, 4000 },    /* loss 1 */
+        { 6, 0, 3000, 8000 },    /* loss 2 */
+        { 5, 0, 4000, 8000 },    /* loss 3 */
+        { 5, 0, 4000, 10000 },   /* loss 4 */
+        { 4, 0, 3000, 10000 },   /* loss 5 */
+        { 4, 0, 5000, 10000 },   /* loss 6 */
+        { 3, 1, 50000, 110000 }, /* loss 7, wakeup */
+                                 /* cfg table over */
+    };
+
+    /* dtim3 */
+    int32_t dtim3_table_num = 20;
+    int32_t dtim3_loop_start = 8;
+    uint32_t dtim3_loss_max = 8 + 12 * 20;
+    static const lp_fw_bcn_loss_level_t dtim3_cfg_table[20] = {
+        { 3, 0, 2000, 4000 },   /* loss 0, unused */
+        { 3, 0, 2000, 6000 },   /* loss 1 */
+        { 3, 0, 3000, 10000 },  /* loss 2 */
+        { 3, 0, 4000, 8000 },   /* loss 3 */
+        { 2, 0, 3000, 8000 },   /* loss 4 */
+        { 3, 0, 3000, 10000 },  /* loss 5 */
+        { 2, 0, 6000, 14000 },  /* loss 6 */
+        { 3, 1, 15000, 40000 }, /* loss 7, wakeup */
+
+        { 3, 0, 2000, 5000 },    /* loss 1 */
+        { 3, 0, 3000, 6000 },    /* loss 2 */
+        { 3, 0, 4000, 8000 },    /* loss 3 */
+        { 3, 0, 10000, 20000 },  /* loss 4 */
+        { 3, 0, 3000, 6000 },    /* loss 5 */
+        { 2, 0, 3000, 6000 },    /* loss 6 */
+        { 3, 0, 4000, 8000 },    /* loss 7 */
+        { 3, 0, 4000, 8000 },    /* loss 8 */
+        { 3, 0, 4000, 10000 },   /* loss 9 */
+        { 2, 0, 4000, 10000 },   /* loss 10 */
+        { 3, 0, 10000, 20000 },  /* loss 11 */
+        { 3, 1, 50000, 110000 }, /* loss 12, wakeup */
+                                 /* cfg table over */
+    };
+
+    /* dtim1 */
+    int32_t dtim1_table_num = 20;
+    int32_t dtim1_loop_start = 8;
+    uint32_t dtim1_loss_max = 8 + 12 * 20;
+    static const lp_fw_bcn_loss_level_t dtim1_cfg_table[20] = {
+        { 1, 0, 2000, 4000 },   /* loss 0, unused */
+        { 1, 0, 2000, 6000 },   /* loss 1 */
+        { 1, 0, 3000, 10000 },  /* loss 2 */
+        { 1, 0, 4000, 8000 },   /* loss 3 */
+        { 2, 0, 3000, 8000 },   /* loss 4 */
+        { 3, 0, 3000, 8000 },   /* loss 5 */
+        { 2, 0, 6000, 14000 },  /* loss 6 */
+        { 1, 1, 15000, 40000 }, /* loss 7, wakeup */
+
+        { 1, 0, 2000, 4000 },    /* loss 1 */
+        { 2, 0, 3000, 6000 },    /* loss 2 */
+        { 3, 0, 4000, 8000 },    /* loss 3 */
+        { 1, 0, 10000, 20000 },  /* loss 4 */
+        { 2, 0, 3000, 6000 },    /* loss 5 */
+        { 3, 0, 3000, 6000 },    /* loss 6 */
+        { 1, 0, 4000, 8000 },    /* loss 7 */
+        { 2, 0, 4000, 8000 },    /* loss 8 */
+        { 3, 0, 4000, 8000 },    /* loss 9 */
+        { 1, 0, 4000, 8000 },    /* loss 10 */
+        { 2, 0, 10000, 20000 },  /* loss 11 */
+        { 3, 1, 50000, 110000 }, /* loss 12, wakeup */
+                                 /* cfg table over */
+    };
+
+    if (dtim_num == 0) {
+        dtim_num = 10;
+    }
+
+    if (dtim_num < 3) {
+        /* dtim 1 */
+        memcpy(bcn_loss_cfg_buff, dtim1_cfg_table, sizeof(dtim1_cfg_table));
+        cfg_table_num = dtim1_table_num;
+        cfg_loop_start = dtim1_loop_start;
+        cfg_loss_max = dtim1_loss_max;
+        QCC74x_LP_LOG("bcn_loss_cfg: dtim-1\r\n");
+    } else if (dtim_num < 6) {
+        /* dtim 3 */
+        memcpy(bcn_loss_cfg_buff, dtim3_cfg_table, sizeof(dtim3_cfg_table));
+        cfg_table_num = dtim3_table_num;
+        cfg_loop_start = dtim3_loop_start;
+        cfg_loss_max = dtim3_loss_max;
+        QCC74x_LP_LOG("bcn_loss_cfg: dtim-3\r\n");
+    } else if (dtim_num < 9) {
+        /* dtim6 */
+        memcpy(bcn_loss_cfg_buff, dtim6_cfg_table, sizeof(dtim6_cfg_table));
+        cfg_table_num = dtim6_table_num;
+        cfg_loop_start = dtim6_loop_start;
+        cfg_loss_max = dtim6_loss_max;
+        QCC74x_LP_LOG("bcn_loss_cfg: dtim-6\r\n");
+    } else {
+        /* dtim10 */
+        memcpy(bcn_loss_cfg_buff, dtim10_cfg_table, sizeof(dtim10_cfg_table));
+        cfg_table_num = dtim10_table_num;
+        cfg_loop_start = dtim10_loop_start;
+        cfg_loss_max = dtim10_loss_max;
+        QCC74x_LP_LOG("bcn_loss_cfg: dtim-10\r\n");
+    }
+
+    qcc74x_lp_fw_bcn_loss_cfg(bcn_loss_cfg_buff, cfg_table_num, cfg_loop_start, cfg_loss_max);
 }
 
 int qcc74x_lp_fw_bcn_loss_info_get(uint32_t *try_num, uint32_t *loss_num)
@@ -997,9 +1119,6 @@ __WEAK uint8_t qcc74x_lp_check_acomp_int(void)
     return result;
 }
 
-uint64_t ulLowPowerTimeEnterFunction;
-uint64_t ulLowPowerTimeAfterSleep;
-
 void qcc74x_lp_debug_record_time(iot2lp_para_t *iot_lp_para, char *info_str)
 {
 #if QCC74x_LP_TIME_DEBUG
@@ -1288,7 +1407,7 @@ int ATTR_TCM_SECTION qcc74x_lp_fw_enter(qcc74x_lp_fw_cfg_t *qcc74x_lp_fw_cfg)
             iot2lp_para->rtc32k_jitter_error_ppm = 1200;
         } else {
             /* xtal 500-ppm */
-            iot2lp_para->rtc32k_jitter_error_ppm = 300;
+            iot2lp_para->rtc32k_jitter_error_ppm = 400;
         }
 
         /* Compensates for pds goto sleep error */

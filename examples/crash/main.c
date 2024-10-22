@@ -7,6 +7,7 @@
 #include "board.h"
 
 #include "qcc74x_mtd.h"
+#include "coredump.h"
 
 static struct qcc74x_device_s *uart0;
 
@@ -21,7 +22,7 @@ int main(void)
     board_init();
 
     qcc74x_mtd_init();
-    qcc74x_mtd_open("core", &handle, QCC74x_MTD_OPEN_FLAG_BUSADDR);
+    ret = qcc74x_mtd_open("core", &handle, QCC74x_MTD_OPEN_FLAG_BUSADDR);
     if (ret < 0) {
         puts("No valid coredump partition found\r\n");
     }

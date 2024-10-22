@@ -47,6 +47,8 @@ const int fhost_wpa_priority = RTOS_TASK_PRIORITY(26);
 const int fhost_ipc_priority = RTOS_TASK_PRIORITY(29);
 const int fhost_iperf_priority = RTOS_TASK_PRIORITY(27);
 const int fhost_connect_priority = RTOS_TASK_PRIORITY(2);
+const int fhost_tg_priority = RTOS_TASK_PRIORITY(5);
+const int fhost_ping_priority = RTOS_TASK_PRIORITY(27);
 
 
 /*
@@ -217,6 +219,7 @@ void rtos_queue_delete(rtos_queue queue)
 
 bool rtos_queue_is_empty(rtos_queue queue)
 {
+#if 0
     BaseType_t res;
 
     GLOBAL_INT_DISABLE();
@@ -224,6 +227,18 @@ bool rtos_queue_is_empty(rtos_queue queue)
     GLOBAL_INT_RESTORE();
 
     return (res == pdTRUE);
+#else
+    portBASE_TYPE uxMessagesWaiting;
+    BaseType_t res;
+
+    if (xPortIsInsideInterrupt()) {
+        res = xQueueIsQueueEmptyFromISR(queue);
+        return (res == pdTRUE);
+    }
+    uxMessagesWaiting = uxQueueMessagesWaiting(queue);
+
+    return (uxMessagesWaiting == 0);
+#endif
 }
 
 bool rtos_queue_is_full(rtos_queue queue)

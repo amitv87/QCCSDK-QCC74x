@@ -140,6 +140,9 @@ void * os_zalloc(size_t size)
 void * os_malloc(size_t size)
 {
     void *ptr;
+    if (0 == size) {
+        size = 16;
+    }
 
 	ptr = rtos_malloc(size);
     if (NULL == ptr) {

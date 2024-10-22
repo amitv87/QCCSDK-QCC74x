@@ -34,6 +34,9 @@
 #define RFPARAM_ERR_COUNTRY_CODE_NULL               -27
 #define RFPARAM_ERR_TLV_BASE_ADDR                   -28
 #define RFPARAM_ERR_PWR_OFFSET_LP_NULL              -29
+#define RFPARAM_ERR_EN_TCAP                         -30
+#define RFPARAM_ERR_TCAP_TSEN                       -31
+#define RFPARAM_ERR_TCAP_CAP                        -32
 
 
 #define RFPARAM_ERR_PARAM_CHECK                    	-50

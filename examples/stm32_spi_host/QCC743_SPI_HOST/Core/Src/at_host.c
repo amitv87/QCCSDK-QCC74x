@@ -275,9 +275,11 @@ int at_host_recvdata(at_host_handle_t at, int linkid, uint8_t *buf, uint32_t buf
 
 	at_host_printf(at, 0, "AT+CIPRECVDATA=%d,%d\r\n", linkid, buf_size);
 
-	if (osMessageQueueGet(at->queue, &msg, 0, 1000) != 0) {
+	if (osMessageQueueGet(at->queue, &msg, 0, 0xffffffff) != 0) {
 		return -1;
 	}
+	at_host_wait(at, AT_HOST_RESP_EVT_OK, 1000);
+
 	if (msg.msg_len) {
 		ret = buf_size > msg.msg_len ? msg.msg_len : buf_size;
 		memcpy(buf, msg.msg_buf, ret);
@@ -290,12 +292,14 @@ int at_host_recvdata(at_host_handle_t at, int linkid, uint8_t *buf, uint32_t buf
 
 int at_host_wait(at_host_handle_t at, int wait_evt, uint32_t timeout)
 {
-	return osEventFlagsWait(at->evt, wait_evt, osFlagsWaitAll, timeout);
+	int rflags = osEventFlagsWait(at->evt, wait_evt, osFlagsWaitAll, timeout);
+	return (rflags & 0xffffff);
 }
 
 int at_host_send(at_host_handle_t at, int wait_evt, uint8_t *data, int len)
 {
 	int ret = 0;
+	osEventFlagsClear(at->evt, wait_evt);
 
 	if (at && at->ops->f_write_data) {
 		ret = at->ops->f_write_data(at->arg, data, len);

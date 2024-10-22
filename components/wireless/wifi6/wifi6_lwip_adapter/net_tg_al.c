@@ -18,6 +18,7 @@
 #include "export/common/co_endian.h"
 #include "lwip/udp.h"
 #include "net_tg_al_priv.h"
+#include "net_al.h"
 #include "net_def.h"
 #include "lwip/raw.h"
 #include "lwip/icmp.h"
@@ -47,16 +48,6 @@
 /// Maximum transmission time for sending process (340 s)
 #define NET_TG_MAX_SEND_TIME       340000000
 #endif // NX_TG
-/// Maximum length of PING payload
-#define NET_MAX_PING_LEN 1500 - IP_HLEN
-/// Ping identifier - must fit on a u16_t
-#define NET_TG_PING_ID             0xAFAF
-/// Ping ICMP ECHO header length : 8 bytes
-#define NET_TG_PING_HDR_LEN        sizeof(struct icmp_echo_hdr)
-/// Ping timestamp length : 8 bytes
-#define NET_TG_PING_TIMESTAMP_LEN       8
-/// Maximum ping time for sending process (340 s)
-#define NET_TG_MAX_PING_TIME       340000000
 
 #if NX_TG
 /// Structure containing the information about the TG sending buffer
@@ -152,7 +143,7 @@ static void net_sleep_time(enum profile_id prof, u32_t rate,
         }
         else if (rate == 0)
         {
-            *sleep_time = 20000; /* fixed 20 milliseconds */
+            *sleep_time = 10000; /* fixed 20 milliseconds */
             throttled_rate_int = 10000 / 50;
         }
         else if (rate > 0 && rate <= 50) /* typically for voice */
@@ -201,7 +192,7 @@ static void net_sleep_time(enum profile_id prof, u32_t rate,
  * @return the time difference t2 - t1 in us (could be negative)
  ****************************************************************************************
  **/
-static int net_time_diff(struct fhost_tg_time *t1, struct fhost_tg_time *t2)
+int net_time_diff(struct tg_time *t1, struct tg_time *t2)
 {
     int dtime;
     int sec = t2->sec - t1->sec;
@@ -322,7 +313,7 @@ static struct net_tg_send_buf_tag *net_tg_find_free_send_buf(struct fhost_tg_str
  * @return the throughput of traffic sending (bps), -1 if incorrect duration
  ****************************************************************************************
  **/
-static int net_cal_throughput(struct fhost_tg_time *init, struct fhost_tg_time *actual,
+static int net_cal_throughput(struct tg_time *init, struct tg_time *actual,
                               u32_t tx_bytes)
 {
     int diff_time;
@@ -423,7 +414,7 @@ static void net_tg_recv_transc_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p
     struct pbuf *p_send, *h_send;
     char *hdr;
     u32_t sec_nl, usec_nl;
-    struct fhost_tg_time actual;
+    struct tg_time actual;
 
     if (p == NULL)
         return;
@@ -498,7 +489,7 @@ static void net_tg_send_transc_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p
 {
     struct fhost_tg_stream *stream = arg;
     int diff_time;
-    struct fhost_tg_time recv;
+    struct tg_time recv;
 
     if (p == NULL)
         return;
@@ -535,7 +526,7 @@ static void net_tg_send_transc_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p
  **/
 static net_al_if_t net_tg_get_netif(struct fhost_tg_stream *stream)
 {
-    return net_if_find_from_name("wl1");
+    return net_if_find_from_name_nolock("wl1");
 }
 
 /**
@@ -619,10 +610,12 @@ static int net_tg_pcb_config(struct udp_pcb *pcb, struct fhost_tg_stream *stream
 
     if(stream->prof.prof_id == FHOST_PROF_MCAST)
     {
-        if (stream->prof.direction == FHOST_TG_DIRECT_SEND)
+        if (stream->prof.direction == FHOST_TG_DIRECT_SEND) {
             ip4_set_default_multicast_netif(net_tg_get_netif(stream));
-        else if (net_tg_mcast_membership(stream, true))
+            udp_set_multicast_ttl(pcb, 1); //always set TTL to 1 for UDP multicast send
+        } else if (net_tg_mcast_membership(stream, true)) {
             return 1;
+        }
     }
 
     if (udp_connect(pcb, &rip, stream->prof.remote_port) != ERR_OK)
@@ -676,212 +669,6 @@ static struct udp_pcb *net_tg_init(struct fhost_tg_stream *stream, udp_recv_fn r
 }
 #endif // NX_TG
 
-/**
- ****************************************************************************************
- * @brief Configuration of PCB for ping process
- *
- * @param[in] pcb     Pointer to raw_pcb to which we send data
- * @param[in] stream  Pointer to ping stream which contains configuration information
- *
- * @return 0 on success and != 0 if error occurred.
- ****************************************************************************************
- **/
-static int net_ping_pcb_config(struct raw_pcb *pcb, struct fhost_ping_stream *stream)
-{
-    u32_t ip;
-    ip_addr_t rip;
-
-    if (raw_bind(pcb, IP_ADDR_ANY) != ERR_OK)
-    {
-        TRACE_APP(ERR, "[TG] Failed to bind RAW to 0.0.0.0");
-        return 1;
-    }
-
-    ip = (stream->prof).dst_ip;
-    IP4_ADDR(ip_2_ip4(&rip),  ip & 0xff, (ip >> 8) & 0xff,
-            (ip >> 16) & 0xff, (ip >> 24) & 0xff);
-
-    if (raw_connect(pcb, &rip) != ERR_OK)
-    {
-        TRACE_APP(ERR, "[TG] Failed to connect RAW socket to %pI4", TR_IP4(&rip));
-        return 1;
-    }
-
-    pcb->tos = stream->prof.tos;
-    return 0;
-}
-
-/**
- ****************************************************************************************
- * @brief Initialize ping process
- *
- * @param[in] stream     Pointer to ping stream which contains configuration information
- * @param[in] ping_recv  Callback function pointer used for @ref raw_recv
- *
- * @return pointer to raw_pcb configured on success and NULL if error occurred.
- ****************************************************************************************
- **/
-static struct raw_pcb *net_ping_init(struct fhost_ping_stream *stream,
-                                     raw_recv_fn ping_recv)
-{
-    struct raw_pcb *pcb;
-
-    LOCK_TCPIP_CORE();
-    pcb = raw_new(IP_PROTO_ICMP);
-    if (pcb == NULL)
-    {
-        TRACE_APP(ERR, "[TG] Failed to allocate RAW control structure");
-        UNLOCK_TCPIP_CORE();
-        return NULL;
-    }
-
-    if (net_ping_pcb_config(pcb, stream))
-    {
-        UNLOCK_TCPIP_CORE();
-        return NULL;
-    }
-
-    stream->arg = pcb;
-
-    raw_recv(pcb, ping_recv, stream);
-    UNLOCK_TCPIP_CORE();
-
-    return pcb;
-}
-
-/**
- ****************************************************************************************
- * @brief Callback function for raw_recv() of @ref net_ping_send
- *
- * This callback will be called when receiving a datagram from the pcb.
- *
- * @param[in] arg   User supplied argument (raw_pcb.recv_arg)
- * @param[in] pcb   The raw_pcb which received data
- * @param[in] p     The packet buffer that was received
- * @param[in] addr  The remote IP address from which the packet was received
- *
- * @return 1 if the packet was 'eaten' (aka. deleted),
- *         0 if the packet lives on
- * If returning 1, the callback is responsible for freeing the pbuf
- * if it's not used any more.
- ****************************************************************************************
- **/
-static u8_t net_ping_recv_cb(void *arg, struct raw_pcb *pcb,
-                             struct pbuf *p, ip_addr_t *addr)
-{
-    struct fhost_ping_stream *stream = arg;
-    struct icmp_echo_hdr *iecho;
-    size_t hdr_len = NET_TG_PING_HDR_LEN;
-    char *sec_p, *usec_p;
-    int diff_time;
-    struct fhost_tg_time send;
-
-    // Sanity check - If callback function called, then p should never be NULL
-    ASSERT_ERR(p != NULL);
-
-    // Adjusts the ->payload pointer so that IP header disappears in the pbuf payload.
-    if (pbuf_header(p, -PBUF_IP_HLEN) == 0)
-    {
-        int reply_num;
-
-        iecho = (struct icmp_echo_hdr *)p->payload;
-        reply_num = co_ntohs(iecho->seqno);
-
-        if ((iecho->id == NET_TG_PING_ID + stream->id) &&
-            (reply_num <= stream->ping_seq_num) &&
-            ip_addr_cmp(addr, &pcb->remote_ip))
-        {
-            get_time_SINCE_EPOCH(&stream->stats.last_msg.sec,
-                     &stream->stats.last_msg.usec);
-            // Get the timestamp in the received buffer
-            sec_p = (p->payload + hdr_len);
-            usec_p = (p->payload + hdr_len + 4);
-            memcpy(&send.sec, sec_p, 4);
-            memcpy(&send.usec, usec_p, 4);
-            // Convert network format to host format
-            send.sec = co_ntohl(send.sec);
-            send.usec = co_ntohl(send.usec);
-            // Calculate RTT as diff_time
-            diff_time = net_time_diff(&send, &stream->stats.last_msg);
-            // Sanity check - diff_time should never be negative,
-            // because we send before we receive the response
-            ASSERT_ERR(diff_time > 0);
-            // Print traces at IPC layer
-            printf("%d bytes from: %s: icmp_req=%d ttl=%d time=%d us\n",
-                  p->tot_len, ipaddr_ntoa(&pcb->remote_ip),
-                  reply_num, pcb->ttl, diff_time);
-
-            // Calculate the cumulative value of RTT
-            stream->stats.rt_time += diff_time;
-            stream->stats.rx_frames++;
-            stream->stats.rx_bytes += p->tot_len;
-            stream->ping_reply_num = reply_num;
-
-            pbuf_free(p);
-            return 1; // eat the packet
-        }
-        else
-        {   // Restore ->payload pointer position if this buffer is not
-            // the corresponding response
-            pbuf_header_force(p, PBUF_IP_HLEN);
-        }
-    }
-    return 0; // don't eat the packet
-}
-
-/**
- ****************************************************************************************
- * @brief Configure ICMP ECHO packet to be sent to the remote IP address, used for
- * @ref net_ping_send
- *
- * Here is the structure of ICMP ECHO packet :
- * @verbatim
-             | 8 bytes |    8 bytes     |            data_len           |
-             ************************************************************
-             |   hdr   |   timestamp    |             DATA              |
-             ************************************************************
-  @endverbatim
- * @param[in] iecho    Pointer to ICMP ECHO header
- * @param[in] len      Total length of packet to be sent
- * @param[in] stream   Pointer to ping stream which contains configuration information
- ****************************************************************************************
- **/
-static void net_ping_prepare_echo(struct icmp_echo_hdr *iecho, u16_t len,
-                                  struct fhost_ping_stream *stream)
-{
-    u32_t sec_nl, usec_nl;
-    size_t i;
-    size_t timestamp_len = NET_TG_PING_TIMESTAMP_LEN;
-    size_t hdr_len = NET_TG_PING_HDR_LEN;
-    // 8 bytes for size of timestamp
-    size_t data_len = len - hdr_len - timestamp_len;
-    char *timestamp = (char *)iecho + hdr_len;
-
-    ICMPH_TYPE_SET(iecho, ICMP_ECHO);
-    ICMPH_CODE_SET(iecho, 0);
-    iecho->chksum = 0;
-    iecho->id     = NET_TG_PING_ID + stream->id;
-    iecho->seqno  = co_htons(++(stream->ping_seq_num));
-
-    get_time_SINCE_EPOCH(&stream->stats.last_msg.sec, &stream->stats.last_msg.usec);
-    // Fill in the payload with timestamp
-    // Convert unsigned int of host format to network format
-    sec_nl = co_htonl(stream->stats.last_msg.sec);
-    usec_nl = co_htonl(stream->stats.last_msg.usec);
-    memcpy(&timestamp[0], &sec_nl, 4);
-    memcpy(&timestamp[4], &usec_nl, 4);
-
-    if (stream->stats.tx_frames == 0)
-        stream->stats.first_msg = stream->stats.last_msg;
-
-    /* fill the additional data buffer with some data */
-    for(i = 0; i < data_len; i++) {
-        ((char *)iecho)[hdr_len + timestamp_len + i] = (char)i;
-    }
-
-    iecho->chksum = inet_chksum(iecho, len);
-}
-
 #if NX_TG
 int net_tg_send_transc(struct fhost_tg_stream *stream)
 {
@@ -889,7 +676,7 @@ int net_tg_send_transc(struct fhost_tg_stream *stream)
     net_al_tx_t h = NULL;
     net_al_tx_t p = NULL;
     err_t err;
-    struct fhost_tg_time send, init;
+    struct tg_time send, init;
     u32_t pack_len = stream->prof.pksize;
     int duration;
     // current duration of TG sending process
@@ -937,7 +724,7 @@ int net_tg_send_transc(struct fhost_tg_stream *stream)
         ASSERT_ERR((h != NULL) && (p != NULL));
 
         pbuf_cat(h, p);
-        p->payload = net_udp_send_nocopy_buf;
+        ((struct pbuf *)p)->payload = net_udp_send_nocopy_buf;
 
         get_time_SINCE_EPOCH(&send.sec, &send.usec);
         // Store the timestamp of sending
@@ -987,7 +774,7 @@ int net_tg_send(struct fhost_tg_stream *stream)
     struct net_tg_send_buf_tag *buf_tag = NULL;
     int status = 0;
     err_t err;
-    struct fhost_tg_time before, after, actual, init;
+    struct tg_time before, after, actual, init;
     int diff_time;
     u32_t sleep_time = 0;
     u32_t throttled_rate = 0;
@@ -1061,7 +848,7 @@ int net_tg_send(struct fhost_tg_stream *stream)
         }
 
         pbuf_cat(h, p);
-        hdr = h->payload;
+        hdr = ((struct pbuf *)h)->payload;
 
         (stream->stats.counter_send)++;
 
@@ -1172,106 +959,3 @@ void net_tg_recv_stop(struct fhost_tg_stream *stream)
     UNLOCK_TCPIP_CORE();
 }
 #endif // NX_TG
-
-int net_ping_send(struct fhost_ping_stream *stream)
-{
-    struct raw_pcb * pcb = NULL;
-    inet_buf_tx_t *p = NULL;
-    struct icmp_echo_hdr *iecho;
-    // Duration unit : microseconds
-    int duration;
-    err_t err;
-    u32_t sleep_time = 0;
-    size_t pack_len;
-    int nb_skipped = 0;
-
-    // Set configuration information to default value if it's 0
-    if (stream->prof.pksize == 0 ||
-            stream->prof.pksize < NET_TG_PING_HDR_LEN + NET_TG_PING_TIMESTAMP_LEN)
-        pack_len = 100;
-    else
-        pack_len = stream->prof.pksize;
-
-    if (stream->prof.duration == 0)
-        duration = 30 * 1000000;
-    else
-        duration = stream->prof.duration * 1000000;
-
-    if (stream->prof.rate == 0)
-        stream->prof.rate = 1;
-
-    if (pack_len > NET_MAX_PING_LEN)
-    {
-        pack_len = NET_MAX_PING_LEN;
-    }
-    if (duration > NET_TG_MAX_PING_TIME)
-    {
-        duration = NET_TG_MAX_PING_TIME;
-    }
-
-    pcb = net_ping_init(stream, (raw_recv_fn)net_ping_recv_cb);
-    if (pcb == NULL)
-        return -1;
-
-    // Initialize the ping sequence number and RTT
-    stream->ping_seq_num = 0;
-    stream->ping_reply_num = 0;
-    stream->stats.rt_time = 0;
-
-    net_sleep_time(FHOST_PROF_PING, stream->prof.rate,
-                   &sleep_time, NULL);
-
-    while (stream->active && duration > 0)
-    {
-        p = pbuf_alloc(PBUF_IP, (u16_t)pack_len, PBUF_RAM);
-        if (p == NULL)
-        {
-            nb_skipped++;
-        }
-        else
-        {
-            iecho = (struct icmp_echo_hdr *)p->payload;
-            // Configure ICMP ECHO packet before sending it
-            net_ping_prepare_echo(iecho, (u16_t)pack_len, stream);
-
-            LOCK_TCPIP_CORE();
-            err = raw_send(pcb, p);
-            UNLOCK_TCPIP_CORE();
-
-            pbuf_free(p);
-
-            if (err == ERR_OK)
-            {
-                (stream->stats.tx_frames)++;
-                stream->stats.tx_bytes += pack_len;
-            }
-        }
-
-        // Update the remaining time
-        duration -= sleep_time;
-        rtos_task_suspend(sleep_time / 1000);
-    }
-
-    if (stream->stats.rt_time)
-    {
-        uint16_t missing_reply = stream->ping_seq_num - stream->ping_reply_num;
-        if (missing_reply)
-        {
-            // let's wait for missing reply, using average round trip delay.
-            int cur_rtt = stream->stats.rt_time / 1000;
-            cur_rtt = cur_rtt / stream->stats.rx_frames;
-            rtos_task_suspend(missing_reply * cur_rtt);
-        }
-        stream->stats.rt_time /= stream->stats.rx_frames;
-    }
-
-    stream->stats.time = net_time_diff(&stream->stats.first_msg,
-                                       &stream->stats.last_msg);
-
-    LOCK_TCPIP_CORE();
-    raw_remove(pcb);
-    UNLOCK_TCPIP_CORE();
-
-    return nb_skipped;
-}
-

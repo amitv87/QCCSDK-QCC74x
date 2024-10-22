@@ -96,12 +96,35 @@ static int at_dewkio_cmd(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int at_start_keepalive_cmd(int argc, const char **argv)
+{
+    int period;
+
+    AT_CMD_PARSE_NUMBER(0, &period);
+
+    printf("at_start_keepalive_cmd period:%ld\r\n", period);
+    int app_create_keepalive_timer(uint32_t periods);
+    app_create_keepalive_timer(period);
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_stop_keepalive_cmd(int argc, const char **argv)
+{
+    int app_delete_keepalive_timer(void);
+    app_delete_keepalive_timer();
+
+    return AT_RESULT_CODE_OK;
+}
+
 static const at_cmd_struct at_pwr_cmd[] = {
     {"+PWR", NULL, NULL, at_pwr_cmd_pwrmode, NULL, 1, 3},
     {"+SLWKDTIM", NULL, NULL, at_dtim_cmd, NULL, 1, 1},
     {"+SLWKIO", NULL, NULL, at_wkio_cmd, NULL, 2, 2},
     {"+DEWKIO", NULL, NULL, at_dewkio_cmd, NULL, 1, 1},
     {"+SLWKTIMER", NULL, NULL, at_wakeup_timer_cmd, NULL, 2, 2},
+    {"+START_KEEPALIVE", NULL, NULL, at_start_keepalive_cmd, NULL, 1, 1},
+    {"+STOP_KEEPALIVE", NULL, NULL, NULL, at_stop_keepalive_cmd, 0, 0},
 };
 
 bool at_pwr_cmd_regist(void)

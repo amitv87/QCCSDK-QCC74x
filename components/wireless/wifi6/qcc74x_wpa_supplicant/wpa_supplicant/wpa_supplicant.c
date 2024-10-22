@@ -69,13 +69,13 @@
 #include "ap/hostapd.h"
 #endif /* CONFIG_MESH */
 
-#ifdef CONFIG_EXTRA_WPA_SSID_FLAG
+#ifdef CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG
 #include <fhost_wpa.h>
-#endif /* CONFIG_EXTRA_WPA_SSID_FLAG */
+#endif /* CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG */
 
-#ifdef CONFIG_PMK_CACHE_IN_MGMR
+#ifdef CONFIG_QCC74x_PMK_CACHE_IN_MGMR
 #include <wifi_mgmr_pmk.h>
-#endif /* CONFIG_PMK_CACHE_IN_MGMR */
+#endif /* CONFIG_QCC74x_PMK_CACHE_IN_MGMR */
 
 const char *const wpa_supplicant_version =
 "wpa_supplicant v" VERSION_STR "\n"
@@ -1630,7 +1630,7 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
 		wpa_s->key_mgmt = WPA_KEY_MGMT_FT_SAE;
 		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using KEY_MGMT FT/SAE");
 	} else if (sel & WPA_KEY_MGMT_SAE) {
-#ifdef CONFIG_EXTRA_WPA_SSID_FLAG
+#ifdef CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG
         if ((ssid->qcc74x_flags & FHOST_WPA_SSID_PREFER_WPA2_TO_WPA3) &&
                 (sel & (WPA_KEY_MGMT_PSK_SHA256 | WPA_KEY_MGMT_PSK))) {
             if (sel & WPA_KEY_MGMT_PSK_SHA256) {
@@ -1642,12 +1642,12 @@ int wpa_supplicant_set_suites(struct wpa_supplicant *wpa_s,
                 wpa_dbg(wpa_s, MSG_DEBUG, "WPA: using KEY_MGMT WPA-PSK");
             }
         } else {
-#endif /* CONFIG_EXTRA_WPA_SSID_FLAG */
+#endif /* CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG */
 		wpa_s->key_mgmt = WPA_KEY_MGMT_SAE;
 		wpa_dbg(wpa_s, MSG_DEBUG, "RSN: using KEY_MGMT SAE");
-#ifdef CONFIG_EXTRA_WPA_SSID_FLAG
+#ifdef CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG
         }
-#endif /* CONFIG_EXTRA_WPA_SSID_FLAG */
+#endif /* CONFIG_QCC74x_EXTRA_WPA_SSID_FLAG */
 #endif /* CONFIG_SAE */
 #ifdef CONFIG_IEEE80211R
 	} else if (sel & WPA_KEY_MGMT_FT_PSK) {
@@ -3709,9 +3709,9 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
 	wpa_s->rsnxe_len = 0;
 	wpa_s->mscs_setup_done = false;
 
-#ifdef CONFIG_PMK_CACHE_IN_MGMR
+#ifdef CONFIG_QCC74x_PMK_CACHE_IN_MGMR
     wpa_sm_load_pmksa_cache_from_mgmr(wpa_s->wpa, bss->bssid);
-#endif /* CONFIG_PMK_CACHE_IN_MGMR */
+#endif /* CONFIG_QCC74x_PMK_CACHE_IN_MGMR */
 	wpa_ie = wpas_populate_assoc_ies(wpa_s, bss, ssid, &params, NULL);
 	if (!wpa_ie) {
 		wpas_connect_work_done(wpa_s);

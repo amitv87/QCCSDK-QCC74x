@@ -24,16 +24,39 @@ struct at_http_ctx {
     char url_buf[256];
 };
 
+struct at_https_config {
+#define AT_HTTPS_NOT_AUTH        0
+#define AT_HTTPS_SERVER_AUTH     1
+#define AT_HTTPS_CLIENT_AUTH     2
+#define AT_HTTPS_BOTH_AUTH       3
+    uint8_t https_auth_type;
+    char ca_file[32];
+    char cert_file[32];
+    char key_file[32];
+};
+
 static char *g_url = NULL;
 static uint32_t g_url_size = 0;
+static struct at_https_config g_https_cfg = {0};
 
 static err_t cb_altcp_recv_fn(void *arg, struct altcp_pcb *conn, struct pbuf *p, err_t err)
 {
-    //printf("%s\r\n", (char *)p->payload);
+    int len;
+    uint8_t *buf = malloc(p->tot_len + 2);
+    if (!buf) {
+        printf("malloc fail\r\n");
+        goto __end;
+    }
     altcp_recved(conn, p->tot_len);
     if (p->tot_len) {
-        AT_CMD_DATA_SEND(p->payload, p->tot_len);
+        len = pbuf_copy_partial(p, buf, p->tot_len, 0);
+        buf[len] = '\r';
+        buf[len + 1] = '\n';
+        AT_CMD_DATA_SEND(buf, len + 2);
     }
+
+__end: 
+    free(buf);
     pbuf_free(p);
     return 0;
 }
@@ -49,26 +72,43 @@ static void cb_httpc_result(void *arg, httpc_result_t httpc_result, u32_t rx_con
         at_response_string("\r\n+HTTPC:ERROR\r\n");
     }
     free(ctx->data);
+#if LWIP_ALTCP_TLS && LWIP_ALTCP_TLS_MBEDTLS 
+    if (ctx->settings.tls_config) {
+        altcp_tls_free_config(ctx->settings.tls_config);
+    }
+#endif
     free(ctx);
 }
 
 static err_t cb_httpc_headers_done_fn(httpc_state_t *connection, void *arg, struct pbuf *hdr, u16_t hdr_len, u32_t content_len)
 {
-    char buf[16];
+    int len, off = 0;
     struct at_http_ctx *ctx = (struct at_http_ctx *)arg;
+    uint8_t *buf;
 
     printf("[HEAD] hdr->tot_len is %u, hdr_len is %u, content_len is %lu\r\n", hdr->tot_len, hdr_len, content_len);
+
     printf((char *)hdr->payload);
+
+    len = hdr->tot_len + 16;
+    buf = malloc(len);
+    if (!buf) {
+        return ERR_MEM;
+    }
+
     if (ctx->settings.req_type == REQ_TYPE_HEAD) {
-        snprintf(buf, sizeof(buf), "+HTTPC:%d,", hdr_len);
-        AT_CMD_DATA_SEND(buf, strlen(buf));
+        off = snprintf(buf, len, "+HTTPC:%d,", hdr_len);
         if (hdr->tot_len) {
-            AT_CMD_DATA_SEND(hdr->payload, hdr->tot_len);
+            memcpy(buf + off, hdr->payload, hdr->tot_len);
+            buf[off + hdr->tot_len] = '\r';
+            buf[off + hdr->tot_len + 1] = '\n';
+            off = off + hdr->tot_len + 2; 
         }
     } else {
-        snprintf(buf, sizeof(buf), "+HTTPC:%d,", content_len);
-        AT_CMD_DATA_SEND(buf, strlen(buf));
+        off = snprintf(buf, len, "+HTTPC:%d,", content_len);
     }
+    AT_CMD_DATA_SEND(buf, off);
+    free(buf);
     return ERR_OK;
 }
 
@@ -98,8 +138,47 @@ static int at_httpc_request(struct at_http_ctx *ctx,
     } else if (0 == strncmp(url_buf, "https://", 8)) {
         port = 443;
         url = url_buf + 8;
-#if LWIP_ALTCP_TLS && LWIP_ALTCP_TLS_MBEDTLS
-        ctx->settings.tls_config = altcp_tls_create_config_client(NULL, 0);
+#if LWIP_ALTCP_TLS && LWIP_ALTCP_TLS_MBEDTLS 
+        uint8_t *ca_buf = NULL, *cert_buf = NULL, *privkey_buf = NULL;
+        uint32_t ca_len, cert_len, privkey_len;
+
+        if (g_https_cfg.https_auth_type == AT_HTTPS_NOT_AUTH) {
+
+            ctx->settings.tls_config = altcp_tls_create_config_client(NULL, 0);
+
+        } else if (g_https_cfg.https_auth_type == AT_HTTPS_CLIENT_AUTH) {
+
+            at_load_file(g_https_cfg.cert_file, &cert_buf, &cert_len);
+            at_load_file(g_https_cfg.key_file, &privkey_buf, &privkey_len);
+
+            ctx->settings.tls_config = altcp_tls_create_config_client_2wayauth(NULL, 0,
+                                                                               privkey_buf, privkey_len,
+                                                                               NULL, 0,
+                                                                               cert_buf, cert_len);
+
+            free(cert_buf);
+            free(privkey_buf);
+        } else if (g_https_cfg.https_auth_type == AT_HTTPS_SERVER_AUTH) {
+
+            at_load_file(g_https_cfg.ca_file, &ca_buf, &ca_len);
+            ctx->settings.tls_config = altcp_tls_create_config_client(ca_buf, ca_len);
+            free(ca_buf);
+
+        } else if (g_https_cfg.https_auth_type == AT_HTTPS_BOTH_AUTH) {
+
+            at_load_file(g_https_cfg.cert_file, &cert_buf, &cert_len);
+            at_load_file(g_https_cfg.key_file, &privkey_buf, &privkey_len);
+            at_load_file(g_https_cfg.ca_file, &ca_buf, &ca_len);
+
+            ctx->settings.tls_config = altcp_tls_create_config_client_2wayauth(ca_buf, ca_len,
+                                                                               privkey_buf, privkey_len,
+                                                                               NULL, 0,
+                                                                               cert_buf, cert_len);
+            free(cert_buf);
+            free(privkey_buf);
+            free(ca_buf);
+        }
+
 #endif
     } else {
         free(ctx);
@@ -142,6 +221,55 @@ static int at_httpc_request(struct at_http_ctx *ctx,
 
     free(host_name);
 
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_setup_cmd_httpsslcfg(int argc, const char **argv)
+{
+    int scheme;
+    char cert_file[32] = {0};
+    char key_file[32] = {0};
+    char ca_file[32] = {0};
+    int cert_file_valid = 0, key_file_valid = 0, ca_file_valid = 0;
+
+    AT_CMD_PARSE_NUMBER(0, &scheme);
+    AT_CMD_PARSE_OPT_STRING(1, cert_file, sizeof(cert_file), cert_file_valid);
+    AT_CMD_PARSE_OPT_STRING(2, key_file, sizeof(key_file), key_file_valid);
+    AT_CMD_PARSE_OPT_STRING(3, ca_file, sizeof(ca_file), ca_file_valid);
+
+    if (scheme == AT_HTTPS_NOT_AUTH) {
+        cert_file[0] = '\0';
+        key_file[0] = '\0';
+        ca_file[0] = '\0';
+    } else if (scheme == AT_HTTPS_SERVER_AUTH) {
+        if ((!ca_file_valid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        cert_file[0] = '\0';
+        key_file[0] = '\0';
+    } else if (scheme == AT_HTTPS_CLIENT_AUTH) {
+        if ((!key_file_valid) || (!cert_file_valid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+        ca_file[0] = '\0';
+    } else if (scheme == AT_HTTPS_BOTH_AUTH) {
+        if ((!key_file_valid) || (!cert_file_valid) || (!ca_file_valid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+    }
+    g_https_cfg.https_auth_type = scheme;
+
+    strlcpy(g_https_cfg.cert_file, cert_file, sizeof(g_https_cfg.cert_file));
+    strlcpy(g_https_cfg.key_file, key_file, sizeof(g_https_cfg.key_file));
+    strlcpy(g_https_cfg.ca_file, ca_file, sizeof(g_https_cfg.ca_file));
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_query_cmd_httpsslcfg(int argc, const char **argv)
+{
+    at_response_string("+HTTPSSLCFG:%d,\"%s\",\"%s\",\"%s\"\r\n", 
+            g_https_cfg.https_auth_type, g_https_cfg.cert_file, g_https_cfg.key_file, g_https_cfg.ca_file);
     return AT_RESULT_CODE_OK;
 }
 
@@ -193,7 +321,17 @@ static void cb_httpgetsize_result(void *arg, httpc_result_t httpc_result, u32_t 
     struct at_http_ctx *ctx = (struct at_http_ctx *)arg;
 
     printf("[DATA] Transfer finished err %d. rx_content_len is %lu httpc_result: %d\r\n", err, rx_content_len, httpc_result);
-    
+
+    if (err == 0) {
+        at_response_string("\r\n+HTTPC:OK\r\n");
+    } else {
+        at_response_string("\r\n+HTTPC:ERROR\r\n");
+    }
+#if LWIP_ALTCP_TLS && LWIP_ALTCP_TLS_MBEDTLS 
+    if (ctx->settings.tls_config) {
+        altcp_tls_free_config(ctx->settings.tls_config);
+    }
+#endif
     free(ctx);
 }
 
@@ -267,9 +405,7 @@ static int at_setup_cmd_httpgetsize(int argc, const char **argv)
 
 static void cb_httpcget_result(void *arg, httpc_result_t httpc_result, u32_t rx_content_len, u32_t srv_res, err_t err)
 {
-    struct at_http_ctx *ctx = (struct at_http_ctx *)arg;
-
-    free(ctx);
+    cb_httpgetsize_result(arg, httpc_result, rx_content_len, srv_res, err);
 }
 
 static err_t cb_httpcget_headers_done_fn(httpc_state_t *connection, void *arg, struct pbuf *hdr, u16_t hdr_len, u32_t content_len)
@@ -378,6 +514,7 @@ static int at_setup_cmd_httpcpost(int argc, const char **argv)
     while(recv_num < len) {
         recv_num += AT_CMD_DATA_RECV(ctx->data + recv_num, len - recv_num);
     }
+    at_response_string("Recv %d bytes\r\n", recv_num);
 
     if (len == recv_num) {
         ret = AT_RESULT_CODE_SEND_OK;
@@ -437,6 +574,8 @@ static int at_setup_cmd_httpcput(int argc, const char **argv)
         recv_num += AT_CMD_DATA_RECV(ctx->data + recv_num, len - recv_num);
     }
 
+    at_response_string("Recv %d bytes\r\n", recv_num);
+
     if (len == recv_num) {
         ret = AT_RESULT_CODE_SEND_OK;
     } else {
@@ -479,6 +618,7 @@ static int at_setup_cmd_httpcurlcfg(int argc, const char **argv)
     while(recv_num < len) {
         recv_num += AT_CMD_DATA_RECV(g_url + recv_num, len - recv_num);
     }
+    at_response_string("Recv %d bytes\r\n", recv_num);
     g_url_size = len;
 
     g_url[len] = '\0';
@@ -501,6 +641,7 @@ static const at_cmd_struct at_http_cmd[] = {
     {"+HTTPCPOST", NULL, NULL, at_setup_cmd_httpcpost, NULL, 2, 2},
     {"+HTTPCPUT", NULL, NULL, at_setup_cmd_httpcput, NULL, 3, 3},
     {"+HTTPURLCFG", NULL, at_query_cmd_httpcurlcfg, at_setup_cmd_httpcurlcfg, NULL, 1, 1},
+    {"+HTTPSSLCFG", NULL, at_query_cmd_httpsslcfg, at_setup_cmd_httpsslcfg, NULL, 1, 4},
 };
 
 bool at_http_cmd_regist(void)

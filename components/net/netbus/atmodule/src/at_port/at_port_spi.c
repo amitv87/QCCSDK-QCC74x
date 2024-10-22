@@ -73,8 +73,13 @@ int at_port_read_data(uint8_t*data, int len)
     nBytes = spisync_read(at_spisync, &m, 0);
 #if 0
     if (nBytes) {
-        printf("<---at_port_read_data reaturn :%d\r\n", nBytes);
+        printf("[AT_READ]:%d return %d-->", len, nBytes);
+        for (int i = 0; i < nBytes; i++) {
+            putchar(data[i]);
+        }
+        printf("\r\n");
     }
+    
 #endif
     if (nBytes <= 0) {
         return 0;
@@ -94,6 +99,7 @@ int at_port_write_data(uint8_t *data, int len)
         for (int i = 0; i < len; i++) {
             putchar(data[i]);
         }
+        //printf("\r\n");
     }
     if (at->fakeoutput) {
         return len;

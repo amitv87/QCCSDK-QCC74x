@@ -32,6 +32,7 @@
 #define WLAN_FW_TRAFFIC_LOSS                                     22
 #define WLAN_FW_SWITCH_CHANNEL_FAILURE                           23
 #define WLAN_FW_AUTH_OR_ASSOC_RESPONSE_CFM_FAILURE               24
+#define WLAN_FW_REASSOCIATE_STARING                              25
 
 /*--------------------------------------------------------------------*/
 /* AP Mode Status Codes - these codes are used in qcc74x fw actions      */
@@ -63,6 +64,7 @@ void qcc74x_tpc_power_table_get(int8_t *power_table);
  ****************************************************************************************
  */
 void qcc74x_sta_set_keepalive_period(uint8_t time_seconds);
+int qcc74x_wifi_sta_ps_active_ms(uint16_t active_ms);
 
 #ifdef CFG_QCC74x_WIFI_PS_ENABLE
 /**

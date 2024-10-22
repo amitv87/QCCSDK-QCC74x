@@ -351,11 +351,6 @@ exit_without_context_switch:
 freertos_risc_v_trap_handler:
     portcontextSAVE_CONTEXT_INTERNAL
 
-    load_x  t0, pTrapNetCounter
-    lw   t1, 0( t0 )
-    addi   t1, t1, 1
-    store_x t1, 0( t0 )
-
     csrr a0, mcause
     csrr a1, mepc
     li t0, 0x807FFFFF
@@ -393,8 +388,41 @@ handle_interrupt:
 
 application_interrupt_handler:
     //call freertos_risc_v_application_interrupt_handler
+#ifdef CONFIG_HIGH_ISR_STACK
+    csrr  t1, mcause
+    andi  t1, t1, 0x3FF
+    li t0, 78
+    bne t1, t0, low_level_irq
+high_level_irq:
+    load_x sp, xHighISRStackTop
     call portasmHANDLE_INTERRUPT
     j processed_source
+
+low_level_irq:
+    load_x sp, xISRStackTop
+
+    load_x  t3, pLowIrqContext
+    csrr t0, mintstatus
+    store_x t0, 1 * portWORD_SIZE( t3 )
+    csrr t0, mcause
+    store_x t0, 2 * portWORD_SIZE( t3 )
+    csrrs x0, mstatus, 8
+
+    ## open global irq, disable all low level irq
+    call portasmHANDLE_INTERRUPT
+
+    csrrc x0, mstatus, 8
+    load_x  t3, pLowIrqContext
+    load_x  t0, 2 * portWORD_SIZE( t3 )
+    csrw mcause, t0
+    load_x  t0, 1 * portWORD_SIZE( t3 )
+    csrw mintstatus, t0
+
+    j processed_source
+#else
+    call portasmHANDLE_INTERRUPT
+    j processed_source
+#endif
 
 handle_exception:
     /* a0 contains mcause. */
@@ -409,10 +437,5 @@ application_exception_handler:
     j processed_source                  /* No other exceptions handled yet. */
 
 processed_source:
-    load_x  t0, pTrapNetCounter
-    lw   t1, 0 ( t0 )
-    addi   t1, t1, -1
-    store_x t1, 0( t0 )
-
     portcontextRESTORE_CONTEXT
 /*-----------------------------------------------------------*/

@@ -6,19 +6,6 @@
 #include "qcc74x_sec_sha.h"
 #include "qcc74x_port_boot2.h"
 
-typedef struct
-{
-    uint8_t anti_rollback;
-    uint8_t x;
-    uint8_t y;
-    uint8_t z;
-    uint32_t name;
-    uint32_t build_time;
-    uint32_t commit_id;
-    uint32_t rsvd0;
-    uint32_t rsvd1;
-} qcc74xverinf_t;
-
 #define MFG_START_REQUEST_OFFSET HAL_BOOT2_MFG_START_REQUEST_OFFSET
 #define QCC74xSP_BOOT2_XIP_BASE      QCC74x_FLASH_XIP_BASE
 #define QCC74xSP_BOOT2_ROLLBACK

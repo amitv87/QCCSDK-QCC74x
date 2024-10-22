@@ -14,6 +14,9 @@
 #endif
 #include "ip/umac/src/ftm/ftm_task.h"
 #include "modules/dbg/src/dbg_task.h"
+#if NX_TWT
+#include "ip/umac/src/twt/twt_task.h"
+#endif
 
 
 #define struct_func_len(name)                                                   \
@@ -417,3 +420,40 @@ void mm_start_req_set_tx_timeout(void *pa, uint16_t array[], int len)
     struct_func_get_def(dbg_get_sys_stat_cfm, uint32_t, doze_time)
     struct_func_get_def(dbg_get_sys_stat_cfm, uint32_t, stats_time)
     struct_func_len(dbg_get_sys_stat_cfm)
+
+#if NX_TWT
+    struct_func_set_def(twt_setup_req, uint8_t, vif_idx);
+    struct_func_set_def(twt_setup_req, uint8_t, setup_type);
+void twt_setup_req_set_conf_flow_type(void *pa, uint8_t val) {
+    struct twt_setup_req *p = (struct twt_setup_req *)pa;
+    p->conf.flow_type = val; 
+};
+void twt_setup_req_set_conf_wake_int_exp(void *pa, uint8_t val) {
+    struct twt_setup_req *p = (struct twt_setup_req *)pa;
+    p->conf.wake_int_exp = val; 
+};
+void twt_setup_req_set_conf_wake_dur_uint(void *pa, bool val) {
+    struct twt_setup_req *p = (struct twt_setup_req *)pa;
+    p->conf.wake_dur_unit = val; 
+};
+void twt_setup_req_set_conf_min_twt_wake_dur(void *pa, uint8_t val) {
+    struct twt_setup_req *p = (struct twt_setup_req *)pa;
+    p->conf.min_twt_wake_dur = val; 
+};
+void twt_setup_req_set_conf_wake_int_mantissa(void *pa, uint16_t val) {
+    struct twt_setup_req *p = (struct twt_setup_req *)pa;
+    p->conf.wake_int_mantissa = val; 
+};
+    struct_func_len(twt_setup_req)
+
+    struct_func_get_def(twt_setup_cfm, uint8_t, status);
+
+    struct_func_set_def(twt_teardown_req, uint8_t, neg_type);
+    struct_func_set_def(twt_teardown_req, uint8_t, all_twt);
+    struct_func_set_def(twt_teardown_req, uint8_t, id);
+    struct_func_set_def(twt_teardown_req, uint8_t, vif_idx);
+    struct_func_len(twt_teardown_req)
+
+    struct_func_get_def(twt_teardown_cfm, uint8_t, status);
+
+#endif

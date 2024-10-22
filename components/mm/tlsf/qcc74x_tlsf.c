@@ -23,7 +23,12 @@
 
 #include "mem.h"
 #include "tlsf.h"
-#include "qcc74x_irq.h"
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    #include "FreeRTOS.h"
+    #include "task.h"
+#else
+    #include "qcc74x_irq.h"
+#endif
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -63,7 +68,12 @@ void *qcc74x_malloc(struct mem_heap_s *heap, size_t nbytes)
     void *ret = NULL;
     uintptr_t flag;
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    vTaskSuspendAll();
+    {
+#else
     flag = qcc74x_irq_save();
+#endif
 
     ret = tlsf_memalign(heap->priv, 32, nbytes);
     TLSF_MALLOC_ASSERT(heap, ret != NULL, nbytes);
@@ -72,7 +82,12 @@ void *qcc74x_malloc(struct mem_heap_s *heap, size_t nbytes)
         heap->free_bytes -= tlsf_alloc_overhead();
     }
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    }
+    ( void ) xTaskResumeAll();
+#else
     qcc74x_irq_restore(flag);
+#endif
 
     return ret;
 }
@@ -81,7 +96,13 @@ void qcc74x_free(struct mem_heap_s *heap, void *ptr)
 {
     uintptr_t flag;
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    vTaskSuspendAll();
+    {
+#else
     flag = qcc74x_irq_save();
+#endif
+
     if (ptr) {
         heap->free_bytes += tlsf_block_size(ptr);
         heap->free_bytes += tlsf_alloc_overhead();
@@ -89,7 +110,12 @@ void qcc74x_free(struct mem_heap_s *heap, void *ptr)
 
     tlsf_free(heap->priv, ptr);
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    }
+    ( void ) xTaskResumeAll();
+#else
     qcc74x_irq_restore(flag);
+#endif
 }
 
 void *qcc74x_realloc(struct mem_heap_s *heap, void *ptr, size_t nbytes)
@@ -97,7 +123,12 @@ void *qcc74x_realloc(struct mem_heap_s *heap, void *ptr, size_t nbytes)
     void *ret = NULL;
     uintptr_t flag;
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    vTaskSuspendAll();
+    {
+#else
     flag = qcc74x_irq_save();
+#endif
 
     size_t previous_block_size = tlsf_block_size(ptr);
 
@@ -108,7 +139,12 @@ void *qcc74x_realloc(struct mem_heap_s *heap, void *ptr, size_t nbytes)
         heap->free_bytes -= tlsf_block_size(ptr);
     }
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    }
+    ( void ) xTaskResumeAll();
+#else
     qcc74x_irq_restore(flag);
+#endif
 
     return ret;
 }
@@ -119,7 +155,12 @@ void *qcc74x_calloc(struct mem_heap_s *heap, size_t count, size_t size)
     size_t total = count * size;
     uintptr_t flag;
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    vTaskSuspendAll();
+    {
+#else
     flag = qcc74x_irq_save();
+#endif
 
     if (count > 0 && size > 0) {
         if (count <= (SIZE_MAX / size)) {
@@ -136,7 +177,12 @@ void *qcc74x_calloc(struct mem_heap_s *heap, size_t count, size_t size)
         }
     }
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    }
+    ( void ) xTaskResumeAll();
+#else
     qcc74x_irq_restore(flag);
+#endif
 
     return ptr;
 }
@@ -146,7 +192,12 @@ void *qcc74x_malloc_align(struct mem_heap_s *heap, size_t align, size_t size)
     void *ret = NULL;
     uintptr_t flag;
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    vTaskSuspendAll();
+    {
+#else
     flag = qcc74x_irq_save();
+#endif
 
     ret = tlsf_memalign(heap->priv, align, size);
     TLSF_MALLOC_ASSERT(heap, ret != NULL, size);
@@ -155,7 +206,12 @@ void *qcc74x_malloc_align(struct mem_heap_s *heap, size_t align, size_t size)
         heap->free_bytes -= tlsf_alloc_overhead();
     }
 
+#ifdef CONFIG_MM_SUSPEND_ALL_LOCKER
+    }
+    ( void ) xTaskResumeAll();
+#else
     qcc74x_irq_restore(flag);
+#endif
 
     return ret;
 }

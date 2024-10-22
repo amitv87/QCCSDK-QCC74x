@@ -773,15 +773,15 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
         if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT && at_net_config->wips_enable) {
             if (at_net_config->ipd_info == NET_IPDINFO_DISABLE_IPPORT) {
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d"), length);
+                    at_write(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d"), length);
                 else
-                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,%d"), id, length);
+                    at_write(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,%d"), id, length);
             } else {
 
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,\"%s\",%d"), length, ipaddr_ntoa(ipaddr), port);
+                    at_write(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,\"%s\",%d"), length, ipaddr_ntoa(ipaddr), port);
                 else
-                    at_response_string(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,%d,\"%s\",%d"), id, length, ipaddr_ntoa(ipaddr), port);
+                    at_write(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,%d,\"%s\",%d"), id, length, ipaddr_ntoa(ipaddr), port);
             }
             if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
                 xStreamBufferSend(g_at_client_handle[id].recv_buf, buffer, length, portMAX_DELAY);
@@ -790,6 +790,8 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
                 length += 2;
                 AT_CMD_DATA_SEND(buffer, length);
             }
+        } else if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
+            xStreamBufferSend(g_at_client_handle[id].recv_buf, buffer, length, portMAX_DELAY);
         } else {
             if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT) {
                 memcpy(buffer + length, "\r\n", 2);
@@ -1964,14 +1966,14 @@ int at_string_host_to_ip(char *host, ip_addr_t *ip)
 
 int at_net_dns_load(void)
 {
-    if (!ip_addr_isany(&at_net_config->dns[0])) {
-        dns_setserver(0, &at_net_config->dns[0]);
+    if (!ip_addr_isany(&at_net_config->dns.dns[0])) {
+        dns_setserver(0, &at_net_config->dns.dns[0]);
     }
-    if (!ip_addr_isany(&at_net_config->dns[1])) {
-        dns_setserver(1, &at_net_config->dns[1]);
+    if (!ip_addr_isany(&at_net_config->dns.dns[1])) {
+        dns_setserver(1, &at_net_config->dns.dns[1]);
     }
-    if (!ip_addr_isany(&at_net_config->dns[2])) {
-        dns_setserver(2, &at_net_config->dns[2]);
+    if (!ip_addr_isany(&at_net_config->dns.dns[2])) {
+        dns_setserver(2, &at_net_config->dns.dns[2]);
     }
     return 0;
 }

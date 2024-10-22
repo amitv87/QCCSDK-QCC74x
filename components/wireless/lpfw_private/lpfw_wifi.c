@@ -203,10 +203,8 @@ ATTR_ROM_WIFI_SECTION void lpfw_wifi_clk_gate(void)
 
 ATTR_ROM_WIFI_SECTION int lpfw_bcn_timestamp_check(uint64_t beacon_timestamp_now_us, uint64_t rtc_timestamp_now_us)
 {
-    uint64_t rtc_timestamp_last_us;
-    uint64_t beacon_timestamp_last_us;
-    uint64_t rtc_us, beacon_us;
-    int32_t diff_us;
+    uint64_t rtc_timestamp_last_us, beacon_timestamp_last_us;
+    int64_t rtc_us, beacon_us;
 
     /* get last timestamp */
     rtc_timestamp_last_us = iot2lp_para->last_beacon_stamp_rtc_us;
@@ -229,22 +227,6 @@ ATTR_ROM_WIFI_SECTION int lpfw_bcn_timestamp_check(uint64_t beacon_timestamp_now
     if ( beacon_us > 60 * 1000 * 1000 || rtc_us > 60 * 1000 * 1000) {
         /* The time span is too large. Abort */
         return -2;
-    }
-
-    /* Time difference */
-    if(rtc_us > beacon_us) {
-        diff_us = rtc_us - beacon_us;
-    } else {
-        diff_us = beacon_us - rtc_us;
-    }
-
-    if (diff_us > 10 * 1000 ) {
-        /* The error is too large. Abort */
-        return -3;
-    }
-
-    if((int64_t)diff_us * (1000 * 1000) / rtc_us > 10000){
-        return -4;
     }
 
     return 0;

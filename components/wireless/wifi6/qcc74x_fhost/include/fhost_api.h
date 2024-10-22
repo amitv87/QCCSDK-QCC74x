@@ -582,6 +582,11 @@ struct fhost_vif_ap_cfg
      * Basic rates for MESH
      */
     int basic_rates[MAC_RATESET_LEN];
+
+    /**
+     * Additional vendor specific elements for Beacon and Probe Response frames
+     */
+    char *ap_vendor_elements;
 };
 
 /**

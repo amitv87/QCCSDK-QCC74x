@@ -29,6 +29,7 @@
 #include "export/common/co_int.h"
 #include "export/common/co_bool.h"
 #include "rtos_al.h"
+#include "net_tg_al.h"
 
 /*
  * DEFINITIONS
@@ -37,7 +38,7 @@
 /// Number of traffic stream
 #define FHOST_TG_MAX_TRAFFIC_STREAMS 4
 /// Number of TG send buffers (credits)
-#define FHOST_TG_SEND_BUF_CNT        8
+#define FHOST_TG_SEND_BUF_CNT        16 
 
 /// Traffic sending direction
 #define FHOST_TG_DIRECT_SEND                1
@@ -70,15 +71,6 @@ enum profile_id
  * TYPE DEFINITIONS
  ****************************************************************************************
  */
-/// TG Time structure used for TG send process
-struct fhost_tg_time
-{
-    /// second
-    uint32_t sec;
-    /// microsecond
-    uint32_t usec;
-};
-
 /// TG profile
 struct fhost_tg_profile
 {
@@ -151,7 +143,7 @@ struct fhost_tg_stream
     /// Credits for TG sending buffer
     int8_t credits;
     /// Timestamp used for transaction
-    struct fhost_tg_time transc_timestamp;
+    struct tg_time transc_timestamp;
     /// TG profile
     struct fhost_tg_profile prof;
     /// TG statistics
@@ -263,10 +255,10 @@ struct fhost_ping_stats
     /// Round trip delay (in us) of ping command
     uint32_t rt_time;
     /// Epoch time of the first ping request sent
-    struct fhost_tg_time first_msg;
+    struct tg_time first_msg;
     /// Epoch time of the last ping reply received or last request sent
     /// (whichever occurs last)
-    struct fhost_tg_time last_msg;
+    struct tg_time last_msg;
     /// Duration (in us) between first request and last reply
     uint32_t time;
 };
@@ -289,7 +281,7 @@ struct fhost_ping_stream
     /// Handle of ping send task (not used yet)
     rtos_task_handle ping_handle;
     /// Ping timestamp
-    struct fhost_tg_time ping_timestamp;
+    struct tg_time ping_timestamp;
     /// Ping profile
     struct fhost_ping_profile prof;
     /// Ping statistics

@@ -59,8 +59,21 @@ extern const int fhost_ipc_priority;
 extern const int fhost_iperf_priority;
 /// Priority of the CONNECT task
 extern const int fhost_connect_priority;
+/// Priority of the tg task
+extern const int fhost_tg_priority;
+/// Priority of the ping task
+extern const int fhost_ping_priority;
 
 /// Definitions of the different FHOST task stack size requirements
+#define WPA_SMALL_STACK_SIZE   1408
+#define WPA_NORMAL_STACK_SIZE  1584
+
+#ifdef WPA_SUPPLICANT_USE_NORMAL_STACK
+#define WPA_SUPPLICANT_STACK_SIZE   WPA_NORMAL_STACK_SIZE 
+#else
+#define WPA_SUPPLICANT_STACK_SIZE   WPA_SMALL_STACK_SIZE 
+#endif
+
 enum
 {
     /// WiFi task stack size
@@ -74,7 +87,7 @@ enum
     /// TX task stack size
     FHOST_TX_STACK_SIZE = 384,
     /// WPA task stack size
-    FHOST_WPA_STACK_SIZE = 1408,
+    FHOST_WPA_STACK_SIZE = WPA_SUPPLICANT_STACK_SIZE,
     /// IPC task stack size
     FHOST_IPC_STACK_SIZE = 512,
     /// TG send stack size
