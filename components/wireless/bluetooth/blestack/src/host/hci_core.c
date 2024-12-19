@@ -4113,8 +4113,15 @@ int bt_le_scan_update(bool fast_scan)
 		bt_conn_unref(conn);
 
 		if (fast_scan) {
+			#if defined(QCC74x_BLE_SUPPORT_CUSTOMIZED_SCAN_PARAMERS_IN_GENERAL_CONN_ESTABLISH)
+			extern u16_t scan_intvl_in_general_conn_est;
+			extern u16_t scan_window_in_general_conn_est;
+			interval = scan_intvl_in_general_conn_est;
+			window = scan_window_in_general_conn_est;
+			#else
 			interval = BT_GAP_SCAN_FAST_INTERVAL;
 			window = BT_GAP_SCAN_FAST_WINDOW;
+			#endif
 		} else {
 			interval = CONFIG_BT_BACKGROUND_SCAN_INTERVAL;
 			window = CONFIG_BT_BACKGROUND_SCAN_WINDOW;

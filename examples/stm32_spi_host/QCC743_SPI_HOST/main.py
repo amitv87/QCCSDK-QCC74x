@@ -95,11 +95,11 @@ def udp_sender(addr, server_socket, clients):
 def print_stats():
     while True:
         global tcp_data_received, udp_data_received, tcp_data_send, udp_data_send, udp_packets_received
-        tcp_rx_bandwidth = (tcp_data_received * 8) / (1024 * 1024)  # Convert to Mbps
-        udp_rx_bandwidth = (udp_data_received * 8) / (1024 * 1024)  # Convert to Mbps
+        tcp_rx_bandwidth = (tcp_data_received * 8) / (1000 * 1000)  # Convert to Mbps
+        udp_rx_bandwidth = (udp_data_received * 8) / (1000 * 1000)  # Convert to Mbps
         
-        tcp_tx_bandwidth = (tcp_data_send * 8) / (1024 * 1024)  # Convert to Mbps
-        udp_tx_bandwidth = (udp_data_send * 8) / (1024 * 1024)  # Convert to Mbps
+        tcp_tx_bandwidth = (tcp_data_send * 8) / (1000 * 1000)  # Convert to Mbps
+        udp_tx_bandwidth = (udp_data_send * 8) / (1000 * 1000)  # Convert to Mbps
         udp_packet_rate = udp_packets_received
         print(f"TCP_RX:{tcp_rx_bandwidth:.2f}Mbps TCP_TX:{tcp_tx_bandwidth:.2f}Mbps, UDP_RX:{udp_rx_bandwidth:.2f}Mbps UDP_TX: {udp_tx_bandwidth:.2f}Mbps")
         tcp_data_received = 0

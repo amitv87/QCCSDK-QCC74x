@@ -7,10 +7,30 @@
 #define QCC74X_COMMON_UINT96_BIT_LEN               (96)
 #define QCC74X_COMMON_UINT128_BIT_LEN              (128)
 
-#define ANTI_ROLLBACK_ENABLE_OFFSET  (0x7C)
-#define ANTI_ROLLBACK_ENABLE_MASK    (0x01)
-#define ANTI_ROLLBACK_ENABLE_POS     (12)
-#define ANTI_ROLLBACK_VERSION_OFFSET (0x180)
+#define ANTI_ROLLBACK_ENABLE_OFFSET        (0x7C)
+#define ANTI_ROLLBACK_ENABLE_MASK          (0x01)
+#define ANTI_ROLLBACK_ENABLE_POS           (12)
+#define ANTI_ROLLBACK_BOOT2_VERSION_OFFSET (0x170)
+#define ANTI_ROLLBACK_APP_VERSION_OFFSET   (0x180)
+
+#if !defined(CONFIG_BOOT2)
+#define COMPILE_TIME __DATE__ " " __TIME__
+const char ver_name[4] __attribute__ ((section(".verinfo"))) = "app";
+const char git_commit[41] __attribute__ ((section(".verinfo"))) = "";
+const char time_info[30] __attribute__ ((section(".verinfo"))) = COMPILE_TIME;
+
+const qcc74xverinf_t app_ver __attribute__ ((section(".qcc74xverinf"))) = {
+    .anti_rollback = APP_ANTI_ROLLBACK,
+    .x = APP_VER_X,
+    .y = APP_VER_Y,
+    .z = APP_VER_Z,
+    .name = (uint32_t)ver_name,
+    .build_time = (uint32_t)time_info,
+    .commit_id = (uint32_t)git_commit,
+    .rsvd0 = 0,
+    .rsvd1 = 0,
+};
+#endif
 
 __WEAK void *ATTR_TCM_SECTION arch_memcpy(void *dst, const void *src, uint32_t n)
 {
@@ -377,7 +397,7 @@ __WEAK int32_t qcc74x_get_app_version_from_efuse(uint8_t *version)
     uint32_t tmpVal;
     qcc74x_ef_ctrl_read_direct(NULL, ANTI_ROLLBACK_ENABLE_OFFSET, &tmpVal, 1, 1);
     /* get ef_data_0_lock[12] */
-    otp_ef_boot2_anti_rollback_en = ((tmpVal >> ANTI_ROLLBACK_ENABLE_POS) & 0x1);
+    otp_ef_boot2_anti_rollback_en = ((tmpVal >> ANTI_ROLLBACK_ENABLE_POS) & ANTI_ROLLBACK_ENABLE_MASK);
 
     if(0 == otp_ef_boot2_anti_rollback_en){
         return 1;
@@ -385,7 +405,7 @@ __WEAK int32_t qcc74x_get_app_version_from_efuse(uint8_t *version)
 
     if(otp_ef_boot2_anti_rollback_en){
         /* read efuse 0x180~0X1a0 */
-        qcc74x_ef_ctrl_read_direct(NULL, ANTI_ROLLBACK_VERSION_OFFSET, value, sizeof(value)/4, 1);
+        qcc74x_ef_ctrl_read_direct(NULL, ANTI_ROLLBACK_APP_VERSION_OFFSET, value, sizeof(value)/4, 1);
     }
 
     /* get real version from efuse */
@@ -441,8 +461,10 @@ __WEAK int32_t qcc74x_set_app_version_to_efuse(uint8_t version)
         return 1;
     }
 
-    if(version_old >= version) {
+    if (version_old > version) {
         return 1;
+    } else if (version_old == version) {
+        return 0;
     }
 
     if (version <= QCC74X_COMMON_UINT32_BIT_LEN) {
@@ -461,7 +483,90 @@ __WEAK int32_t qcc74x_set_app_version_to_efuse(uint8_t version)
     value[3] = value[7] = version_high_high;
 
     /* write efuse 0x180~0x1a0 */
-    qcc74x_ef_ctrl_write_direct(NULL, ANTI_ROLLBACK_VERSION_OFFSET, value, sizeof(value)/4, 1);
+    qcc74x_ef_ctrl_write_direct(NULL, ANTI_ROLLBACK_APP_VERSION_OFFSET, value, sizeof(value)/4, 1);
+
+    return 0;
+}
+
+
+__WEAK int32_t qcc74x_get_boot2_version_from_efuse(uint8_t *version)
+{
+    uint32_t value[4];
+    uint32_t version_high = 0;
+    uint32_t version_low = 0;
+    uint32_t otp_ef_boot2_anti_rollback_en = 0;
+    uint32_t tmpVal;
+
+    if (NULL == version) {
+        return 1;
+    }
+
+    qcc74x_ef_ctrl_read_direct(NULL, ANTI_ROLLBACK_ENABLE_OFFSET, &tmpVal, 1, 1);
+    /* get anti-rollback enable bit */
+    otp_ef_boot2_anti_rollback_en = ((tmpVal >> ANTI_ROLLBACK_ENABLE_POS) & ANTI_ROLLBACK_ENABLE_MASK);
+
+    if (0 == otp_ef_boot2_anti_rollback_en) {
+        return 1;
+    }
+
+    /* read efuse value */
+    qcc74x_ef_ctrl_read_direct(NULL, ANTI_ROLLBACK_BOOT2_VERSION_OFFSET, value, sizeof(value) / 4, 1);
+
+    /* get real version from efuse */
+    version_low = value[0] | value[2];
+    version_high = value[1] | value[3];
+
+    /* version_real[63:32] case */
+    if (version_high) {
+        *version = QCC74X_COMMON_UINT64_BIT_LEN - __builtin_clz(version_high);
+        return 0;
+    }
+
+    /* version_real[31:0] case */
+    if (version_low) {
+        *version = QCC74X_COMMON_UINT32_BIT_LEN - __builtin_clz(version_low);
+        return 0;
+    }
+
+    *version = 0;
+    return 0;
+
+}
+
+__WEAK int32_t qcc74x_set_boot2_version_to_efuse(uint8_t version)
+{
+    uint8_t version_old;
+    uint32_t tmpVal;
+    uint32_t value[4];
+    uint32_t version_low = 0;
+    uint32_t version_high = 0;
+
+    qcc74x_ef_ctrl_read_direct(NULL, ANTI_ROLLBACK_ENABLE_OFFSET, &tmpVal, 1, 1);
+    /* Set anti-rollback enable bit */
+    tmpVal |= (1 << ANTI_ROLLBACK_ENABLE_POS);
+    qcc74x_ef_ctrl_write_direct(NULL, ANTI_ROLLBACK_ENABLE_OFFSET, &tmpVal, 0x1, 1);
+
+    if (qcc74x_get_boot2_version_from_efuse(&version_old) != 0) {
+        return 1;
+    }
+
+    if (version_old > version) {
+        return 1;
+    } else if (version_old == version) {
+        return 0;
+    }
+
+    if (version <= QCC74X_COMMON_UINT32_BIT_LEN) {
+        version_low = (1 << (version - 1));
+    } else if (version <= QCC74X_COMMON_UINT64_BIT_LEN) {
+        version_high = (1 << (version - QCC74X_COMMON_UINT32_BIT_LEN - 1));
+    }
+
+    value[0] = value[2] = version_low;
+    value[1] = value[3] = version_high;
+
+    /* write efuse value */
+    qcc74x_ef_ctrl_write_direct(NULL, ANTI_ROLLBACK_BOOT2_VERSION_OFFSET, value, sizeof(value) / 4, 1);
 
     return 0;
 }

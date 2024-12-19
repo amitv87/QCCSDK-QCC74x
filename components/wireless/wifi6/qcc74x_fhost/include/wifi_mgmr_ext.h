@@ -159,6 +159,30 @@ typedef struct wifi_mgmr_raw_send_params {
     uint8_t channel;
 } wifi_mgmr_raw_send_params_t;
 
+typedef void (*cb_adhoc_tx_cfm)(void *, uint32_t);
+typedef struct wifi_mgmr_adhoc_pkt_params {
+    // Ethernet frame
+    void *eth_frame;
+    // length of the packet to send
+    uint32_t len;
+    // SSID
+    char *ssid;
+    // RA
+    struct mac_addr *ra;
+    // TA
+    struct mac_addr *ta;
+} wifi_mgmr_adhoc_pkt_params_t;
+
+typedef struct wifi_mgmr_adhoc_start_params {
+    // channel for ad-hoc mode
+    uint8_t channel;
+    // cb func for rx
+    void *cb;
+    void *cb_arg;
+    // cb func for tx confirmtion
+    void *cb_tx_cfm;
+} wifi_mgmr_adhoc_start_params_t;
+
 /// ap start params
 typedef struct wifi_mgmr_ap_params {
     /// must be setted
@@ -215,6 +239,34 @@ struct qcc74x_frame_info
      * Received signal strength (in dBm)
      */
     int8_t rssi;
+    /**
+     * Received to ds
+     */
+    bool tods;
+    /**
+     * Received from ds
+     */
+    bool fromds;
+    /**
+     * Received rate_idx
+     */
+    int rate_idx;
+    /**
+     * Received address
+     */
+    struct mac_addr *ra;
+    /**
+     * Transmitting address
+     */
+    struct mac_addr *ta;
+    /**
+     *  Ethernet frame
+     */
+    uint8_t *eth_frame;
+    /**
+     *  Ethernet frame length
+     */
+    uint16_t eth_frame_length;
     /**
      * Frame payload. Can be NULL if monitor mode is started with @p uf parameter set to
      * true. In this case all other fields are still valid.
@@ -975,3 +1027,100 @@ void wifi_mgmr_coex_enable(bool en);
  *  Others is Failed
  */
 int wifi_mgmr_set_ht40_enable(uint8_t value);
+
+/**
+ * wifi_mgmr_adhoc_start
+ * Enable Ad-hoc mode
+ */
+int wifi_mgmr_adhoc_start(const wifi_mgmr_adhoc_start_params_t *config);
+/**
+ * wifi_mgmr_adhoc_stop
+ * Disable Ad-hoc mode
+ */
+int wifi_mgmr_adhoc_stop();
+
+/**
+ * wifi_mgmr_set_tx_queue_params
+ * Set CWmin, CWmax, and AIFS for each Tx Queue
+ */
+int wifi_mgmr_set_tx_queue_params(int queue, int aifs, int cw_min,
+                           int cw_max, int burst_time);
+/**
+ * wifi_mgmr_set_tx_queue_params
+ * Get CWmin, CWmax, and AIFS for each Tx Queue
+ */
+int wifi_mgmr_get_tx_queue_params(uint8_t queue, uint8_t *aifsn, uint16_t *cwmin, uint16_t *cwmax);
+
+/**
+ * wifi_mgmr_get_remaining_tx
+ * Get the number of frames remaining in each Tx queue.
+ */
+int wifi_mgmr_get_remaining_tx(uint8_t *tx0_cnt, uint8_t *tx1_cnt, uint8_t *tx2_cnt, uint8_t *tx3_cnt);
+
+/**
+ * wifi_mgmr_adhoc_set_rate
+ * Set tx rate
+ */
+int8_t wifi_mgmr_adhoc_set_rate(uint8_t rate);
+/**
+ * wifi_mgmr_adhoc_get_rate
+ * Get tx rate
+ */
+uint8_t wifi_mgmr_adhoc_get_rate();
+
+/**
+ * wifi_mgmr_adoc_set_rts_thrshold
+ * Set/ RTS threshold
+ */
+int8_t wifi_mgmr_adhoc_set_rts_thrshold(uint8_t rts_thrshold);
+/**
+ * wifi_mgmr_adoc_get_rts_thrshold
+ * Get RTS threshold
+ */
+uint8_t wifi_mgmr_adhoc_get_rts_thrshold();
+
+/**
+ * wifi_mgmr_adoc_set_tx_power
+ * Set Tx power
+ */
+int8_t wifi_mgmr_adhoc_set_tx_power(int8_t tx_power);
+
+/**
+ * wifi_mgmr_adoc_get_tx_power
+ * Get Tx power
+ */
+int8_t wifi_mgmr_adhoc_get_tx_power();
+
+/**
+ * wifi_mgmr_adoc_set_retry_limit
+ * Set retry limit
+ */
+int8_t wifi_mgmr_adhoc_set_retry_limit(uint8_t retry_limit);
+
+/**
+ * wifi_mgmr_adoc_get_retry_limit
+ * Get retry limit
+ */
+uint8_t wifi_mgmr_adhoc_get_retry_limit();
+
+/**
+ * wifi_mgmr_adhoc_get_channel
+ * Get channel of ad-hoc mode
+ */
+uint8_t wifi_mgmr_adhoc_get_channel();
+
+/**
+ * wifi_mgmr_adhoc_pkt_send
+ * Send packets for testing
+ */
+int wifi_mgmr_adhoc_pkt_send(const wifi_mgmr_adhoc_pkt_params_t *config);
+/**
+ * wifi_mgmr_adhoc_start
+ * Start adhoc mode
+ */
+int wifi_mgmr_adhoc_start(const wifi_mgmr_adhoc_start_params_t *config);
+/**
+ * wifi_mgmr_adhoc_stop
+ * Stop adhoc mode
+ */
+int wifi_mgmr_adhoc_stop(void);

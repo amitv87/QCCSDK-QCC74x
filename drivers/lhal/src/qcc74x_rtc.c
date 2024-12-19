@@ -368,3 +368,14 @@ void qcc74x_rtc_get_utc_time(struct qcc74x_tm *time)
     time_stamp_ms += __mktime((struct qcc74x_tm *)&g_rtc_tm);
     __gmtime_r((const time_t *)&time_stamp_ms, time);
 }
+
+uint64_t qcc74x_rtc_get_utc_timestamp(void)
+{
+    uint64_t time_stamp_ms;
+
+    time_stamp_ms = qcc74x_rtc_get_delta_time_ms(s_rtc_ref_cnt);
+    time_stamp_ms = time_stamp_ms / 1000;
+    time_stamp_ms += __mktime((struct bflb_tm *)&g_rtc_tm);
+
+    return time_stamp_ms;
+}

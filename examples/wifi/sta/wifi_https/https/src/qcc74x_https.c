@@ -16,6 +16,7 @@
 
 #define DBG_TAG "HTTP/S"
 #include "log.h"
+#include "cJSON.h"
 
 void *memmem(const void *haystack, size_t n, const void *needle, size_t m);
 
@@ -238,9 +239,9 @@ void test_0(void)
 
 static void test_1(void)
 {
-    const char *host = "www.baidu.com";
-    const uint8_t send_buf[] = "GET / HTTP/1.1\r\n"
-                               "Host: www.baidu.com\r\n"
+    const char *host = "www.ipinfo.io";
+    const uint8_t send_buf[] = "GET /8.8.4.4 HTTP/1.1\r\n"
+                               "Host: www.ipinfo.io\r\n"
                                "User-Agent: curl/7.58.0\r\n"
                                "accept: application/json\r\n"
                                "\r\n";
@@ -263,8 +264,13 @@ static void test_1(void)
 
     LOG_I("total time:%d ms\r\n", (stop_time - start_time));
     LOG_I("test_1: status_code %d, resp_len %d\r\n", status_code, resp_len);
-    buf[resp_len] = '\0';
-    LOG_I("resp body: %s\r\n", buf);
+    buf[resp_len + 1] = '\0';
+    printf("resp body: %s\r\n", buf);
+    cJSON *root = cJSON_Parse(buf);
+    cJSON *item = cJSON_GetObjectItem(root, "ip");
+    printf("parse json get ip: %s \r\n", cJSON_GetStringValue(item));
+    cJSON *item1 = cJSON_GetObjectItem(root, "city");
+    printf("parse json get city: %s \r\n", cJSON_GetStringValue(item1));
 
     free(buf);
 }

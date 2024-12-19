@@ -1,4 +1,22 @@
 # Changes
+## 2024-11-18
+1.[QCC743]Fix smp timeout issue in smp transport key distribution over the BR/EDR transport because the local device doesn't send id key while it indicates id key distribution.
+
+## 2024-10-31
+1.Support customized scan interval and scan window in scanning procedure of general connection establishment.
+
+## 2024-10-23
+1. [blestack] Fixed CLI Command parameter format incorrected.
+2. [blestack] Report compilation  error when the number of acl tx buffer doesn't meet required threshold in blestack.
+
+## 2024-10-22
+1. [blestack] This adds a possibility to reject incomming LE Connection request due to insufficient authorization or encryption key size. This is needed for qualification purposes.
+
+## 2024-10-17
+1. [blestack]Added Validation for Public Key Validity in SMP Pairing.
+
+## 2024-10-11
+1. l2cap_br_conf_req need return BT_L2CAP_CONF_UNKNOWN_OPTIONS when config opt not hint.(PTS 8.7.1)
 
 ## 2024-09-10
 1. Fixed CVE-2021-3454: https://github.com/zephyrproject-rtos/zephyr/security/advisories/GHSA-fx88-6c29-vrp3

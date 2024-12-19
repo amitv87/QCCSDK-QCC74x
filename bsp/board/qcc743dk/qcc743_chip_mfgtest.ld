@@ -61,7 +61,7 @@ SECTIONS
         LONG(__RFTLV_HEAD1_L);
     } > flash_tlv
 
-    .ver 0 : AT(ORIGIN(flash_ver))
+    .ver : AT(ORIGIN(flash_ver))
     {
         LONG(0x42464c42);
         LONG(0x46524556);
@@ -69,7 +69,7 @@ SECTIONS
         LONG(0x42464c42);
         LONG(0x46524556);
         KEEP (*(.verinfo))
-    }
+    } > flash_ver
 
     .mfg_flag   :
     {

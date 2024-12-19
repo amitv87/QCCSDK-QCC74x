@@ -159,6 +159,8 @@ void btble_controller_init(uint8_t task_priority);
 #if defined(CFG_NUTTX)
 void btblecontroller_main( void *pvParameters );
 #endif
+//API for different RTOS porting to handle btbelcontroller task's messages.
+void btblecontroller_proc(void *data);
 
 void btble_controller_deinit(void);
 int32_t btble_controller_sleep(int32_t max_sleep_cycles);

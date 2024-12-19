@@ -15,6 +15,11 @@
 #define LWIP_MULTICAST_PING           1
 #define LWIP_BROADCAST_PING           1
 
+#define LWIP_TCPIP_CORE_LOCKING       1
+
+#define LWIP_ASSERT_CORE_LOCKED()
+#define LWIP_NOASSERT
+
 #define DNS_MAX_SERVERS               3
 #define LWIP_NETIF_HOSTNAME           1
 #define TCPIP_MBOX_SIZE               64
@@ -45,8 +50,10 @@
 #define IP_REASS_MAX_PBUFS            (2 * CONFIG_MAC_RXQ_DEPTH - 2)
 
 #define MEMP_NUM_NETBUF               28
-#define MEMP_NUM_NETCONN              16
-#define MEMP_NUM_UDP_PCB              16
+#define MEMP_NUM_UDP_PCB              8
+#define MEMP_NUM_TCP_PCB              8
+#define MEMP_NUM_TCP_PCB_LISTEN       2
+#define MEMP_NUM_NETCONN              (MEMP_NUM_TCP_PCB + MEMP_NUM_UDP_PCB + MEMP_NUM_TCP_PCB_LISTEN)
 #define MEMP_NUM_REASSDATA            LWIP_MIN((IP_REASS_MAX_PBUFS), 5)
 
 #define MAC_TXQ_DEPTH                 CONFIG_MAC_TXQ_DEPTH
@@ -124,5 +131,9 @@ extern int *__errno(void);
 #define LWIP_SUPPORT_CUSTOM_PBUF      1
 #define LWIP_NETIF_TX_SINGLE_PBUF 1
 #define LWIP_RAND()                                      ((u32_t)random())
+
+#ifdef CONFIG_LWIP_LP
+#define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)]
+#endif 
 
 #endif /* LWIP_HDR_LWIPOPTS_H__ */

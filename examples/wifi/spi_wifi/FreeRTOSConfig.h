@@ -80,6 +80,7 @@ static inline void resetCycleCounter() {
 #define configMTIMECMP_BASE_ADDRESS (0xE0000000UL + 0x4000UL)
 #endif
 
+#define configUSE_TIME_SLICING                  0
 #define configSUPPORT_STATIC_ALLOCATION         1
 #define configUSE_PREEMPTION                    1
 #define configUSE_IDLE_HOOK                     0
@@ -116,7 +117,7 @@ static inline void resetCycleCounter() {
 #define configUSE_TIMERS             1
 #define configTIMER_TASK_PRIORITY    (configMAX_PRIORITIES - 1)
 #define configTIMER_QUEUE_LENGTH     20
-#define configTIMER_TASK_STACK_DEPTH (1024)
+#define configTIMER_TASK_STACK_DEPTH (1024 - 256)
 
 /* Task priorities.  Allow these to be overridden. */
 #ifndef uartPRIMARY_PRIORITY

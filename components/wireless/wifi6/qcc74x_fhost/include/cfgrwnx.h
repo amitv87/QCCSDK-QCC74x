@@ -218,6 +218,14 @@ enum cfgrwnx_msg_index {
     /// Requset to config TWT teardown
     CFGRWNX_TWT_TEARDOWN_CMD,
     CFGRWNX_TWT_TEARDOWN_RESP,
+    /// Sent to get edca (param: @ref cfgrwnx_get_edca)
+    CFGRWNX_GET_EDCA_CMD,
+    /// Response to CFGRWNX_GET_EDCA_CMD  (param: @ref cfgrwnx_get_edca_resp)
+    CFGRWNX_GET_EDCA_RESP,
+    /// Sent to get the number of frames remaining in each Tx queue  (param: @ref cfgrwnx_msg)
+    CFGRWNX_GET_REMAINING_TX_CMD,
+    /// Response to CFGRWNX_GET_REMAINING_TX_CMD  (param: @ref cfgrwnx_get_remaining_tx_resp)
+    CFGRWNX_GET_REMAINING_TX_RESP,
 #ifdef CFG_QCC74x_WIFI_PS_ENABLE
     /// Requset to send null packet
     CFGRWNX_NULL_DATA_SEND_CMD,
@@ -313,6 +321,8 @@ struct cfgrwnx_hw_feature {
     struct fhost_me_config_req me_config;
     /// Channel configuration
     struct me_chan_config_req *chan;
+    /// ap mode setting
+    bool ap_11b_only;
 };
 
 /// structure for CFGRWNX_SET_KEY_CMD
@@ -386,14 +396,45 @@ struct cfgrwnx_status_code_print {
     const char *msg;
 
 };
+typedef void (*cfgrwnx_raw_send_done)(void* env);
+typedef void (*cfgrwnx_adhoc_tx_cfm)(void* env, uint32_t status);
 struct cfgrwnx_raw_send {
     /// header
     struct cfgrwnx_msg_hdr hdr;
     /// Vif idx
     int fhost_vif_idx;
+    /// Socket to use to send CFGRWNX events
+    int sock;
+    /// Sending channel
     int channel;
+    /// Pakcet buffer
     void *pkt;
+    /// Packet len
     uint32_t len;
+    /// Send done callback
+    cfgrwnx_raw_send_done cb;
+    /// callback env
+    void *env;
+    /// Duration in ms, default 20ms
+    uint32_t duration;
+    /// whether need wait resp
+    int need_rx;
+    /// adhoc mode
+    bool adhoc;
+    /// Receiver address
+    struct mac_addr *ra;
+    /// Transmitter address
+    struct mac_addr *ta;
+    /// Tx rate
+    uint8_t rate;
+    /// Tx rts thrshold
+    uint8_t rts_thrshold;
+    /// Tx power
+    int8_t tx_power;
+    /// Tx retry limit
+    uint8_t retry_limit;
+    /// callback func for adhoc tx
+    cfgrwnx_adhoc_tx_cfm cb_cfm;
 };
 
 #ifdef CFG_QCC74x_WIFI_PS_ENABLE
@@ -625,6 +666,14 @@ struct fhost_mm_version_cfm
     uint8_t max_vif_nb;
 };
 
+struct cfgrwnx_get_edca {
+    /// header
+    struct cfgrwnx_msg_hdr hdr;
+    /// HW queue
+    uint8_t hw_queue;
+};
+
+
 /// Structure for @ref CFGRWNX_LIST_FEATURES_RESP
 struct cfgrwnx_list_features_resp {
     /// header
@@ -633,6 +682,27 @@ struct cfgrwnx_list_features_resp {
     struct fhost_mm_version_cfm version;
 };
 
+struct cfgrwnx_get_edca_resp {
+    /// header
+    struct cfgrwnx_msg_hdr hdr;
+    /// Arbitration InterFrame Space Number
+    uint8_t aifsn;
+    /// Contention Window minimum
+    uint16_t cwmin;
+    /// Contention Window maximum
+    uint16_t cwmax;
+    /// Status
+    uint32_t status;
+};
+
+struct cfgrwnx_get_remaining_tx_resp {
+    /// header
+    struct cfgrwnx_msg_hdr hdr;
+    /// the number of frames remaining in each Tx queue.
+    uint8_t tx_cnt[AC_MAX];
+    /// Status
+    uint32_t status;
+};
 /// Structure for @ref CFGRWNX_SET_VIF_TYPE_CMD
 struct cfgrwnx_set_vif_type {
     /// header

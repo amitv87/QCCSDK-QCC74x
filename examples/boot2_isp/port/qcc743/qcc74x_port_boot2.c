@@ -14,201 +14,6 @@
 
 
 /****************************************************************************/ /**
- * @brief  get app ver from efuse for anti-rollback
- *
- * @param
- *
- * @return
- *
-*******************************************************************************/
-int32_t hal_get_app_version_from_efuse(uint8_t *version)
-{
-    uint32_t version_low_low = 0;
-    uint32_t version_low = 0;
-    uint32_t version_high = 0;
-    uint32_t version_high_high = 0;
-    uint32_t value[8];
-    uint32_t otp_ef_boot2_anti_rollback_en = 0;
-
-    if(NULL == version){
-        return ERROR;
-    }
-
-    uint32_t tmpVal;
-    EF_Ctrl_Read_Direct(EF_DATA_0_LOCK_OFFSET, &tmpVal, 1);
-    /* get ef_data_0_lock[12] */
-    otp_ef_boot2_anti_rollback_en = (tmpVal>>12)&0x1;
-
-    if(0 == otp_ef_boot2_anti_rollback_en){
-        return ERROR;
-    }
-
-    if(otp_ef_boot2_anti_rollback_en){
-        /* read efuse 0x180~0X1a0 */
-        EF_Ctrl_Read_Direct(EF_DATA_EF_ZONE_08_W0_OFFSET, value, sizeof(value)/4);
-    }
-
-    /* get real version from efuse */
-    version_low_low = value[0] | value[4];
-    version_low = value[1] | value[5];
-    version_high = value[2] | value[6];
-    version_high_high = value[3] | value[7];
-
-    /* version_real[127:96] case */
-    if(version_high_high){
-        *version = HAL_BOOT2_UINT128_BIT_LEN - __builtin_clz(version_high_high);
-        return SUCCESS;
-    }
-
-    /* version_real[95:64] case */
-    if(version_high){
-        *version = HAL_BOOT2_UINT96_BIT_LEN - __builtin_clz(version_high);
-        return SUCCESS;
-    }
-
-    /* version_real[63:32] case */
-    if(version_low){
-        *version = HAL_BOOT2_UINT64_BIT_LEN - __builtin_clz(version_low);
-        return SUCCESS;
-    }
-
-    /* version_real[31:0] case */
-    if(version_low_low){
-        *version = HAL_BOOT2_UINT32_BIT_LEN - __builtin_clz(version_low_low);
-        return SUCCESS;
-    }
-
-    *version = 0;
-    return SUCCESS;
-}
-
-int32_t hal_set_app_version_to_efuse(uint8_t version)
-{
-    uint32_t version_low_low = 0;
-    uint32_t version_low = 0;
-    uint32_t version_high = 0;
-    uint32_t version_high_high = 0;
-    uint32_t value[8];
-    uint8_t version_old;
-
-    uint32_t tmpVal;
-    EF_Ctrl_Read_Direct(EF_DATA_0_LOCK_OFFSET, &tmpVal, 1);
-    /* Set ef_data_0_lock[12] enable anti-rollback */
-    tmpVal |= (1 << 12);
-    EF_Ctrl_Program_Direct(EF_DATA_0_LOCK_OFFSET, &tmpVal, 0x1);
-
-    if(hal_get_app_version_from_efuse(&version_old) != SUCCESS) {
-        return ERROR;
-    }
-
-    if(version_old >= version) {
-        return ERROR;
-    }
-
-    if (version <= HAL_BOOT2_UINT32_BIT_LEN) {
-        version_low_low = (1 << (version - 1));
-    } else if (version <= HAL_BOOT2_UINT64_BIT_LEN) {
-        version_low = (1 << (version - HAL_BOOT2_UINT32_BIT_LEN - 1));
-    } else if (version <= HAL_BOOT2_UINT96_BIT_LEN) {
-        version_high = (1 << (version - HAL_BOOT2_UINT64_BIT_LEN - 1));
-    } else if (version <= HAL_BOOT2_UINT128_BIT_LEN) {
-        version_high_high = (1 << (version - HAL_BOOT2_UINT96_BIT_LEN - 1));
-    }
-
-    value[0] = value[4] = version_low_low;
-    value[1] = value[5] = version_low;
-    value[2] = value[6] = version_high;
-    value[3] = value[7] = version_high_high;
-
-    /* write efuse 0x180~0x1a0 */
-    EF_Ctrl_Program_Direct(EF_DATA_EF_ZONE_08_W0_OFFSET, value, sizeof(value)/4);
-
-    return SUCCESS;
-}
-
-int32_t hal_get_boot2_version_from_efuse(uint8_t *version)
-{
-    uint32_t version_low = 0;
-    uint32_t version_high = 0;
-    uint32_t value[4];
-    uint32_t otp_ef_boot2_anti_rollback_en = 0;
-
-    if(NULL == version){
-        return ERROR;
-    }
-
-    uint32_t tmpVal;
-    EF_Ctrl_Read_Direct(EF_DATA_0_LOCK_OFFSET, &tmpVal, 1);
-    /* get ef_data_0_lock[12] */
-    otp_ef_boot2_anti_rollback_en = (tmpVal >> 12) & 0x1;
-
-    if(0 == otp_ef_boot2_anti_rollback_en){
-        return ERROR;
-    }
-
-    if(otp_ef_boot2_anti_rollback_en){
-        /* read efuse 0x170~0x17C */
-        EF_Ctrl_Read_Direct(EF_DATA_EF_ZONE_07_W0_OFFSET, value, sizeof(value)/4);
-    }
-
-    /* get real version from efuse */
-    version_low = value[0] | value[2];
-    version_high = value[1] | value[3];
-
-    /* version_real[63:32] case */
-    if(version_high){
-        *version = HAL_BOOT2_UINT64_BIT_LEN - __builtin_clz(version_high);
-        return SUCCESS;
-    }
-
-    /* version_real[31:0] case */
-    if(version_low){
-        *version = HAL_BOOT2_UINT32_BIT_LEN - __builtin_clz(version_low);
-        return SUCCESS;
-    }
-
-    *version = 0;
-    return SUCCESS;
-}
-
-int32_t hal_set_boot2_version_to_efuse(uint8_t version)
-{
-    uint32_t version_low = 0;
-    uint32_t version_high = 0;
-    uint32_t value[4];
-    uint8_t version_old;
-
-    uint32_t tmpVal;
-    EF_Ctrl_Read_Direct(EF_DATA_0_LOCK_OFFSET, &tmpVal, 1);
-    /* Set ef_data_0_lock[12] enable anti-rollback */
-    tmpVal |= (1 << 12);
-    EF_Ctrl_Program_Direct(EF_DATA_0_LOCK_OFFSET, &tmpVal, 0x1);
-
-    if(hal_get_boot2_version_from_efuse(&version_old) != SUCCESS) {
-        return ERROR;
-    }
-
-    if(version_old >= version) {
-        return ERROR;
-    }
-
-    if (version <= HAL_BOOT2_UINT32_BIT_LEN) {
-        version_low = (1 << (version - 1));
-    } else if (version <= HAL_BOOT2_UINT64_BIT_LEN) {
-        version_high = (1 << (version - HAL_BOOT2_UINT32_BIT_LEN - 1));
-    }
-
-    value[0] = value[2] = version_low;
-    value[1] = value[3] = version_high;
-
-    /* write efuse 0x170~0x17C */
-    EF_Ctrl_Program_Direct(EF_DATA_EF_ZONE_07_W0_OFFSET, value, sizeof(value)/4);
-
-    return SUCCESS;
-}
-
-
-/****************************************************************************/ /**
  * @brief  init boot2 system clock
  *
  * @param
@@ -496,6 +301,7 @@ void hal_boot2_get_efuse_cfg(boot2_efuse_hw_config *efuse_cfg)
 {
     uint32_t timeout_cnt = 0;
     uint32_t i = 0;
+    uint32_t app_encrypt_sign = 0;
     struct boot_efuse_sw_cfg0_t sw_cfg0;
     struct boot_efuse_sw_cfg1_t sw_cfg1;
 
@@ -507,14 +313,36 @@ void hal_boot2_get_efuse_cfg(boot2_efuse_hw_config *efuse_cfg)
         timeout_cnt++;
     }
 
-    /* get hw cfg (signature and aes type) */
-    EF_Ctrl_Read_Secure_Boot((EF_Ctrl_SF_AES_Type *)efuse_cfg->encrypted);
+    /* get app encrypt and sign type */
+    qcc74x_ef_ctrl_read_direct(NULL, 0xDC, (uint32_t *)&app_encrypt_sign, 1, 0);
+
+    efuse_cfg->app_encrypt_type = ((app_encrypt_sign >> 28) & 0xf);
+    efuse_cfg->app_sign_type = ((app_encrypt_sign >> 26) & 0x3);
 
     for (i = 0; i < HAL_BOOT2_CPU_GROUP_MAX; i++) {
-        if (efuse_cfg->encrypted[i] == EF_CTRL_SF_AES_192) {
-            efuse_cfg->encrypted[i] = SF_CTRL_AES_192BITS + 1;
-        } else if (efuse_cfg->encrypted[i] == EF_CTRL_SF_AES_256) {
-            efuse_cfg->encrypted[i] = SF_CTRL_AES_256BITS + 1;
+        switch (efuse_cfg->app_encrypt_type) {
+            case HAL_APP_ENCRYPT_SAME_AS_BOOT2:
+                /* get hw cfg (signature and aes type) */
+                EF_Ctrl_Read_Secure_Boot((EF_Ctrl_SF_AES_Type *)efuse_cfg->encrypted);
+                if (efuse_cfg->encrypted[i] == EF_CTRL_SF_AES_192) {
+                    efuse_cfg->encrypted[i] = SF_CTRL_AES_192BITS + 1;
+                } else if (efuse_cfg->encrypted[i] == EF_CTRL_SF_AES_256) {
+                    efuse_cfg->encrypted[i] = SF_CTRL_AES_256BITS + 1;
+                }
+                break;
+            case HAL_APP_ENCRYPT_INDIVIDUAL_AES128:
+                efuse_cfg->encrypted[i] = SF_CTRL_AES_128BITS + 1;
+                break;
+            case HAL_APP_ENCRYPT_INDIVIDUAL_AES256:
+            case HAL_APP_ENCRYPT_INDIVIDUAL_AES128_XTS:
+                efuse_cfg->encrypted[i] = SF_CTRL_AES_256BITS + 1;
+                break;
+            case HAL_APP_NO_ENCRYPT:
+                efuse_cfg->encrypted[i] = EF_CTRL_SF_AES_NONE;
+                break;
+            default:
+                BOOT2_MSG_DBG("APP encrypt flag is invalid, deadbeef!\r\n");
+                while(1);
         }
     }
 
@@ -524,7 +352,23 @@ void hal_boot2_get_efuse_cfg(boot2_efuse_hw_config *efuse_cfg)
     EF_Ctrl_Read_Sw_Usage(1, (uint32_t *)&sw_cfg1);
 
     for (i = 0; i < HAL_BOOT2_CPU_GROUP_MAX; i++) {
-        efuse_cfg->sign[i] = ((struct boot_efuse_sw_cfg0_t)sw_cfg0).sign_cfg;
+        /* get public key hash */
+        switch (efuse_cfg->app_sign_type) {
+            case HAL_APP_SIGN_SAME_AS_BOOT2:
+                qcc74x_ef_ctrl_read_direct(NULL, 0x1C, (uint32_t *)efuse_cfg->pk_hash_cpu[i], HAL_BOOT2_PK_HASH_SIZE / 4, 0);
+                efuse_cfg->sign[i] = ((struct boot_efuse_sw_cfg0_t)sw_cfg0).sign_cfg;
+                break;
+            case HAL_APP_SIGN_INDIVIDUAL:
+                qcc74x_ef_ctrl_read_direct(NULL, 0x1A0, (uint32_t *)efuse_cfg->pk_hash_cpu[i], HAL_BOOT2_PK_HASH_SIZE / 4, 0);
+                efuse_cfg->sign[i] = 1;
+                break;
+            case HAL_APP_NO_SIGN:
+                efuse_cfg->sign[i] = 0;
+                break;
+            default:
+                BOOT2_MSG_DBG("APP sign flag is invalid, deadbeef!\r\n");
+                while(1);
+        }
     }
     for (i = 1; i < HAL_BOOT2_CPU_GROUP_MAX; i++) {
         efuse_cfg->encrypted[i] = EF_CTRL_SF_AES_NONE;
@@ -552,11 +396,8 @@ void hal_boot2_get_efuse_cfg(boot2_efuse_hw_config *efuse_cfg)
     qcc74x_efuse_get_device_info((qcc74x_efuse_device_info_type *)&efuse_cfg->dev_info);
 
     /* get chip id */
-    EF_Ctrl_Read_Chip_ID(efuse_cfg->chip_id);
-
-    /* get public key hash */
-    EF_Ctrl_Read_AES_Key(0, (uint32_t *)efuse_cfg->pk_hash_cpu0, HAL_BOOT2_PK_HASH_SIZE / 4);
-    //EF_Ctrl_Read_AES_Key(8, (uint32_t *)efuse_cfg->pk_hash_cpu1, HAL_EFUSE_PK_HASH_SIZE / 4);
+    //EF_Ctrl_Read_Chip_ID(efuse_cfg->chip_id);
+    qcc74x_efuse_get_chipid(efuse_cfg->chip_id);
 }
 
 /****************************************************************************/ /**
@@ -791,6 +632,8 @@ int32_t hal_boot_parse_bootheader(boot2_image_config *boot_img_cfg, uint8_t *dat
     arch_memcpy_fast(&boot_img_cfg->basic_cfg, &header->basic_cfg,
                      sizeof(header->basic_cfg));
 
+    BOOT2_MSG_DBG("Encrypt mode:%d\r\n", g_efuse_cfg.app_encrypt_type);
+    BOOT2_MSG_DBG("Sign mode:%d\r\n", g_efuse_cfg.app_sign_type);
     /* Check encrypt and sign match*/
     if (g_efuse_cfg.encrypted[i] != boot_img_cfg->basic_cfg.encrypt_type) {
         if (boot_img_cfg->basic_cfg.xts_mode == 0) {

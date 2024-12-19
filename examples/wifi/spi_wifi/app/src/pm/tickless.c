@@ -10,8 +10,9 @@
 #include "qcc74x_mtimer.h"
 #include "qcc743.h"
 #include "qcc74x_irq.h"
-
+#if defined(CFG_BLE_ENABLE)
 #include "btble_lib_api.h"
+#endif
 #include "wifi_mgmr_ext.h"
 #include "export/rwnx.h"
 
@@ -185,7 +186,7 @@ static void handle_resume(TaskHandle_t tsk, eTaskState state) {
     *vendor_flag = 0;
   }
 }
-
+#if defined(CFG_BLE_ENABLE)
 /* do recovery when ble crashed */
 static void recovery_ble(void) {
   tickless_error("recovery ble");
@@ -199,6 +200,7 @@ static void recovery_ble(void) {
   rwip_prevent_sleep_clear(0xffff);
   //rwip_reset();
 }
+#endif
 
 void lp_hook_pre_user(void *env) {
   (void)env;
@@ -213,8 +215,6 @@ void lp_hook_pre_sys(void *env) {
 
   qcc74x_lp_call_sys_pre_enter();
 
-  /* Suspend all running task */
-  vTaskHandleForeach(handle_suspend);
 }
 
 void lp_hook_pre_sleep(iot2lp_para_t *param) {
@@ -253,7 +253,9 @@ extern void board_init(void);
 extern int qcc74x_sys_em_config(void);
 extern void vPortSetupTimerInterrupt(void);
 /* ble controller handler */
+#if defined(CFG_BLE_ENABLE)
 extern uint32_t rw_main_task_hdl;
+#endif
 extern TaskHandle_t wifi_fw_task;
 
 volatile int _flag = 1;
@@ -298,19 +300,18 @@ void lp_hook_post_sys(iot2lp_para_t *param) {
   HBN_Get_RTC_Timer_Val((uint32_t *)&rtc_after_sleep, (uint32_t *)&rtc_after_sleep + 1);
 
   /* Compensation Tick */
-  if (param->wakeup_reason & LPFW_WAKEUP_TIME_OUT) {
-    tickless_info("rtc compensate tick: %" __PRI64(u), (uint64_t)(QCC74x_PDS_CNT_TO_MS(lpfw_cfg.rtc_wakeup_cmp_cnt - rtc_enter_tickless)));
-    vTaskStepTick((QCC74x_PDS_CNT_TO_MS(lpfw_cfg.rtc_wakeup_cmp_cnt - rtc_enter_tickless)));
-  } else {
-    tickless_info("early compensate tick: %" __PRI64(u), (uint64_t)pdMS_TO_TICKS(QCC74x_PDS_CNT_TO_MS(rtc_after_sleep - rtc_enter_tickless)));
-    vTaskStepTick(pdMS_TO_TICKS(QCC74x_PDS_CNT_TO_MS(rtc_after_sleep - rtc_enter_tickless)));
-  }
+  tickless_info("early compensate tick: %" __PRI64(u), (uint64_t)pdMS_TO_TICKS(QCC74x_PDS_CNT_TO_MS(rtc_after_sleep - rtc_enter_tickless)));
+  vTaskStepTick(pdMS_TO_TICKS(QCC74x_PDS_CNT_TO_MS(rtc_after_sleep - rtc_enter_tickless)) + 1);
 
   /* Init mtimer handler */
   vPortSetupTimerInterrupt();
   qcc74x_irq_enable(7); // <-- mtimer
   qcc74x_irq_enable(44); // <-- uart0 irq
 
+  /* Suspend all running task */
+  vTaskHandleForeach(handle_suspend);
+
+#if defined(CFG_BLE_ENABLE)
   /* Resume blecontroller task */
   if (rw_main_task_hdl != 0) {
     /* Restore BLE */
@@ -319,7 +320,7 @@ void lp_hook_post_sys(iot2lp_para_t *param) {
     uint8_t *vendor_flag = pcTaskGetVendorFlags((TaskHandle_t)(uintptr_t)rw_main_task_hdl);
     *vendor_flag = 0;
   }
-
+#endif
   /* Resume wifi task */
   if (wifi_fw_task != NULL) {
     uint8_t *vendor_flag = pcTaskGetVendorFlags(wifi_fw_task);
@@ -337,6 +338,7 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   int32_t ble_sleep_rtc = 0;
   uint64_t delta;
   uint32_t wake_reason;
+  int connected;
 
   if (unlikely(!enable_tickless)) {
     __WFI();
@@ -353,10 +355,14 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   rtc_sleep_remain = QCC74x_MS_TO_PDS_CNT(xExpectedIdleTime);
 
   /* Enable DTIM when WiFi connected*/
-  lpfw_cfg.tim_wakeup_en = !!(wifi_mgmr_sta_get_bssid(lpfw_cfg.bssid) == 0);
+  connected = !!(wifi_mgmr_sta_get_bssid(lpfw_cfg.bssid) == 0);
 
-  //tickless_info("dtim %s", lpfw_cfg.tim_wakeup_en ? "enable" : "disable");
-
+  if (connected && lpfw_cfg.dtim_origin) {
+    lpfw_cfg.tim_wakeup_en = 1;
+  } else {
+    lpfw_cfg.tim_wakeup_en = 0;
+  }
+#if defined(CFG_BLE_ENABLE)
   if (likely(rw_main_task_hdl != 0)) {
     /* Get BLE sleep time */
     ble_sleep_rtc = btble_controller_sleep(0);
@@ -387,7 +393,7 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
     /* convert to absolute time */
     ble_sleep_rtc = rtc_enter_tickless + ble_sleep_rtc;
   }
-
+#endif
   if (QCC74x_PDS_CNT_TO_MS(rtc_sleep_remain) <= configEXPECTED_IDLE_TIME_BEFORE_SLEEP) {
     portENABLE_INTERRUPTS();
     tickless_info("Sleep Abort! %d, %" __PRI32(u), __LINE__, configEXPECTED_IDLE_TIME_BEFORE_SLEEP);
@@ -396,7 +402,7 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   }
 
   /* Check pm stauts */
-  if (qcc74x_pm_event_get() && spisync_ps_get(NULL)) {
+  if (qcc74x_pm_event_get() || spisync_ps_get(NULL)) {
     portENABLE_INTERRUPTS();
     tickless_info("Sleep Abort! %d", __LINE__);
     ___WFI();
@@ -418,7 +424,7 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   }
 
   /* wifi connected */
-  if (likely(lpfw_cfg.tim_wakeup_en)) {
+  if (likely(connected)) {
     /* check wifi PS state */
     if (rwnxl_ps_sleep_check() != 0) {
       if (INTERVAL(5000,NULL)) {
@@ -482,14 +488,14 @@ void vApplicationSleep(TickType_t xExpectedIdleTime) {
   tickless_info("Wakeup Reason: %x", wake_reason);
   tickless_info("Exp:%" __PRI64(u) ",Real:%" __PRI64(u) ",Min:%" __PRI32(u) ",BLE:%" __PRI32(u) ",P&E:[%" __PRI64(u) ",%" __PRI64(u) "]",
       lpfw_cfg.rtc_wakeup_cmp_cnt, rtc_after_sleep, configEXPECTED_IDLE_TIME_BEFORE_SLEEP, ble_sleep_rtc, rtc_prologue_time_max, rtc_epilogue_time_max);
-
+#if defined(CFG_BLE_ENABLE)
   if (wake_reason & LPFW_WAKEUP_BLE) {
     if (rtc_after_sleep > ble_sleep_rtc) {
       printf("!! BLE Crashed !! real_sleep(%" __PRI64(u) ") > bleSleepDuration(%" __PRI32(u) ")",  rtc_after_sleep, ble_sleep_rtc);
       recovery_ble();
     }
   }
-
+#endif
   //TODO :
   spisync_ps_exit(NULL);
   /* Call user init callback */

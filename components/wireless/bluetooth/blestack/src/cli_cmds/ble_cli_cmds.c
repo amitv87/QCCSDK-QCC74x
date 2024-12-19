@@ -529,9 +529,7 @@ const struct cli_command btStackCmdSet[] STATIC_CLI_CMD_ATTRIBUTE = {
 #endif
     {"ble_set_data_len", "", blecli_set_data_len},
     {"ble_conn_info", "", blecli_get_all_conn_info},
-#if defined(CONFIG_SET_TX_PWR)
     {"ble_set_tx_pwr", "", blecli_set_tx_pwr},
-#endif
 #if defined(CONFIG_HOGP_SERVER)
     {"ble_hog_srv_notify", "", blecli_hog_srv_notify},
 #endif
@@ -1587,7 +1585,7 @@ BLE_CLI(l2cap_disconnect)
     int err = 0;
     uint16_t tx_cid;
 
-    if(argc != 1){
+    if(argc != 2){
         vOutputString("Number of Parameters is not correct\r\n");
         return;
     }
@@ -1609,16 +1607,20 @@ BLE_CLI(register_test_psm)
     int err = 0;
     uint16_t psm;
     uint8_t sec_level;
+    uint8_t l2cap_policy;
+    bool add_allow;
 
-    if(argc != 3){
+    if(argc != 5){
         vOutputString("Number of Parameters is not correct\r\n");
         return;
     }
     get_uint16_from_string(&argv[1], &psm);
     get_uint8_from_string(&argv[2], &sec_level);
-    
-    extern int bt_register_test_psm(uint16_t psm, uint8_t sec_level);
-    bt_register_test_psm(psm, sec_level);
+    get_uint8_from_string(&argv[3], &l2cap_policy);
+    get_uint8_from_string(&argv[4], (uint8_t *)&add_allow);
+
+    extern int bt_register_test_psm(uint16_t psm, uint8_t sec_level, uint8_t policy,bool add_allow);
+    err = bt_register_test_psm(psm, sec_level,l2cap_policy,add_allow);
 
     if (err) {
         vOutputString("Fail to register test psm(err %d)\r\n", err);

@@ -127,6 +127,7 @@ int scanu_start_req_len();
 struct_func_dcl(scanu_get_scan_result_req, uint8_t, idx);
 int scanu_get_scan_result_req_len();
 
+struct_func_dcl(sm_connect_req, uint32_t, mode);
 struct_func_dcl(sm_connect_req, struct mac_ssid, ssid);
 void* sm_connect_req_getp_bssid(void *param);
 struct_func_dcl(sm_connect_req, struct mac_chan_def, chan);
@@ -153,12 +154,26 @@ struct_func_dcl(sm_external_auth_required_rsp, uint8_t, vif_idx);
 struct_func_dcl(sm_external_auth_required_rsp, uint16_t, status);
 int sm_external_auth_required_rsp_len();
 
-struct_func_dcl(scan_raw_send_req, void *, pkt);
-struct_func_dcl(scan_raw_send_req, uint32_t, len);
-struct_func_dcl(scan_raw_send_req, uint8_t, index);
-struct_func_dcl(scan_raw_send_req, int, vif_idx);
-struct_func_dcl(scan_raw_send_req, struct mac_chan_op, chan);
-int scan_raw_send_req_len();
+struct_func_dcl(mm_raw_send_start_req, void *, pkt);
+struct_func_dcl(mm_raw_send_start_req, uint32_t, len);
+struct_func_dcl(mm_raw_send_start_req, int, vif_idx);
+struct_func_dcl(mm_raw_send_start_req, struct mac_chan_op, chan);
+struct_func_dcl(mm_raw_send_start_req, uint32_t, duration);
+struct_func_dcl(mm_raw_send_start_req, void*, cb);
+struct_func_dcl(mm_raw_send_start_req, void*, env);
+struct_func_dcl(mm_raw_send_start_req, int, need_rx);
+struct_func_dcl(mm_raw_send_start_req, bool, adhoc);
+struct_func_dcl(mm_raw_send_start_req, struct mac_addr *, ra);
+struct_func_dcl(mm_raw_send_start_req, struct mac_addr *, ta);
+struct_func_dcl(mm_raw_send_start_req, uint8_t, rate);
+struct_func_dcl(mm_raw_send_start_req, uint8_t, rts_thrshold);
+struct_func_dcl(mm_raw_send_start_req, uint8_t, retry_limit);
+struct_func_dcl(mm_raw_send_start_req, int8_t, tx_power);
+struct_func_dcl(mm_raw_send_start_req, void*, cb_cfm);
+int mm_raw_send_start_req_len();
+
+struct_func_dcl(mm_raw_send_start_cfm, uint8_t, status);
+int mm_raw_send_start_cfm_len();
 
 struct_func_dcl(mm_add_if_req, uint8_t, type);
 struct_func_dcl(mm_add_if_req, struct mac_addr, addr);
@@ -350,3 +365,15 @@ struct_func_dcl(twt_teardown_req, uint8_t, vif_idx);
 struct_func_len(twt_teardown_req);
 struct_func_dcl(twt_teardown_cfm, uint8_t, status);
 struct_func_len(twt_teardown_cfm);
+
+struct_func_dcl(me_get_edca_req, uint8_t, hw_queue);
+struct_func_len(me_get_edca_req);
+
+struct_func_dcl(me_get_edca_cfm, uint32_t, ac_param);
+struct_func_len(me_get_edca_cfm);
+
+struct_func_dcl(me_get_remaining_tx_cfm, uint8_t, tx0_cnt);
+struct_func_dcl(me_get_remaining_tx_cfm, uint8_t, tx1_cnt);
+struct_func_dcl(me_get_remaining_tx_cfm, uint8_t, tx2_cnt);
+struct_func_dcl(me_get_remaining_tx_cfm, uint8_t, tx3_cnt);
+struct_func_len(me_get_remaining_tx_cfm);

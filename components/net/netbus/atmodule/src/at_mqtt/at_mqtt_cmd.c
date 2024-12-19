@@ -412,10 +412,11 @@ static void publish_callback_1(void** arg, struct mqtt_response_publish *publish
         return;
     }
 
-    snprintf(buffer, len, "+MQTT:SUBRECV,%d,\"%.*s\",%d,%.*s\r\n", 
+    snprintf(buffer, len, "+MQTT:SUBRECV:%d,%d,%d,\"%.*s\",%.*s\r\n", 
              linkid, 
-             (int)published->topic_name_size, published->topic_name, 
+             (int)published->topic_name_size,  
              (int)published->application_message_size,
+             (int)published->topic_name_size, published->topic_name, 
              (int)published->application_message_size, published->application_message);
 
 

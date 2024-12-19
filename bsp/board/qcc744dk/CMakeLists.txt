@@ -8,13 +8,21 @@ target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/board_rf.c)
 endif()
 
 if(CONFIG_PSRAM_COPY_CODE)
+if(CONFIG_LPAPP)
+message(FATAL_ERROR "
+FATAL: Lower Power APP not support PSRAM COPY CODE.
+")
+endif()
 sdk_set_linker_script(qcc743_chip_psram.ld)
 elseif(CONFIG_LINK_FOR_MFGTEST)
 message(FATAL_ERROR "
-FATAL: Please use qcc743dk compile mfg app
+FATAL: Please use qcc743dk compile mfg app.
 ")
 elseif(CONFIG_LPAPP)
 sdk_set_linker_script(qcc743_lp.ld)
+sdk_add_link_options(
+-L ${CMAKE_CURRENT_SOURCE_DIR}
+)
 else()
 sdk_set_linker_script(qcc743_flash.ld)
 endif()

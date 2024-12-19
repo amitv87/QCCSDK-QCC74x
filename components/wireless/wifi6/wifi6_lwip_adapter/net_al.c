@@ -41,6 +41,11 @@
 #include "lwip/tcpip.h"
 #include "fhost.h"
 #include "tx_buffer_copy.h"
+#ifdef CONFIG_MAT
+#include "mat.h"
+#include "pbuf_custom_ref.h"
+#include "netif/bridgeif.h"
+#endif
 
 int fhost_tx_start(net_al_if_t net_if, net_al_tx_t net_buf,
                    cb_fhost_tx cfm_cb, void *cfm_cb_arg);
@@ -57,6 +62,9 @@ void fhost_rx_buf_push(void *net_buf);
 
 uint8_t fhost_tx_get_staid(void *vif, struct mac_addr *dst_addr, bool mgmt_frame);
 
+int is_sta_netif(struct netif *nif);
+
+int is_ap_netif(struct netif *nif);
 
 /// start of shared memory section
 extern uint32_t _sshram[];
@@ -145,6 +153,97 @@ static err_t net_if_output(struct netif *net_if, struct pbuf *p_buf)
     return (status);
 }
 
+#ifdef CONFIG_MAT
+static err_t net_if_forward(struct netif *netif, struct pbuf *p)
+{
+    int ret;
+    int tx_copy = 0;
+    struct pbuf *out = NULL;
+
+    if (!netif_is_up(netif))
+        return ERR_IF;
+
+    if (is_sta_netif(netif)) {
+        ret = mat_handle_egress(netif, p, &out);
+        switch (ret) {
+        case MAT_ERR_INVAL:
+        case MAT_ERR_STATUS:
+            return ERR_IF;
+
+        case MAT_ERR_MEM:
+            return ERR_MEM;
+
+        /* The outgoing buffer is already allocated. */
+        case MAT_ERR_OK:
+            break;
+        }
+
+        /*
+         * Perhaps this buffer is unknown protocol for MAT and MAT just
+         * leaves it alone.
+         */
+        if (!out)
+            tx_copy = 1;
+    } else if (is_ap_netif(netif)) {
+        tx_copy = 1;
+    } else {
+        printf("WARN: invalid netif?\r\n");
+        out = p;
+    }
+
+    if (tx_copy) {
+#ifdef CONFIG_MAT_FULL_COPY
+        out = pbuf_clone(PBUF_RAW_TX, PBUF_RAM, p);
+        if (!out)
+            return ERR_MEM;
+/* CONFIG_MAT_FULL_COPY is not defined. */
+#else
+        struct pbuf *ref;
+        u16_t eth_hdr_size = SIZEOF_ETH_HDR;
+
+        /* Reserve L2 head room for wifi tx. */
+        out = pbuf_alloc(PBUF_RAW_TX, eth_hdr_size, PBUF_RAM);
+        if (!out)
+            return ERR_MEM;
+        /* Construct the ethernet header. */
+        memcpy(out->payload, p->payload, eth_hdr_size);
+
+        /* Create a reference for the following data. */
+        ref = pbuf_custom_ref_create(p, eth_hdr_size, p->tot_len - eth_hdr_size);
+        if (!ref) {
+            pbuf_free(out);
+            return ERR_MEM;
+        }
+        pbuf_cat(out, ref);
+/* CONFIG_MAT_FULL_COPY */
+#endif
+    }
+
+    ret = fhost_tx_start(netif, out, NULL, NULL);
+    if (ret) {
+        printf("%s fhost_tx_start failed, %d\r\n", __func__, ret);
+        pbuf_free(out);
+        return ERR_IF;
+    }
+    return ERR_OK;
+}
+
+static err_t net_if_linkoutput(struct netif *net_if, struct pbuf *p_buf)
+{
+    struct eth_hdr *ethhdr;
+
+    /* Do not touch local output traffic. */
+    ethhdr = (struct eth_hdr *)p_buf->payload;
+    if (!netif_bridged(net_if) ||
+        !memcmp(ethhdr->src.addr, net_if->hwaddr, ETH_HWADDR_LEN)) {
+        return net_if_output(net_if, p_buf);
+    }
+
+    return net_if_forward(net_if, p_buf);
+}
+/* CONFIG_MAT */
+#endif
+
 /**
  ****************************************************************************************
  * @brief Callback used by the networking stack to setup the network interface.
@@ -185,7 +284,11 @@ static err_t net_if_init(struct netif *net_if)
     net_if->hwaddr_len = ETHARP_HWADDR_LEN;
     // hwaddr is updated in net_if_add
     net_if->mtu = LLC_ETHER_MTU;
+#ifdef CONFIG_MAT
+    net_if->linkoutput = net_if_linkoutput;
+#else
     net_if->linkoutput = net_if_output;
+#endif
 
     return status;
 }
@@ -317,13 +420,18 @@ static int net_if_input(net_al_rx_t net_buf, net_al_if_t net_if, void *addr, uin
     PLATFORM_HOOK(tcpip_rx);
 
     if (qcc74x_wifi_pkt_eth_input_hook) {
-        bool is_sta = true; // FIXME
+        bool is_sta = is_sta_netif(nif);
         p = qcc74x_wifi_pkt_eth_input_hook(is_sta, p, qcc74x_wifi_pkt_eth_input_hook_arg);
         if (p == NULL) {
             // hook dropped the packet
             goto end;
         }
     }
+
+#ifdef CONFIG_MAT
+    if (netif_bridged(net_if) && is_sta_netif(net_if))
+        mat_handle_ingress(nif, p);
+#endif
 
     if (nif->input(p, nif))
     {
@@ -361,15 +469,20 @@ void net_al_input(net_al_rx_t net_buf, void *payload,
         if (skip_after_eth_hdr != 0) {
             memcpy((char*)payload + skip_after_eth_hdr, payload, sizeof(struct mac_eth_hdr));
         }
-        #ifdef CFG_IPV6
-        // Workaround:
-        // Drop my broadcast message forwarded by AP to prevent IPv6 DAD check failed
-        struct mac_eth_hdr *hdr = (struct mac_eth_hdr *)((char*)payload + offset);
-        if (!tcpip_src_addr_cmp(hdr, net_if_get_mac_addr(net_if))) {
+        /* Drop my broadcast message forwarded by AP. */
+        uint8_t from_us = 1;
+        uint8_t *mac_eth_hdr = (uint8_t *)payload + offset;
+        const uint8_t *src_addr = net_if_get_mac_addr(net_if);
+        for (int i = 0; i < 6; i++) {
+            if (mac_eth_hdr[6 + i] != src_addr[i]) {
+                from_us = 0;
+                break;
+            }
+        }
+        if (from_us) {
             fhost_rx_buf_push(net_buf);
             return;
         }
-        #endif
         net_if_input(net_buf, net_if, (char*)payload + offset + skip_after_eth_hdr,
                      length - skip_after_eth_hdr, free_fn);
 }
@@ -454,20 +567,23 @@ void *net_buf_tx_info(net_al_tx_t *net_buf, uint16_t *tot_len, int *seg_cnt,
     start_payload = (uint32_t)buf->payload;
 
     // Get pointer to reserved headroom
-#if QCC74x_HOSTROUTER_ENABLE
     /* The pbuf structure and payload used by sdio are not in a contiguous ram, 
      * we use the pbuf_header_force api just for adjusts the payload pointer
      * to reveal headers in the payload. The pbuf_header api used for pbuf structure 
      * and payload are in a contiguous ram.
      */
-    if (pbuf_header_force(buf, PBUF_LINK_ENCAPSULATION_HLEN))
-#else
-    if (pbuf_header(buf, PBUF_LINK_ENCAPSULATION_HLEN))
-#endif
-    {
-        // Sanity check - we shall have enough space in the buffer
-        ASSERT_ERR(0);
-        return NULL;
+    if (buf->type_internal & PBUF_TYPE_FLAG_STRUCT_DATA_CONTIGUOUS) {
+        if (pbuf_header(buf, PBUF_LINK_ENCAPSULATION_HLEN)) {
+            // Sanity check - we shall have enough space in the buffer
+            ASSERT_ERR(0);
+            return NULL;
+        }
+    } else {
+        if (pbuf_header_force(buf, PBUF_LINK_ENCAPSULATION_HLEN)) {
+            // Sanity check - we shall have enough space in the buffer
+            ASSERT_ERR(0);
+            return NULL;
+        }
     }
     headroom = (void *)CO_ALIGN4_HI((uint32_t)buf->payload);
     end_payload = (uint32_t)headroom;
@@ -573,9 +689,10 @@ int net_al_tx_req(struct net_al_tx_req req)
             bc_tx_enqueue((struct bc_tx_info_tag *)CO_ALIGN4_LO((uintptr_t)ibuf->payload - sizeof(struct bc_tx_info_tag)), staid, req);
 	}
     }
-
-#endif // FHOST_BUFFER_COPY
     return 0;
+#else
+    return -1;
+#endif // FHOST_BUFFER_COPY
 }
 
 typedef void (*qcc74x_custom_tx_callback_t)(void *cb_arg, bool tx_ok);
@@ -848,6 +965,11 @@ int net_l2_socket_delete(int sock)
     return -1;
 }
 
+__attribute__((weak)) err_t bridgeif_has_port(struct netif *bridgeif, struct netif *netif)
+{
+    return 0;
+}
+
 err_t net_eth_receive(struct pbuf *pbuf, struct netif *netif)
 {
     struct l2_filter_tag *filter = NULL;
@@ -861,9 +983,8 @@ err_t net_eth_receive(struct pbuf *pbuf, struct netif *netif)
 
     for (i = 0; i < NX_NB_L2_FILTER; i++)
     {
-        if ((l2_filter[i].net_if == netif) &&
-            (l2_filter[i].ethertype == ethertype))
-        {
+        if ((l2_filter[i].ethertype == ethertype) &&
+            ((l2_filter[i].net_if == netif) || bridgeif_has_port(netif, l2_filter[i].net_if))) {
             filter = &l2_filter[i];
             break;
         }

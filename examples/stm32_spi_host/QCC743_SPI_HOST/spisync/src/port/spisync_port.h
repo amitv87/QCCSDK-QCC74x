@@ -23,10 +23,13 @@
                                 ##__VA_ARGS__);\
                                 } while(0==1)
 #else
-#define spisync_trace(...)
+//#define spisync_trace		  printf
 #define spisync_dbg           printf
-#define spisync_log(...)
-#define spisync_err(M, ...)
+#define spisync_log			  printf
+#define spisync_err			  printf
+#define spisync_trace(...)
+//#define spisync_log(...)
+//#define spisync_err(M, ...)
 #define spisync_buf(...)
 #endif // TPDBG_ENABLE
 

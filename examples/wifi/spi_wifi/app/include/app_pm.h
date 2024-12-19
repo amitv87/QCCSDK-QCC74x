@@ -4,5 +4,6 @@
 #include <stdio.h>
 
 int app_pm_init(void);
+int pm_status_update(int status);
 
 #endif

@@ -44,6 +44,11 @@ sdk_add_compile_definitions(-DQCC74x_BOOT2)
 sdk_add_compile_definitions(-DCONFIG_TRAP_DUMP_DISABLE)
 message(${CONFIG_BOOT2_VER})
 
+if(CONFIG_BOOT2)
+    sdk_add_compile_definitions(-DCONFIG_BOOT2)
+endif()
+sdk_add_compile_definitions(-DBOOT2_ANTI_ROLLBACK_VER=${CONFIG_BOOT2_ANTI_ROLLBACK_VER})
+
 if((${CHIP} STREQUAL "qcc74x_undef"))
     sdk_add_compile_definitions(-DCHIP_QCC74x_undef)
 endif()

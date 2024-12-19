@@ -358,6 +358,35 @@ struct fhost_frame_info
      * Received signal strength (in dBm)
      */
     int8_t rssi;
+
+    /**
+     * Received to ds
+     */
+    bool tods;
+    /**
+     * Received from ds
+     */
+    bool fromds;
+    /**
+     * Received rate_idx
+     */
+    int rate_idx;
+    /**
+     * Received address
+     */
+    struct mac_addr *ra;
+    /**
+     * Transmitting address
+     */
+    struct mac_addr *ta;
+    /**
+     *  Ethernet frame
+     */
+    uint8_t *eth_frame;
+    /**
+     *  Ethernet frame length
+     */
+    uint16_t eth_frame_length;
     /**
      * Frame payload. Can be NULL if monitor mode is started with @p uf parameter set to
      * true. In this case all other fields are still valid.

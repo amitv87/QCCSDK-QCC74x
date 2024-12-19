@@ -19,6 +19,7 @@
 #define AT_HOST_RESP_EVT_WAIT_DATA     (1 << 1)
 #define AT_HOST_RESP_EVT_SEND_OK       (1 << 2)
 #define AT_HOST_RESP_EVT_CIPRECVDATA   (1 << 3)
+#define AT_HOST_RESP_EVT_RECV_BTYES    (1 << 4)
 
 typedef int (*at_receive_cb_t)(uint8_t *buf, uint32_t size, void *arg);
 struct at_host;
@@ -72,9 +73,9 @@ at_host_handle_t at_host_init(const struct at_host_drv *ops, void *arg);
 
 void at_host_receive_register(at_host_handle_t at, at_receive_cb_t cb, void *arg);
 
-int at_host_send(at_host_handle_t at, int wait_evt, uint8_t *data, int len);
+int at_host_send(at_host_handle_t at, int wait_evt, uint8_t *data, int len, uint32_t timeout);
 
-int at_host_printf(at_host_handle_t at, int wait_evt, const char *fmt, ...);
+int at_host_printf(at_host_handle_t at, int wait_evt, uint32_t timeout, const char *fmt, ...);
 
 void at_host_net_recv_register(at_host_handle_t at, int (*net_data_recv)(int linkid, uint8_t *buf, uint32_t size, void *arg), void *arg);
 
@@ -82,7 +83,7 @@ int at_host_wait(at_host_handle_t at, int wait_evt, uint32_t timeout);
 
 int at_host_recvmode_set(at_host_handle_t at, uint8_t mode);
 
-int at_host_recvdata(at_host_handle_t at, int linkid, uint8_t *buf, uint32_t buf_size);
+int at_host_recvdata(at_host_handle_t at, int linkid, uint8_t *buf, uint32_t buf_size, uint32_t timeout);
 
 
 #endif /* SRC_AT_HOST_H_ */

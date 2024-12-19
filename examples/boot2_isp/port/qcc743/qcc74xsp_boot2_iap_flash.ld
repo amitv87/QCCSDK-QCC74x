@@ -9,14 +9,15 @@ ENTRY(__start)
 
 StackSize = 0x1000; /*  1KB */
 
-VerOffset = 0xc00;
+VerOffset = 0xC00;
 Boot2Size = 0xC000;
 /* Not pass para to app since it will get itself */
 PROVIDE(__boot2_pass_param_addr = 0);
 MEMORY
 {
     fw_header_memory  (rx)  : ORIGIN = 0xA0000000 - 0x2000, LENGTH = 8K
-    xip_memory     (rx)  : ORIGIN = 0xA0000000, LENGTH = 3K + 256
+    xip_memory     (rx)  : ORIGIN = 0xA0000000, LENGTH = 3K
+    ver_memory     (rx)  : ORIGIN = 0xA0000000 + VerOffset, LENGTH = 256
     ram_psram  (wxa)   : ORIGIN = 0xA8000000, LENGTH = 0K
     xip_memory1    (rx)  : ORIGIN = 0xA0000d00, LENGTH = 44K + 768
     itcm_memory    (rx)  : ORIGIN = 0x62FC0000, LENGTH = 60K
@@ -41,7 +42,7 @@ SECTIONS
         *(.text.hal*)
     } > xip_memory
 
-    .ver 0 : AT(ORIGIN(xip_memory) + VerOffset)
+    .ver :
     {
 		LONG(0x42464c42); /* */
 		LONG(0x46524556); /* VERF */
@@ -49,7 +50,7 @@ SECTIONS
 		LONG(0x42464c42); /* */
 		LONG(0x46524556); /* VERF */
 		KEEP (*(.verinfo))
-    }
+    } > ver_memory
 
     .text :
     {

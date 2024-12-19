@@ -126,6 +126,7 @@
 #endif
 
 #if defined(CONFIG_BT_MESH_PTS)
+//#define CONFIG_MESH_IOPT_BV_02_C
 //#define MESH_LCTL_BIND_WITH_GENLVL   //Lighting CTL Temperature state bind with Genneric Level
 //#define MESH_LHSLH_BIND_WITH_GENLVL  //Lighting HSL Hue state bind with Genneric Level
 //#define MESH_LHSLSA_BIND_WITH_GENLVL //Lighting HSL Saturation state bind with Genneric Level
@@ -384,6 +385,17 @@
 #ifndef CONFIG_BT_MAX_CONN
 #define CONFIG_BT_MAX_CONN CFG_CON
 #endif
+
+/*If the application layer sends a att reqeust packet simultaneously for each ble connection, 
+*and receives att reqeust packets at the same time, each connection requires 2 acl tx buffers.
+*/
+#if (CONFIG_BT_MAX_CONN <= 3 && CONFIG_BT_L2CAP_TX_BUF_COUNT < 2 * CONFIG_BT_MAX_CONN)
+    #error "Case1, number of acl tx buffers in blestack is too small."
+#elif (CONFIG_BT_MAX_CONN >= 4 && CONFIG_BT_MAX_CONN <= 6 && CONFIG_BT_L2CAP_TX_BUF_COUNT < 2 + CONFIG_BT_MAX_CONN)
+    #error "Case2, number of acl tx buffers in blestack is too small."
+#elif (CONFIG_BT_MAX_CONN >= 7 && CONFIG_BT_L2CAP_TX_BUF_COUNT < CONFIG_BT_MAX_CONN)
+    #error "Case3, number of acl tx buffers in blestack is too small."
+#endif 
 
 /**
 *  CONFIG_BT_DEVICE_NAME:Bluetooth device name. Name can be up
@@ -789,4 +801,7 @@ then it does disconnected flow once more. This will cause hardfault issue becaus
 #endif
 #define QCC74x_BLE_DO_DISCONNECT_WHEN_ATT_TIMEOUT
 #define QCC74x_BLE_AVOID_REMOVE_GATT_SUBSCRIPTION_RISK
+
+/*Support customized scan interval and scan window in scanning procedure of ble general connection establishment.*/
+#define QCC74x_BLE_SUPPORT_CUSTOMIZED_SCAN_PARAMERS_IN_GENERAL_CONN_ESTABLISH
 #endif /* BLE_CONFIG_H */

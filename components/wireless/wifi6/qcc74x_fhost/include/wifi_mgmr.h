@@ -31,6 +31,15 @@ typedef struct wifi_mgmr_sta_basic_info {
     uint16_t aid;
 } wifi_mgmr_sta_basic_info_t;
 
+typedef struct wifi_mgmr_adhoc_info {
+    uint8_t channel;
+    uint8_t rate;
+    uint8_t rts_thrshold;
+    int8_t tx_power;
+    uint8_t retry_limit;
+    cb_adhoc_tx_cfm tx_cfm;
+} wifi_mgmr_adhoc_info_t;
+
 typedef struct wifi_mgmr {
     struct wlan_netif wlan_sta;
     struct wlan_netif wlan_ap;
@@ -64,6 +73,10 @@ typedef struct wifi_mgmr {
     /*non_pref_chan list, formatted with <oper_class>:<chan>:<preference>:<reason>*/
     char non_pref_chan_list[WIFI_MGMR_CONFIG_NON_PREF_CHAN_LIST][6*4+3+1];// support 4 non_pref_chan item
     int non_pref_chan_list_valid;
+    wifi_mgmr_adhoc_info_t adhoc_info;
+
+    uint8_t sta_mode;
+    uint8_t ap_mode;
 } wifi_mgmr_t;
 extern wifi_mgmr_t wifiMgmr;
 

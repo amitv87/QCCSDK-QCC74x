@@ -1,4 +1,7 @@
 # Changes
+## 2024-11-13
+1.[blemesh] MESH_IOPT_BV_02_C: Reduce num of mesh model registration and support publication of Health Client. 
+
 ## 2024-07-15
 1.[BleMesh]Fixed adv_send failed when executing mesh suspend and then resume.
 

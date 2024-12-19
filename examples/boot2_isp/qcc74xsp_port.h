@@ -55,6 +55,7 @@ extern struct qcc74x_device_s *uartx;
 extern struct qcc74x_sha256_ctx_s ctx_sha256;
 extern struct qcc74x_device_s *console;
 extern void qcc74x_uart_set_console(struct qcc74x_device_s *dev);
+extern const qcc74xverinf_t boot2_ver;
 
 #define BOOT2_MSG(a, ...)            qcc74xsp_boot2_printf(a, ##__VA_ARGS__)
 #define BOOT2_MSG_WAR(a, ...)        qcc74xsp_boot2_printf(a, ##__VA_ARGS__)

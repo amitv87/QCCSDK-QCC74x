@@ -26,14 +26,20 @@ make flash COMX=xxx ## xxx is your com name
 2. Use mqtt client to test if the server is working. You can install `MQTTBox` on windows for testing, you can install it from Microsoft Store. Or use EMQX's online mqtt client for testing.
 3. If the server works fine, then you can continue with the next test.
 4. connect your WiFi.
-5. connect MQTT server. command like `mqtt_pub` or `mqtt_pub <server domain name or server ip> <server port> <topic>`.
+5. connect MQTT server. command like `mqtt_pub` or `mqtt_pub <server ip> <server port>`.
 6. If the command is executed successfully, a message will be uploaded every 3 seconds.
 
 Log:
 
+In linux, start broker and subscribe.
+```bash
+linux-bash  /> mosquitto -p 8883
+linux-bash  /> mosquitto_sub -h 127.0.0.1 -p 8883 -t qcc74x_undef
+```
+
 ```bash
 qxx74x />wifi_sta_connect QCC74x_TEST 12345678
-qxx74x />mqtt_pub
+qxx74x />mqtt_pub 192.168.1.143 8883
 qxx74x />mqtt_pub is ready to begin publishing the time.
 Press ENTER to publish the current time.
 Press CTRL-C to exit.
@@ -42,6 +48,4 @@ Now time is 2023-06-16 00:00:00"
 mqtt_pub published : "{"hello mqtt by qcc743/4 !"}
 Now time is 2023-06-16 00:00:03"
 mqtt_pub stop publish to test.mosquitto.org
-^C
 ```
-

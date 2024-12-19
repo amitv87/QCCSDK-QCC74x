@@ -2,7 +2,7 @@
 #define __spisync_port_H__
 
 #include <stdint.h>
-#define TPDBG_ENABLE   (1)
+#define TPDBG_ENABLE   (0)
 
 #if TPDBG_ENABLE
 #ifndef SHORT_FILE
@@ -25,7 +25,7 @@
                                 } while(0==1)
 #else
 #define spisync_trace(...)
-#define spisync_dbg           printf
+#define spisync_dbg           
 #define spisync_log(...)
 #define spisync_err(M, ...)
 #define spisync_buf(...)

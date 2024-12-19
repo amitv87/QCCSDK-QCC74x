@@ -116,7 +116,7 @@
 
 #define LWIP_DHCP                 1
 #define LWIP_DNS                  1
-#define LWIP_IGMP                 0
+#define LWIP_IGMP                 1
 #define LWIP_SO_RCVTIMEO          1
 #define LWIP_SO_SNDTIMEO          1
 #define SO_REUSE                  1
@@ -132,5 +132,13 @@ extern int *__errno(void);
 #define LWIP_SUPPORT_CUSTOM_PBUF      1
 #define LWIP_NETIF_TX_SINGLE_PBUF 1
 #define LWIP_RAND()                                      ((u32_t)random())
+
+#ifdef CFG_MDNS
+#define LWIP_MDNS_RESPONDER        1
+#define MDNS_MAX_SERVICES          1
+#define LWIP_NUM_NETIF_CLIENT_DATA 1
+#define MEMP_NUM_SYS_TIMEOUT            (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 3)
+#undef LWIP_IPV6 //Many routers may not support IGMPv6
+#endif
 
 #endif /* LWIP_HDR_LWIPOPTS_H__ */

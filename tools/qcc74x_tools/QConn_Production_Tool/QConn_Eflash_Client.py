@@ -17,9 +17,7 @@ try:
     import ecdsa
 except Exception as e:
     print(e)
-    qcc74x_utils.printf("Import Crypto and ecdsa package error!!")
-
-from libs import qcc74x_utils
+    print("Import Crypto and ecdsa package error!!")
 
 ecdh_enable = False
 key = None
@@ -41,8 +39,8 @@ class BLECDH:
         self.ecdh.load_received_public_key_bytes(binascii.unhexlify(peer_pk))
         self.sharedsecret = self.ecdh.generate_sharedsecret_bytes()
         ret = binascii.hexlify(self.sharedsecret).decode("utf-8")
-        qcc74x_utils.printf("secret key:")
-        qcc74x_utils.printf(ret)
+        print("secret key:")
+        print(ret)
         return ret
 
 
@@ -67,13 +65,13 @@ def udp_socket_recv_key(udp_socket_client):
         public_key = recv_data[4:]
         return public_key
     else:
-        qcc74x_utils.printf("Recieve server shared key error ", recv_data.decode("utf-8", "ignore"))
+        print("Recieve server shared key error ", recv_data.decode("utf-8", "ignore"))
     return None
 
 
 def udp_socket_recv_log(udp_socket_client):
     recv_data, recv_addr = udp_socket_client.recvfrom(1024)
-    qcc74x_utils.printf(
+    print(
         "Recieve:[from IP:%s>]" % recv_addr[0], recv_data.decode("utf-8", "ignore") + "\n", end=""
     )
     return recv_data
@@ -85,7 +83,7 @@ def udp_socket_send_client(udp_socket_client, send_address, key=None):
     sdata = bytes(send_data, encoding="utf8")
     if send_data == "quit":
         udp_socket_client.close()
-        qcc74x_utils.printf("Quit successfully")
+        print("Quit successfully")
         #os.kill(os.getpid(), signal.SIGKILL)
         if sys.platform.startswith('win'):
             os.system("taskkill /F /PID %d" % os.getpid())
@@ -119,23 +117,23 @@ def udp_socket_send_client(udp_socket_client, send_address, key=None):
                     sdata = sdata + bytearray(16 - (len(sdata) % 16))
                     sdata += bytearray(16)
                 sdata = create_encrypt_data(sdata, bytearray.fromhex(key), bytearray(16))
-        qcc74x_utils.printf(binascii.hexlify(sdata))
+        print(binascii.hexlify(sdata))
         udp_socket_client.sendto(sdata, send_address)
         start_time = time.time()
         while True:
             log = udp_socket_recv_log(udp_socket_client)
             if log.decode("utf-8", "ignore").find("Finished with success") != -1:
-                qcc74x_utils.printf("Program success")
+                print("Program success")
                 return True
             elif log.decode("utf-8", "ignore").find("Finished with fail") != -1:
-                qcc74x_utils.printf("Program fail")
+                print("Program fail")
                 return False
             elif log.decode("utf-8", "ignore").find("Stop success") != -1:
-                qcc74x_utils.printf("Server stop")
-                return True    
+                print("Server stop")
+                return True
             else:
                 if time.time() - start_time > 150:
-                    qcc74x_utils.printf("timeout, exit!")
+                    print("timeout, exit!")
                     return False
                 pass
     return False
@@ -144,7 +142,7 @@ def udp_socket_send_client(udp_socket_client, send_address, key=None):
 def main(port, key=None):
     udp_socket_client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp_socket_client.settimeout(150)
-    qcc74x_utils.printf("Enter quit to exist program")
+    print("Enter quit to exist program")
     host = socket.gethostname()
     # send_address is server address
     send_address = (host, port)
@@ -153,10 +151,10 @@ def main(port, key=None):
 
 
 def usage():
-    qcc74x_utils.printf(sys.argv[0])
-    qcc74x_utils.printf("-p/--port=     :specify UDP port")
-    qcc74x_utils.printf("--key=         :aes 128 encrypt")
-    qcc74x_utils.printf("--ecdh=        :open ecdh function")
+    print(sys.argv[0])
+    print("-p/--port=     :specify UDP port")
+    print("--key=         :aes 128 encrypt")
+    print("--ecdh=        :open ecdh function")
 
 
 if __name__ == "__main__":
@@ -169,13 +167,13 @@ if __name__ == "__main__":
         key = args.key
     if args.ecdh:
         ecdh_enable = True
-        qcc74x_utils.printf("ECDH Enable")
+        print("ECDH Enable")
     else:
         ecdh_enable = False
     if args.usage:
         usage()
     if key and ecdh_enable is True:
-        qcc74x_utils.printf("key and ecdh can only set one")
+        print("key and ecdh can only set one")
         time.sleep(2)
         sys.exit()
     main(port, key)

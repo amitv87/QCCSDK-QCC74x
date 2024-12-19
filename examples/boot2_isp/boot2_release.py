@@ -10,16 +10,8 @@ git_cmd=r'git describe --tags '#--dirty
 tag_standard="boot2_v1.0.0"
 
 release_list = [
-[r'make clean;make CHIP=qcc74x_undef            BOARD=qcc74x_undefdk CONFIG_DEBUG=n',"qcc74x_undef","release"],
-[r'make clean;make CHIP=qcc74x_undef            BOARD=qcc74x_undefdk CONFIG_DEBUG=y',"qcc74x_undef","debug"],
-[r'make clean;make CHIP=qcc74x_undef            BOARD=qcc74x_undefdk CONFIG_DEBUG=n',"qcc74x_undef","release"],    
-[r'make clean;make CHIP=qcc74x_undef            BOARD=qcc74x_undefdk CONFIG_DEBUG=y',"qcc74x_undef","debug"],  
-[r'make clean;make CHIP=qcc74x_undef  CPU_ID=m0 BOARD=qcc74x_undefdk CONFIG_DEBUG=n',"qcc74x_undef","release"],
-[r'make clean;make CHIP=qcc74x_undef  CPU_ID=m0 BOARD=qcc74x_undefdk CONFIG_DEBUG=y',"qcc74x_undef","debug"],
-[r'make clean;make CHIP=qcc74x_undefp CPU_ID=m0 BOARD=qcc74x_undefpdk CONFIG_DEBUG=n',"qcc74x_undefp","release"],
-[r'make clean;make CHIP=qcc74x_undefp CPU_ID=m0 BOARD=qcc74x_undefpdk CONFIG_DEBUG=y',"qcc74x_undefp","debug"],
-[r'make clean;make CHIP=qcc743  CPU_ID=m0 BOARD=qcc743dk CONFIG_DEBUG=n',"qcc743","release"],
-[r'make clean;make CHIP=qcc743  CPU_ID=m0 BOARD=qcc743dk CONFIG_DEBUG=y',"qcc743","debug"],
+[r'make clean; make CHIP=qcc743 CPU_ID=m0 BOARD=qcc743dk CONFIG_ANTI_ROLLBACK=y CONFIG_DEBUG=n',"qcc743","release"],
+[r'make clean; make CHIP=qcc743 CPU_ID=m0 BOARD=qcc743dk CONFIG_ANTI_ROLLBACK=y CONFIG_DEBUG=y',"qcc743","debug"],
 ]
 
 
@@ -48,9 +40,10 @@ def recreate_release_dir(dir):
         os.makedirs(dir) 
 
 def boot2_release(cmd, ver):
+    print(cmd)
     output,err = subprocess.Popen(cmd[0] + r' CONFIG_BOOT2_VER=' + ver,stdout=subprocess.PIPE,shell=True).communicate()
     if err==None:
-        print(output)
+        print(output.decode())
     else:
         print("Build error")
         sys.exit()

@@ -127,6 +127,7 @@ typedef err_t (*httpc_headers_done_fn)(httpc_state_t *connection, void *arg, str
 typedef struct _httpc_connection {
   ip_addr_t proxy_addr;
   u16_t proxy_port;
+  u16_t timeout;
   u8_t use_proxy;
 #define REQ_TYPE_HEAD  1
 #define REQ_TYPE_GET   2

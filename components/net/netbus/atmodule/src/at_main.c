@@ -29,8 +29,8 @@
 #include "at_through.h"
 #include "at_ble_cmd.h"
 #include "at_bredr_cmd.h"
-#define ATCMD_TASK_STACK_SIZE 2048
-#define ATCMD_TASK_PRIORITY 16
+#define ATCMD_TASK_STACK_SIZE (768)
+#define ATCMD_TASK_PRIORITY 28
 #define AT_CMD_PRINTF printf
 
 void at_response_result(uint8_t result_code)
@@ -55,7 +55,7 @@ void at_response_result(uint8_t result_code)
 void at_write(const char *format , ...)
 {
     va_list ap;
-    char outbuf[128];
+    char outbuf[256];
     int outstr_len = 0;
 
     if (!at) {
@@ -75,7 +75,7 @@ void at_write(const char *format , ...)
 void at_response_string(const char *format , ...)
 {
     va_list ap;
-    char outbuf[128];
+    char outbuf[256];
     int outstr_len = 0;
 
     if (!at) {
@@ -221,6 +221,8 @@ int at_module_init(void)
         AT_CMD_PRINTF("ERROR: init at cmd device failed, ret = %d\r\n", ret);
         goto INIT_ERROR;
     }
+    /* register network AT command */
+    at_net_cmd_regist();
 
     /* register at fs */
     at_fs_register();
@@ -232,16 +234,17 @@ int at_module_init(void)
     at_user_cmd_regist();
     /* register wifi AT command */
     at_wifi_cmd_regist();
-    /* register network AT command */
-    at_net_cmd_regist();
+
     /* register mqtt AT command */
     at_mqtt_cmd_regist();
     /* register http AT command */
     at_http_cmd_regist();
+#if defined(CFG_BLE_ENABLE)
     /* register ble AT command */
     at_ble_cmd_regist();
     /* register bredr AT command */
     at_bredr_cmd_regist();
+#endif
 #ifdef LP_APP
     /* register pwr AT command */
     at_pwr_cmd_regist();

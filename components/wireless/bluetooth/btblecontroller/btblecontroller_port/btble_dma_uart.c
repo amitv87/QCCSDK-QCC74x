@@ -26,7 +26,7 @@
 #define DMA_RX_NAME                "dma0_ch2"
 #define DMA_TX_NAME                "dma0_ch3"
 
-#define UART_FLOW_CTRL_ENABLE      0
+#define UART_FLOW_CTRL_ENABLE      1
 
 #define UART_RX_DMA_BUF_SIZE       2048
 

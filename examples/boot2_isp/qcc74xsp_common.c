@@ -9,9 +9,6 @@
 #include "qcc74x_eflash_loader.h"
 #include "qcc74x_uart.h"
 
-extern uint32_t edata_address;
-extern uint32_t edata_length;
-
 ATTR_NOCACHE_NOINIT_RAM_SECTION uint8_t g_malloc_buf[QCC74x_BOOT2_XZ_MALLOC_BUF_SIZE];
 
 int32_t qcc74xsp_boot2_set_encrypt(uint8_t index, boot2_image_config *g_boot_img_cfg);
@@ -141,10 +138,17 @@ void ATTR_TCM_SECTION qcc74xsp_boot2_jump_entry(void)
     }
 
 #if QCC74xSP_BOOT2_SUPPORT_SIGN_ENCRYPT
+    uint32_t encrypt_region = 0;
     /* Set decryption before read MSP and PC*/
     if (0 != g_efuse_cfg.encrypted[0]) {
-        qcc74xsp_boot2_set_encrypt(0, &g_boot_img_cfg[0]);
-        qcc74xsp_boot2_set_encrypt(1, &g_boot_img_cfg[1]);
+#if defined(QCC743) || defined(CHIP_QCC74x_undef)
+        if (g_efuse_cfg.app_encrypt_type > HAL_APP_ENCRYPT_SAME_AS_BOOT2){
+            encrypt_region++;
+        }
+#endif
+        qcc74xsp_boot2_set_encrypt(encrypt_region, &g_boot_img_cfg[0]);
+        encrypt_region++;
+        qcc74xsp_boot2_set_encrypt(encrypt_region, &g_boot_img_cfg[1]);
 #if QCC74xSP_BOOT2_CPU_MAX > 1
         if (hal_boot2_get_feature_flag() == HAL_BOOT2_CP_FLAG) {
             /*co-processor*/

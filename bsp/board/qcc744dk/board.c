@@ -347,6 +347,42 @@ int board_device_info_version()
     return device_info.version;
 }
 
+#if defined(CONFIG_ANTI_ROLLBACK) && !defined(CONFIG_BOOT2)
+extern const qcc74xverinf_t app_ver;
+uint8_t efuse_version = 0xFF;
+
+static void qcc74x_check_anti_rollback(void){
+    if(0 != qcc74x_get_app_version_from_efuse(&efuse_version)){
+        printf("error! can't read app version in efuse\r\n");
+        while(1){
+        }
+    }else{
+        printf("app version in efuse is: %d\r\n", efuse_version);
+    }
+
+    if(app_ver.anti_rollback < efuse_version){
+        printf("app version in application is: %d, less than app version in efuse, the application should not run up\r\n", app_ver.anti_rollback);
+    }else{
+        printf("app version in application is: %d, not less than app version in efuse, the application should run up\r\n", app_ver.anti_rollback);
+    }
+
+    /* change app version in efuse to app_ver.anti_rollback, default is 0 */
+    if(app_ver.anti_rollback > efuse_version){
+        qcc74x_set_app_version_to_efuse(app_ver.anti_rollback);//be attention! app version in efuse is incremental(from 0 to 128), and cannot be reduced forever
+        printf("update app version in efuse to %d\r\n", app_ver.anti_rollback);
+
+        /* check app version in efuse */
+        if(0 != qcc74x_get_app_version_from_efuse(&efuse_version)){
+            printf("error! can't read app version in efuse\r\n");
+            while(1){
+            }
+        }else{
+            printf("app version in efuse is: %d\r\n", efuse_version);
+        }
+    }
+}
+#endif
+
 void board_init(void)
 {
     int ret = -1;
@@ -366,6 +402,10 @@ void board_init(void)
     qcc74x_irq_initialize();
 
     console_init();
+
+#if defined(CONFIG_ANTI_ROLLBACK) && !defined(CONFIG_BOOT2)
+    qcc74x_check_anti_rollback();
+#endif
 
     qcc74x_show_log();
     qcc74x_show_component_version();

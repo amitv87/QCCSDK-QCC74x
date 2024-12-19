@@ -192,6 +192,8 @@ int32_t qcc74xsp_boot2_update_fw(pt_table_id_type active_id, pt_table_stuff_conf
         /* Decompress fail, try to rollback to old one */
         pt_entry->active_index = !(active_index & 0x01);
         pt_entry->age++;
+        /* decompress fail must be use origin age flag */
+        pt_entry->age = ((pt_entry->age & 0x00FFFFFF) | (g_no_active_fw_age & 0xff000000));
         ret = pt_table_update_entry((pt_table_id_type)(!active_id), pt_stuff, pt_entry);
 
         if (ret != PT_ERROR_SUCCESS) {
@@ -209,6 +211,8 @@ int32_t qcc74xsp_boot2_update_fw(pt_table_id_type active_id, pt_table_stuff_conf
         /* Decompress fail, try to rollback to old one */
         pt_entry->active_index = !(active_index & 0x01);
         pt_entry->age++;
+        /* decompress fail must be use origin age flag */
+        pt_entry->age = ((pt_entry->age & 0x00FFFFFF) | (g_no_active_fw_age & 0xff000000));
         ret = pt_table_update_entry((pt_table_id_type)(!active_id), pt_stuff, pt_entry);
 
         if (ret != PT_ERROR_SUCCESS) {

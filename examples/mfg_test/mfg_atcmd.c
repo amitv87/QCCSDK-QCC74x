@@ -4,7 +4,6 @@
 #include "mfg_atcmd.h"
 #include "mfg_atcmd_port.h"
 #include "mfg_otp.h"
-#include "mfg_version.h"
 #include "qcc743_pm.h"
 #include "qcc74x_gpio.h"
 
@@ -12,18 +11,18 @@
 #define QC_PN_LEN           (24)
 #define mfg_atcmd_print                           printf
 
-extern qcc74xverinf_t mfg_ver;
+extern qcc74xverinf_t app_ver;
 struct qcc74x_device_s *gpio;
 
 static int get_FTFW(uint32_t *value)
 {
-    *value = (mfg_ver.x << 16) | (mfg_ver.y << 8) | (mfg_ver.z);
+    *value = (app_ver.x << 16) | (app_ver.y << 8) | (app_ver.z);
     return 0;
 }
 
 static int get_QCFW(uint32_t *value)
 {
-    *value = (mfg_ver.x << 16) | (mfg_ver.y << 8) | (mfg_ver.z); 
+    *value = (app_ver.x << 16) | (app_ver.y << 8) | (app_ver.z); 
     return 0;
 }
 

@@ -9,20 +9,21 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
     set(PROJECT_SDK_VERSION "${CMAKE_MATCH_1}")
 else()
     # get git tag
-    execute_process(
-        COMMAND git describe --abbrev=8 --tags --dirty --always
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE GIT_TAG
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
+    # execute_process(
+    #     COMMAND git describe --abbrev=8 --tags --dirty --always
+    #     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    #     OUTPUT_VARIABLE GIT_TAG
+    #     OUTPUT_STRIP_TRAILING_WHITESPACE
+    #     ERROR_QUIET
+    # )
 
-    if(GIT_TAG)
-        set(PROJECT_SDK_VERSION ${GIT_TAG})
-    else()
-        message(WARNING "No Valid version info found for SDK!")
-        set(PROJECT_SDK_VERSION "version-unknown-panic")
-    endif()
+    # if(GIT_TAG)
+    #     set(PROJECT_SDK_VERSION ${GIT_TAG})
+    # else()
+    #     message(WARNING "No Valid version info found for SDK!")
+    #     set(PROJECT_SDK_VERSION "version-unknown-panic")
+    # endif()
+    set(PROJECT_SDK_VERSION "2.0.0")
 endif()
 message(STATUS "Project SDK Version: ${PROJECT_SDK_VERSION}")
 
@@ -30,6 +31,11 @@ message(STATUS "Project SDK Version: ${PROJECT_SDK_VERSION}")
 set(SOURCE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 sdk_add_compile_options("-fmacro-prefix-map=${SOURCE_PATH}=.")
 sdk_add_compile_options("-fdebug-prefix-map=${SOURCE_PATH}=.")
+
+if(CONFIG_ANTI_ROLLBACK)
+    sdk_add_compile_definitions(-DCONFIG_ANTI_ROLLBACK)
+endif()
+sdk_add_compile_definitions(-DAPP_ANTI_ROLLBACK=${APP_ANTI_ROLLBACK})
 
 add_subdirectory(bsp)
 add_subdirectory(components)
@@ -41,4 +47,5 @@ endif()
 sdk_add_subdirectory_ifdef(CONFIG_RF drivers/soc/${CHIP}/phyrf)
 if("${CHIP}" STREQUAL "qcc743")
 sdk_add_subdirectory_ifdef(CONFIG_RF drivers/rfparam)
+sdk_add_subdirectory_ifdef(CONFIG_PHY_LPFW drivers/soc/qcc743/phyrf)
 endif()

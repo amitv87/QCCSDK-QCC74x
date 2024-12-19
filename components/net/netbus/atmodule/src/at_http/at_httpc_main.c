@@ -87,7 +87,7 @@
 #define HTTPC_DEBUG_SERIOUS      (HTTPC_DEBUG | LWIP_DBG_LEVEL_SERIOUS)
 
 #define HTTPC_POLL_INTERVAL     1
-#define HTTPC_POLL_TIMEOUT      30 /* 15 seconds */
+#define HTTPC_POLL_TIMEOUT      (30*500) /* 15 seconds */
 
 #define HTTPC_CONTENT_LEN_INVALID 0xFFFFFFFF
 
@@ -193,6 +193,9 @@ typedef struct _httpc_state
 #endif
 } httpc_state_t;
 
+static void
+httpc_tcp_poll(void *arg);
+
 /** Free http client state and deallocate all resources within */
 static err_t
 httpc_free_state(httpc_state_t* req)
@@ -209,6 +212,7 @@ httpc_free_state(httpc_state_t* req)
   }
 
   tpcb = req->pcb;
+  sys_untimeout(httpc_tcp_poll, req);
   mem_free(req);
   req = NULL;
 
@@ -217,7 +221,7 @@ httpc_free_state(httpc_state_t* req)
     altcp_arg(tpcb, NULL);
     altcp_recv(tpcb, NULL);
     altcp_err(tpcb, NULL);
-    altcp_poll(tpcb, NULL, 0);
+    //altcp_poll(tpcb, NULL, 0);
     altcp_sent(tpcb, NULL);
     r = altcp_close(tpcb);
     if (r != ERR_OK) {
@@ -323,8 +327,6 @@ httpc_tcp_recv(void *arg, struct altcp_pcb *pcb, struct pbuf *p, err_t r)
   httpc_state_t* req = (httpc_state_t*)arg;
   LWIP_UNUSED_ARG(r);
 
-  req->timeout_ticks = HTTPC_POLL_TIMEOUT;//reset timer to 15 second
-
   if (p == NULL) {
     httpc_result_t result;
     if (req->parse_state != HTTPC_PARSE_RX_DATA) {
@@ -380,6 +382,11 @@ httpc_tcp_recv(void *arg, struct altcp_pcb *pcb, struct pbuf *p, err_t r)
   }
   if ((p != NULL) && (req->parse_state == HTTPC_PARSE_RX_DATA)) {
     req->rx_content_len += p->tot_len;
+    /* received valid data: reset timeout */
+    //req->timeout_ticks = HTTPC_POLL_TIMEOUT;
+    sys_untimeout(httpc_tcp_poll, req);
+    sys_timeout(req->timeout_ticks, httpc_tcp_poll, req);
+
     if (req->recv_fn != NULL) {
       /* directly return here: the connection migth already be aborted from the callback! */
       return req->recv_fn(req->callback_arg, pcb, p, r);
@@ -404,21 +411,14 @@ httpc_tcp_err(void *arg, err_t err)
 }
 
 /** http client tcp poll callback */
-static err_t
-httpc_tcp_poll(void *arg, struct altcp_pcb *pcb)
+static void
+httpc_tcp_poll(void *arg)
 {
   /* implement timeout */
   httpc_state_t* req = (httpc_state_t*)arg;
-  LWIP_UNUSED_ARG(pcb);
   if (req != NULL) {
-    if (req->timeout_ticks) {
-      req->timeout_ticks--;
-    }
-    if (!req->timeout_ticks) {
-      return httpc_close(req, HTTPC_RESULT_ERR_TIMEOUT, 0, ERR_OK);
-    }
+      httpc_close(req, HTTPC_RESULT_ERR_TIMEOUT, 0, ERR_OK);
   }
-  return ERR_OK;
 }
 
 /** http client tcp sent callback */
@@ -590,7 +590,7 @@ httpc_init_connection_common(httpc_state_t **connection, const httpc_connection_
     return ERR_MEM;
   }
   memset(req, 0, sizeof(httpc_state_t));
-  req->timeout_ticks = HTTPC_POLL_TIMEOUT;
+  req->timeout_ticks = (settings->timeout > 0) ? settings->timeout : HTTPC_POLL_TIMEOUT;
   req->request = pbuf_alloc(PBUF_RAW, (u16_t)(req_len + 1), PBUF_RAM);
   if (req->request == NULL) {
     httpc_free_state(req);
@@ -626,7 +626,8 @@ httpc_init_connection_common(httpc_state_t **connection, const httpc_connection_
   altcp_arg(req->pcb, req);
   altcp_recv(req->pcb, httpc_tcp_recv);
   altcp_err(req->pcb, httpc_tcp_err);
-  altcp_poll(req->pcb, httpc_tcp_poll, HTTPC_POLL_INTERVAL);
+  sys_timeout(req->timeout_ticks, httpc_tcp_poll, req);
+  //altcp_poll(req->pcb, httpc_tcp_poll, HTTPC_POLL_INTERVAL);
   altcp_sent(req->pcb, httpc_tcp_sent);
 
   /* set up request buffer */

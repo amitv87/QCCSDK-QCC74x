@@ -1,0 +1,25 @@
+## SIMPLEST test command
+
+append set(CONFIG_ESP_EVENT 1) to your proj.conf
+
+append above code to your main.c, this register a shell command 'test'
+````
+#include <esp_event.h>
+ESP_EVENT_DEFINE_BASE(s_test_base1);
+static void test_cb(void* event_handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+{
+    printf("test cb");
+}
+
+int test(int argc, char **argv)
+{
+    int esp_event_loop_create_default(void);
+    esp_event_loop_create_default();
+
+    esp_event_handler_register(s_test_base1, 0, test_cb, NULL);
+    esp_event_post(s_test_base1, 0, NULL, 0, 0);
+
+    return 0;
+}
+SHELL_CMD_EXPORT_ALIAS(test, test, simgle test.);
+````

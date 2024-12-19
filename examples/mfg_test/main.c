@@ -10,7 +10,6 @@
 #include "mfg_main.h"
 #include "queue.h"
 #include "rfparam_adapter.h"
-#include "mfg_version.h"
 #include "sdk_version.h"
 #if defined(MFG_QCC743)
 #include "qcc743_hbn.h"
@@ -24,26 +23,7 @@
 #include "qcc743_gpio.h"
 #include "qcc743_clock.h"
 
-
-#define COMPILE_TIME __DATE__ " " __TIME__
-const char ver_name[4] __attribute__ ((section(".verinfo"))) = "mfg";
-const char git_commit[41] __attribute__ ((section(".verinfo"))) = GIT_COMMIT;
-const char time_info[30] __attribute__ ((section(".verinfo"))) = COMPILE_TIME;
-
-
-// qcc74xverinf_t mfg_ver __attribute__ ((section(".qcc74xverinf"))) = {
-qcc74xverinf_t mfg_ver = {
-    .anti_rollback = 0,
-    .x = 0,
-    .y = 0,
-    .z = 0,
-    .name = (char *)ver_name,
-    .build_time = (char *)time_info,
-    .commit_id = (char *)git_commit,
-    .rsvd0 = 0,
-    .rsvd1 = 0,
-
-} ;
+extern const qcc74xverinf_t app_ver;
 
 #define UART1_BAUDRATE (2000000)
 
@@ -1218,8 +1198,6 @@ static void btble_init_task_entry(void *pvParameters)
     vTaskDelete(NULL);
 }
 
-#define MFG_VER_INFO_BASE QCC743_FLASH_XIP_BASE + 0xc00
-
 int isDigit(char c) {
     return (c >= '0' && c <= '9');
 }
@@ -1242,6 +1220,7 @@ static void mfg_dump_boot_info(void)
 {
     puts("MFG Version: ");
     puts(PROJECT_SDK_VERSION);
+#if 0
     uint8_t i;
     uint8_t tmp;
     uint8_t cnt = 0;
@@ -1253,17 +1232,17 @@ static void mfg_dump_boot_info(void)
         /* process the numbers */
         if (isDigit(PROJECT_SDK_VERSION[i])) {
             if (cnt == 0){
-                mfg_ver.x = stringToNumber(&PROJECT_SDK_VERSION[i]);
+                //app_ver.x = stringToNumber(&PROJECT_SDK_VERSION[i]);
                 cnt++;
             } else if (cnt == 1) {
-                mfg_ver.y = stringToNumber(&PROJECT_SDK_VERSION[i]);
+                //app_ver.y = stringToNumber(&PROJECT_SDK_VERSION[i]);
                 cnt++;
             } else if (cnt == 2) {
-                mfg_ver.z = stringToNumber(&PROJECT_SDK_VERSION[i]);
+                //app_ver.z = stringToNumber(&PROJECT_SDK_VERSION[i]);
                 cnt++;
             }
             /*else if (cnt == 3) {
-                mfg_ver.rsvd0 = stringToNumber(&PROJECT_SDK_VERSION[i]);
+                app_ver.rsvd0 = stringToNumber(&PROJECT_SDK_VERSION[i]);
                 cnt++;
             }*/
         }
@@ -1272,9 +1251,10 @@ static void mfg_dump_boot_info(void)
             i++;
         }
     }
+#endif
     /* check if dirty
     if ((i > 4) && (PROJECT_SDK_VERSION[i-5] == 'd') && (PROJECT_SDK_VERSION[i-4] == 'i') && (PROJECT_SDK_VERSION[i-3] == 'r') && (PROJECT_SDK_VERSION[i-2] == 't') && (PROJECT_SDK_VERSION[i-1] == 'y')){
-        mfg_ver.rsvd1 = 1;
+        app_ver.rsvd1 = 1;
     }
     */
 #if ( PM_PDS_LDO_LEVEL_DEFAULT == 8 )
@@ -1297,13 +1277,13 @@ static void mfg_dump_boot_info(void)
 void _dump_media_ver(void)
 {
     mfg_print("ver:\r\n");
-    mfg_print("anti_rollback:%d\r\n",(int)(*(uint8_t *)((uint32_t)&mfg_ver.anti_rollback + MFG_VER_INFO_BASE)));
-    mfg_print("%d.%d.%d\r\n",(int)(*(uint8_t *)((uint32_t)&mfg_ver.x + MFG_VER_INFO_BASE)),(int)(*(uint8_t *)((uint32_t)&mfg_ver.y + MFG_VER_INFO_BASE)),(int)(*(uint8_t *)((uint32_t)&mfg_ver.z + MFG_VER_INFO_BASE)));
-    mfg_print("name:%s\r\n",(char *)((uint32_t)ver_name + MFG_VER_INFO_BASE));
-    mfg_print("build time:%s\r\n",(char *)((uint32_t)time_info + MFG_VER_INFO_BASE));
-    mfg_print("commit_id:%s\r\n",(char *)((uint32_t)git_commit + MFG_VER_INFO_BASE));
-    mfg_print("rscv0:%d\r\n",(int)(*(uint32_t *)((uint32_t)&mfg_ver.rsvd0 + MFG_VER_INFO_BASE)));
-    mfg_print("rscv1:%d\r\n",(int)(*(uint32_t *)((uint32_t)&mfg_ver.rsvd1 + MFG_VER_INFO_BASE)));
+    mfg_print("anti_rollback:%d\r\n", app_ver.anti_rollback);
+    mfg_print("%d.%d.%d\r\n", app_ver.x, app_ver.y, app_ver.z);
+    mfg_print("name:%s\r\n", (char *)app_ver.name);
+    mfg_print("build time:%s\r\n", (char *)app_ver.build_time);
+    mfg_print("commit_id:%s\r\n", (char *)app_ver.commit_id);
+    mfg_print("rscv0:%d\r\n", app_ver.rsvd0);
+    mfg_print("rscv1:%d\r\n", app_ver.rsvd1);
     mfg_print("------------------------------------------------------------\r\n");
 }
 

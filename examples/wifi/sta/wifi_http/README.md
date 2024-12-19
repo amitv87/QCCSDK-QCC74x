@@ -42,3 +42,8 @@ HTTP/1.1 200 OK
 
 TODO
 
+### gethostbyname(DNSv6, DNSv4)
+```bash
+qcc74x />gethostbyname bt.byr.cn
+qcc74x />gethostbyname baidu.com
+```

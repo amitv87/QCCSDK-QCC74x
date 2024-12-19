@@ -156,7 +156,7 @@ int qcc74x_acomp_gpio_2_chanid(uint32_t pin, uint32_t* channel);
  * @return Zero on success; a negated errno value on failure
  */
 int qcc74x_acomp_chanid_2_gpio(uint32_t channel, uint32_t* pin);
-
+uint32_t qcc74x_acomp_get_postive_input(uint8_t acomp_id);
 #ifdef __cplusplus
 }
 #endif

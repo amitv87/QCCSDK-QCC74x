@@ -6,6 +6,7 @@ find_package(qcc74x_sdk REQUIRED HINTS $ENV{QCC74x_SDK_BASE})
 
 # User
 sdk_add_compile_definitions(-DCONFIG_CLI_CMD_ENABLE)
+#sdk_add_compile_definitions(-DCONFIG_MEMSET_OPTSPEED)
 
 
 if (CONFIG_LPAPP)
@@ -21,6 +22,8 @@ if (CONFIG_LPAPP)
     sdk_add_compile_definitions(-DPM_PDS_LDO_LEVEL_SOC_DEFAULT=10)
     sdk_add_compile_definitions(-DPM_PDS_LDO_LEVEL_AON_DEFAULT=10)
     sdk_add_compile_definitions(-DTICKLESS_DEBUG=0)
+    sdk_add_compile_definitions(-DLP_RAM_REUSE=1)
+    sdk_add_compile_definitions(-DCONFIG_LPFW_INIT_SKIP_COPY=1)
 
     if (CONFIG_ACTIVE_CRYSTAL)
         sdk_add_compile_definitions(-DCFG_ACTIVE_CRYSTAL)
@@ -32,7 +35,7 @@ if (CONFIG_LPAPP)
         sdk_add_compile_definitions(-DPM_PDS_LDO_LEVEL_RT_DEFAULT=10)
     endif ()
 
-    sdk_add_compile_definitions(-DLP_FW_START_ADDR=0x63026800)
+    # sdk_add_compile_definitions(-DLP_FW_START_ADDR=0x63029000)
 
     target_sources(app PRIVATE
                        app/src/app_spiwifi.c
@@ -41,10 +44,8 @@ if (CONFIG_LPAPP)
                        app/src/pm/tickless.c
                        )
 else ()
-    if(NOT CONFIG_PSRAM_COPY_CODE)
-        sdk_add_compile_definitions(-DCFG_LINK_ALL_IN_FLASH=1)
-        sdk_add_compile_definitions(-DCONFIG_HIGH_PERFORMANCE=1)
-    endif()
+
+sdk_add_compile_definitions(-DHIGH_PERFORMANCE_PBUF=1)
 
 #sdk_add_compile_definitions(-DQCC743_DHCP_DEBUG)
 
@@ -68,10 +69,6 @@ sdk_add_compile_definitions(-DMQTT_USE_CUSTOM_SOCKET_HANDLE=1)
 
 if (CONFIG_IPV6)
     sdk_add_compile_definitions(-DCONFIG_IPV6=1)
-endif()
-
-if (CONFIG_ANTI_ROLLBACK)
-    sdk_add_compile_definitions(-DCONFIG_ANTI_ROLLBACK)
 endif()
 
 sdk_add_include_directories(.)

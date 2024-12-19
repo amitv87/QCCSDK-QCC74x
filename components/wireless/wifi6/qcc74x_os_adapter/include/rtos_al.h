@@ -486,6 +486,45 @@ void rtos_priority_set(rtos_task_handle handle, rtos_prio priority);
  */
 rtos_task_handle rtos_get_task_handle();
 
+#ifdef CFG_QCC74x_WIFI_PS_ENABLE
+/**
+ ****************************************************************************************
+ * @brief Create a RTOS timer.
+ *
+ * @param[in]  name     timer name
+ * @param[in]  period_ms   timer period in ms
+ * @param[in]  callback    timer callback
+ * @param[in]  user data   user data
+ *
+ * @return timer handler.
+ ****************************************************************************************
+ */
+rtos_timer_t rtos_timer_create(const char *name, uint32_t period_ms, rtos_timer_callback_t callback, void *user_data);
+
+/**
+ ****************************************************************************************
+ * @brief Update and start a RTOS timer.
+ *
+ * @param[in]  name     timer name
+ * @param[in]  period_ms   timer period in ms
+ *
+ * @return 0 or -1 if error occurred.
+ ****************************************************************************************
+ */
+int rtos_timer_update_and_start(rtos_timer_t timer, uint32_t period_ms);
+
+/**
+ ****************************************************************************************
+ * @brief Delete a RTOS timer.
+ *
+ * @param[in]  name     timer name
+ *
+ * @return 0 or -1 if error occurred.
+ ****************************************************************************************
+ */
+int rtos_delete_timer(rtos_timer_t xTimer);
+#endif
+
 #endif // RTOS_H_
 
 /**

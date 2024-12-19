@@ -1,11 +1,15 @@
 #ifndef __SPISYNC_H__
 #define __SPISYNC_H__
 
+#include <stdint.h>
+#include <string.h>
+
 #include <FreeRTOS.h>
 #include <queue.h>
 #include <semphr.h>
 #include "stream_buffer.h"
 #include <event_groups.h>
+#include <utils_list.h>
 
 #include "spisync_config.h"
 #include <ramsync.h>
@@ -32,19 +36,26 @@
 #define SPISYNC_RXMSG_PBUF_ITEMS       (3)//Set to 2 to reduce memory (also update host configuration)
 #define SPISYNC_RXMSG_SYSCTRL_ITEMS    (2)//Set to 2 to reduce memory (also update host configuration)
 #define SPISYNC_RXMSG_USER1_ITEMS      (1)//Set to 2 to reduce memory (also update host configuration)
-#define SPISYNC_RXSTREAM_AT_BYTES      (1536*3)//Set to 8 to reduce memory (also update host configuration)
-#define SPISYNC_RXSTREAM_USER1_BYTES   (1536*1)//Set to 8 to reduce memory (also update host configuration)
-#define SPISYNC_RXSTREAM_USER2_BYTES   (1536*1)//Set to 8 to reduce memory (also update host configuration)
+#define SPISYNC_RXSTREAM_AT_BYTES      (1536*6)//Set to 8 to reduce memory (also update host configuration)
+#define SPISYNC_RXSTREAM_USER1_BYTES   (8)//Set to 8 to reduce memory (also update host configuration)
+#define SPISYNC_RXSTREAM_USER2_BYTES   (8)//Set to 8 to reduce memory (also update host configuration)
 #define SPISYNC_TXMSG_PBUF_ITEMS       (11)//Set to 2 to reduce memory (also update host configuration)
 #define SPISYNC_TXMSG_SYSCTRL_ITEMS    (2)//Set to 2 to reduce memory (also update host configuration)
 #define SPISYNC_TXMSG_USER1_ITEMS      (2)//Set to 2 to reduce memory (also update host configuration)
-#define SPISYNC_TXSTREAM_AT_BYTES      (1536*3)//Set to 8 to reduce memory (also update host configuration)
-#define SPISYNC_TXSTREAM_USER1_BYTES   (1536*1)//Set to 8 to reduce memory (also update host configuration)
-#define SPISYNC_TXSTREAM_USER2_BYTES   (1536*1)//Set to 8 to reduce memory (also update host configuration)
+#define SPISYNC_TXSTREAM_AT_BYTES      (1536*6)//Set to 8 to reduce memory (also update host configuration)
+#define SPISYNC_TXSTREAM_USER1_BYTES   (8)//Set to 8 to reduce memory (also update host configuration)
+#define SPISYNC_TXSTREAM_USER2_BYTES   (8)//Set to 8 to reduce memory (also update host configuration)
 
 /* task config */
-#define SPISYNC_STACK_SIZE             (12048)
-#define SPISYNC_TASK_PRI               (20)
+#define SPISYNC_STACK_SIZE             (1024*3)
+#define SPISYNC_TASK_PRI               (28)
+
+/* feature config */
+#define SPISYNC_TXCRC_ENABLE           (1) // set 0 if disable slave--->host crc
+#define SPISYNC_RXCRC_ENABLE           (1) // set 0 if disable host--->slave crc
+#define SPISYNC_TXCRC32_ENABLE         (0) // 0-checksum 1-crc32
+#define SPISYNC_RXCRC32_ENABLE         (0) // 0-checksum 1-crc32
+#define SPISYNC_SAVE2CACHE_WHENRESET   (0) // 0-no sav2cache when reset, 1-save2cache
 
 /* ========================================================================= */
 
@@ -102,7 +113,7 @@ typedef struct __slot_payload {
     uint16_t tot_len;
     uint8_t  res[2];
     union {
-        uint8_t     raw[1536 + 4];
+        uint8_t     raw[SPISYNC_PAYLOADBUF_LEN + 4];
         slot_seg_t  seg[1];
     };
     uint32_t crc;
@@ -134,10 +145,18 @@ typedef struct __spisync_rxbuf {
 typedef struct __spisync_msg {
     uint8_t type;      // for spisync
 
-    // uint32_t flags;     // [resv]
+    //uint32_t flags;     // [resv]
+    union {
+        uint32_t flags;   // Keep flags as 32 bits
+        struct {
+            uint32_t copy       : 1;   // bit0 indicates if copy is needed
+            uint32_t reserved   : 31;  // Remaining 31 bits reserved
+        };
+    };
+
     uint32_t timeout;   // rtos send/recv timeout
 
-    void     *buf;      // real buf addr
+    uint8_t  *buf;      // real buf addr
     uint32_t buf_len;   // read buf length
     // void *start;        // [resv] for zero copy
     // void *end;          // [resv] for zero copy
@@ -161,11 +180,14 @@ typedef struct __spisync {
     StreamBufferHandle_t    ptx_streambuffer[3];
 
     /* local global arg */
-    uint8_t                 enablerxtx;
     uint16_t                tx_seq;
     uint32_t                rxtag_errtimes;
     uint32_t                rxpattern_checked;
-    uint32_t                ps_status;  // 0:active, 1:sleeping
+
+    uint32_t                ps_status;     // 0:active,    1:sleeping
+    uint32_t                ps_gpioactive; // 0:can sleep, 1:cant't sleep
+    uint32_t                ps_keepactive; // 0:can sleep, 1:cant't sleep
+
     uint32_t                clamp[6];   // local for tx // local-reicved  // s->m flowctrl
     
     /* local cb */
@@ -179,6 +201,9 @@ typedef struct __spisync {
     spisync_rxbuf_t*        p_rx;
     /* calulate crc for rx */
     spisync_slot_t*         p_rxcache;
+    /* To avoid tx_slot loss due to reset  */
+    struct utils_list       txcache_list;
+    uint16_t                rx_ackseq_fortxcache;
 
     /* ramsync */
     lramsync_ctx_t          hw;
@@ -198,21 +223,53 @@ typedef struct __spisync {
     uint32_t                dbg_write_slotblock;
     uint32_t                dbg_write_clampblock[6];
     uint32_t                dbg_read_flowblock[6];
+    void *gpio;
 } spisync_t;
+typedef struct __spisync_wakeuparg {
+    int wakeup_reason;// 0-gpio, 1-task, 2-timer, 3-beacon, 4-dtim...
+} spisync_wakeuparg_t;
+
+#if 0
+#define SPISYNC_MSGINIT(msg,type,copy,timeout,buf,len,cb,cb_arg) {  \
+                            memset(&msg, 0, sizeof(spisync_msg_t)); \
+                            msg.type       = type;                  \
+                            msg.copy       = copy;                  \
+                            msg.timeout    = timeout;               \
+                            msg.buf        = buf;                   \
+                            msg.buf_len    = len;                   \
+                            msg.cb         = cb;                    \
+                            msg.cb_arg     = cb_arg;                \
+                        }
+#else
+static inline int SPISYNC_MSGINIT(spisync_msg_t *pmsg,
+                            uint8_t type, uint32_t copy,
+                            uint32_t timeout,
+                            uint8_t *buf, uint32_t len,
+                            void *(*cb)(void *arg),
+                            void *cb_arg)
+{
+    memset(pmsg, 0, sizeof(spisync_msg_t));
+    pmsg->type       = type;
+    pmsg->copy       = copy;
+    pmsg->timeout    = timeout;
+    pmsg->buf        = buf;
+    pmsg->buf_len    = len;
+    pmsg->cb         = cb;
+    pmsg->cb_arg     = cb_arg;
+
+    return 0;
+}
+#endif
 
 /* base api */
 int spisync_init        (spisync_t *spisync, const spisync_config_t *config);
-int spisync_build_typecb(spisync_ops_t *msg, uint8_t type, spisync_opscb_cb_t *cb, void *cb_pri);
-int spisync_reg_typecb  (spisync_t *spisync, spisync_ops_t *msg);
-int spisync_deinit      (spisync_t *spisync);
 int spisync_read        (spisync_t *spisync, spisync_msg_t *msg, uint32_t flags);
 int spisync_write       (spisync_t *spisync, spisync_msg_t *msg, uint32_t flags);
-int spisync_build_msg   (spisync_msg_t *msg, uint32_t type, uint32_t buf, uint32_t len, uint32_t timeout);
 
 /* powersaving api */
 int spisync_ps_enter    (spisync_t *spisync);
 int spisync_ps_exit     (spisync_t *spisync);
-int spisync_ps_wakeup   (spisync_t *spisync);
+int spisync_ps_wakeup   (spisync_t *spisync, spisync_wakeuparg_t *arg);
 int spisync_ps_get      (spisync_t *spisync);//0-idle 1-busy
 
 /* debug api */

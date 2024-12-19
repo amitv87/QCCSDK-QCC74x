@@ -9,6 +9,7 @@
 #include <spisync.h>
 #include "at_main.h"
 #include "qcc74x_dma.h"
+#include <utils_crc.h>
 
 spisync_t    *at_spisync = NULL;
 static void __spisync_gpio_init(void *arg);
@@ -62,12 +63,12 @@ static void __spisync_gpio_init(void *arg)
 
 static void atspisync_fakepush_forpop_cmd(int argc, char **argv)
 {
-    uint8_t *msg = NULL;
-    uint32_t msg_len;
+    uint8_t *buf = NULL;
+    uint32_t buf_len;
     int cmd_len;
     int compare_len;
     int hascrlf;
-    spisync_msg_t m;
+    spisync_msg_t msg;
 
     if (argc < 2) {
         printf("Usage: at_fake <data_str> [hascrlf]\r\n");
@@ -80,8 +81,8 @@ static void atspisync_fakepush_forpop_cmd(int argc, char **argv)
         hascrlf = 1;
     }
 
-    msg = pvPortMalloc(SPISYNC_PAYLOADBUF_LEN);
-    if (NULL == msg) {
+    buf = pvPortMalloc(SPISYNC_PAYLOADBUF_LEN);
+    if (NULL == buf) {
         printf("mem err len = %d\r\n", SPISYNC_PAYLOADBUF_LEN);
         goto fakepush_err;
     }
@@ -93,23 +94,29 @@ static void atspisync_fakepush_forpop_cmd(int argc, char **argv)
                         cmd_len, compare_len);
         goto fakepush_err;
     }
-    memcpy(msg, argv[1], cmd_len);
+    memcpy(buf, argv[1], cmd_len);
     if (hascrlf) {
-        memcpy(msg + cmd_len, "\r\n", 2);
+        memcpy(buf + cmd_len, "\r\n", 2);
         cmd_len += 2;
     }
-    msg_len = cmd_len;
+    buf_len = cmd_len;
 
     //extern struct at_struct *at;
     //at->fakeoutput = 1;
-    spisync_build_msg(&m, SPISYNC_TYPESTREAM_AT, msg, msg_len, 0);
+    SPISYNC_MSGINIT(&msg,
+                SPISYNC_TYPESTREAM_AT,              /* type */
+                0,                                  /* copy */
+                0,                                  /* timeout */
+                buf, buf_len,                       /* buf buf_len */
+                NULL,                               /* cb */
+                NULL);                              /* cb_arg */
 
-    msg_len = spisync_fakewrite_forread(at_spisync, &m, 0);
+    buf_len = spisync_fakewrite_forread(at_spisync, &msg, 0);
 
-    printf("fakewrite len:%d, hascrlf:%d\r\n", msg_len, hascrlf);
+    printf("fakewrite len:%d, hascrlf:%d\r\n", buf_len, hascrlf);
 fakepush_err:
-    if (msg) {
-        vPortFree(msg);
+    if (buf) {
+        vPortFree(buf);
     }
 }
 SHELL_CMD_EXPORT_ALIAS(atspisync_fakepush_forpop_cmd, atfake, spisync fake push for pop);

@@ -85,28 +85,25 @@ sub getCrc32{
     return $crc32;
 }
 
-################### SHA256 ###################
-# use Digest::SHA qw(sha256_hex);
-
-# my $lpfw_sha256 = sha256_hex(<$fh>);
-# close($fh);
-# print $lpfw_sha256 . "\n";
-# $lpfw_sha256 = pack("H*", $lpfw_sha256);
-
-# open FD, "+<$ARGV[0]";
-# seek FD, -64, 2;
-# print FD $lpfw_sha256 ;
-
 exit if !-e $ARGV[1];
 
-my $crc=getCrc32($ARGV[1]);
-$crc = swap_endian($crc);
-print uc($crc) . "\n";
-$crc = pack("H*", $crc);
+################### SHA256 ###################
+use Digest::SHA qw(sha256_hex);
+
+open(my $fh, "<:raw", $ARGV[1]) or die "couldn't open $filename: $!\n";
+my $lpfw_sha256 = sha256_hex(<$fh>);
+close($fh);
+print $lpfw_sha256 . "\n";
+$digest = pack("H*", $lpfw_sha256);
+
+#my $crc=getCrc32($ARGV[1]);
+#$crc = swap_endian($crc);
+#print uc($crc) . "\n";
+#$digest = pack("H*", $crc);
 
 open FD, "+<:raw", $ARGV[0];
 seek FD, -64, 2;
-print FD $crc;
+print FD $digest;
 
 seek FD, -32, 2;
 read FD, $char, 32;

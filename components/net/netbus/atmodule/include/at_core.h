@@ -116,6 +116,8 @@ typedef enum {
     } \
 } while(0);
 
+#define AT_DEBUG_POINT(a) //at_port_debug_gpio_set(a)
+
 uint32_t at_cmd_get_version(void);
 
 int at_cmd_get_compile_time(char *time, size_t buf_len);

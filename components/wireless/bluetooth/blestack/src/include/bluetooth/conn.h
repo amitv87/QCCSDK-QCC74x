@@ -1012,6 +1012,18 @@ int bt_conn_enable_peripheral_pref_param_update(struct bt_conn *conn, bool enabl
 #endif
 #endif
 
+#if defined(QCC74x_BLE_SUPPORT_CUSTOMIZED_SCAN_PARAMERS_IN_GENERAL_CONN_ESTABLISH)
+/** @brief Set scan interval and scan window in scanning procedure of ble general conection establishement.
+ *
+ * @param scan_interval scan interval.
+ * @param scan_window  scan window.
+ *
+ * @return 0 in case of success or negative value in case of error.
+ * In ble general conection establishement,the default scan interval is 30ms and the default scan window is 30 ms in scanning procedure.
+ * Appllication layer shall call this API before bt_conn_create_le.
+ */
+int bt_conn_set_scan_parameters_in_general_conn_establish(u16_t scan_interval, u16_t scan_window);
+#endif //QCC74x_BLE_SUPPORT_CUSTOMIZED_SCAN_PARAMERS_IN_GENERAL_CONN_ESTABLISH
 #endif
 
 #ifdef __cplusplus

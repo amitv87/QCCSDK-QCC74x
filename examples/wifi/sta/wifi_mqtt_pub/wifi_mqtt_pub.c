@@ -15,13 +15,13 @@
 
 #include "qcc74x_rtc.h"
 
-uint8_t sendbuf[2048]; /* sendbuf should be large enough to hold multiple whole mqtt messages */
-uint8_t recvbuf[1024]; /* recvbuf should be large enough any whole mqtt message expected to be received */
+static uint8_t sendbuf[2048]; /* sendbuf should be large enough to hold multiple whole mqtt messages */
+static uint8_t recvbuf[1024]; /* recvbuf should be large enough any whole mqtt message expected to be received */
 
-shell_sig_func_ptr abort_exec;
+static shell_sig_func_ptr abort_exec;
 static TaskHandle_t client_daemon;
-int test_sockfd;
-const char* addr;
+static int test_sockfd;
+static const char* addr;
 
 /*
     A template for opening a non-blocking POSIX socket.
@@ -123,26 +123,21 @@ static int example_mqtt(int argc, const char *argv[])
     /* get address (argv[1] if present) */
     if (argc > 1) {
         addr = argv[1];
-    } else {
-        addr = "test.mosquitto.org";
     }
 
     /* get port number (argv[2] if present) */
     if (argc > 2) {
         port = argv[2];
-    } else {
-        port = "1883";
     }
 
     /* get the topic name to publish */
-    if (argc > 3) {
-        topic = argv[3];
-    } else {
-        topic = "qcc74x_undef";
-    }
+    topic = "qcc74x_undef";
 
     /* open the non-blocking TCP socket (connecting to the broker) */
     test_sockfd = open_nb_socket(addr, port);
+    struct custom_socket_handle handle;
+    handle.type = MQTTC_PAL_CONNTION_TYPE_TCP;
+    handle.ctx.fd = test_sockfd;
 
     if (test_sockfd < 0) {
         printf("Failed to open socket: %d\r\n", test_sockfd);
@@ -152,7 +147,7 @@ static int example_mqtt(int argc, const char *argv[])
     /* setup a client */
     struct mqtt_client client;
 
-    mqtt_init(&client, test_sockfd, sendbuf, sizeof(sendbuf), recvbuf, sizeof(recvbuf), publish_callback_1);
+    mqtt_init(&client, &handle, sendbuf, sizeof(sendbuf), recvbuf, sizeof(recvbuf), publish_callback_1);
     /* Create an anonymous session */
     const char* client_id = NULL;
     /* Ensure we have a clean session */
@@ -238,7 +233,7 @@ static int check_wifi_state(void)
     }
 }
 
-int cmd_mqtt_publisher(int argc, const char **argv)
+static int cmd_mqtt_publisher(int argc, const char **argv)
 {
     uint32_t ret = 0;
 

@@ -192,7 +192,7 @@ static int at_query_cmd_cwjap(int argc, const char **argv)
     int state = at_wifi_state_get();
     wifi_sta_ip4_addr_get(&ipaddr.addr, NULL, NULL, NULL);
 
-    if (state == FHOST_STA_CONNECTED && !ip4_addr_isany(&ipaddr)) {
+    if (state == FHOST_STA_CONNECTED) {
         wifi_mgmr_sta_connect_ind_stat_get(&info);
         wifi_mgmr_sta_rssi_get(&rssi);
         at_response_string("+CWJAP:\"%s\",\"%02x:%02x:%02x:%02x:%02x:%02x\",%d,%d,%d\r\n",
@@ -208,8 +208,8 @@ static int at_query_cmd_cwjap(int argc, const char **argv)
 static int at_setup_cmd_cwjap(int argc, const char **argv)
 {
     int ret = 0;
-    char ssid[32];
-    char password[64];
+    char ssid[33];
+    char password[65];
     char bssidString[20];
     int bssid_valid = 0;
     uint8_t bssid[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
@@ -1427,11 +1427,9 @@ static int at_query_cmd_cwcountry(int argc, const char **argv)
 {
     char country_code_string[5] = {0};
     wifi_mgmr_get_country_code(country_code_string);
-    at_response_string("+CWCOUNTRY:%d,\"%s\",%d,%d\r\n",
+    at_response_string("+CWCOUNTRY:%d,\"%s\"\r\n",
             at_wifi_config->wifi_country.country_policy,
-            country_code_string,
-            at_wifi_config->wifi_country.start_channel,
-            at_wifi_config->wifi_country.total_channel_count);
+            country_code_string);
     return AT_RESULT_CODE_OK;
 }
 
@@ -1441,13 +1439,9 @@ static int at_setup_cmd_cwcountry(int argc, const char **argv)
     char *country_code_string[WIFI_COUNTRY_CODE_MAX] = AT_WIFI_COUNTRY_CODE;
     int country_policy;
     int country_code;
-    int start_channel;
-    int total_channel_count;
 
     AT_CMD_PARSE_NUMBER(0, &country_policy);
     AT_CMD_PARSE_STRING(1, code, sizeof(code));
-    AT_CMD_PARSE_NUMBER(2, &start_channel);
-    AT_CMD_PARSE_NUMBER(3, &total_channel_count);
 
     if (country_policy != 0 && country_policy != 1) {
         return AT_RESULT_CODE_ERROR;
@@ -1460,17 +1454,9 @@ static int at_setup_cmd_cwcountry(int argc, const char **argv)
     if (country_code >= WIFI_COUNTRY_CODE_MAX) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (start_channel < 1 || start_channel > 14) {
-        return AT_RESULT_CODE_ERROR;
-    }
-    if (total_channel_count < 1 || total_channel_count > 14) {
-        return AT_RESULT_CODE_ERROR;
-    }
-
+    
     at_wifi_config->wifi_country.country_policy = (uint8_t)country_policy;
     at_wifi_config->wifi_country.country_code = (uint8_t)country_code;
-    at_wifi_config->wifi_country.start_channel = (uint8_t)start_channel;
-    at_wifi_config->wifi_country.total_channel_count = (uint8_t)total_channel_count;
     if (at->store) {
         at_wifi_config_save(AT_CONFIG_KEY_WIFI_COUNTRY_CODE);
     }
@@ -1519,7 +1505,7 @@ static const at_cmd_struct at_wifi_cmd[] = {
     {"+WPS",          NULL, NULL,                     at_setup_cmd_wps,          NULL,                    1, 2},
     {"+MDNS",         NULL, NULL,                     at_setup_cmd_mdns,         NULL,                    1, 4},
     {"+CWHOSTNAME",   NULL, at_query_cmd_cwhostname,  at_setup_cmd_cwhostname,   NULL,                    1, 1},
-    {"+CWCOUNTRY",    NULL, at_query_cmd_cwcountry,   at_setup_cmd_cwcountry,    NULL,                    4, 4},
+    {"+CWCOUNTRY",    NULL, at_query_cmd_cwcountry,   at_setup_cmd_cwcountry,    NULL,                    2, 2},
     {"+CWEVT",        NULL, at_query_cmd_cwevt,       at_setup_cmd_cwevt,        NULL,                    1, 1},
 };
 

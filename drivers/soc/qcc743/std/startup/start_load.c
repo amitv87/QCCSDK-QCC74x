@@ -85,6 +85,19 @@ void start_load(void)
     }
 #endif
 
+#if LP_APP && LP_RAM_REUSE
+    extern uint32_t __ram_lp_code_start__;
+    extern uint32_t __ram_lp_code_end__;
+    extern uint32_t __ram_lp_load_addr;
+
+    tmp_src = &__ram_lp_load_addr;
+    tmp_dst = &__ram_lp_code_start__;
+
+    for (; tmp_dst < &__ram_lp_code_end__;) {
+        *tmp_dst++ = *tmp_src++;
+    }
+#endif
+
 #ifdef __STARTUP_CLEAR_BSS
     tmp_dst = &__bss_start__;
     for (; tmp_dst < &__bss_end__;) {

@@ -12,6 +12,7 @@ sdk_add_compile_definitions(-DQCC74x_VERIFY)
 target_sources(app PRIVATE
                    https/src/https.c
                    https/src/qcc74x_https.c
+                   ssl_rev_client.c
                    )
 
 sdk_add_include_directories(.)

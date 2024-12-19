@@ -51,7 +51,7 @@ void qcc74x_acomp_init(uint8_t acomp_id, const struct qcc74x_acomp_config_s *con
     reg_base = ACOMP_BASE + AON_ACOMP_REG_ACOMP_CFG_OFFSET;
     regval = getreg32(reg_base);
     regval &= ~AON_ACOMP_VREF_SEL_MASK;
-    regval |= (config->vio_sel << AON_ACOMP_POS_SEL_SHIFT);
+    regval |= (config->vio_sel << AON_ACOMP_VREF_SEL_SHIFT);
     putreg32(regval, reg_base);
 #endif
 }
@@ -114,6 +114,22 @@ uint32_t qcc74x_acomp_get_result(uint8_t acomp_id)
         return (regval & AON_ACOMP1_OUT_RAW_DATA_MASK) >> AON_ACOMP1_OUT_RAW_DATA_SHIFT;
     }
 #endif
+}
+
+uint32_t qcc74x_acomp_get_postive_input(uint8_t acomp_id)
+{
+    uint32_t regval;
+    uint32_t reg_base;
+
+    if (acomp_id == AON_ACOMP0_ID) {
+        reg_base = ACOMP_BASE + AON_ACOMP_REG_ACOMP0_CTRL_OFFSET;
+    } else {
+        reg_base = ACOMP_BASE + AON_ACOMP_REG_ACOMP1_CTRL_OFFSET;
+    }
+
+    regval = getreg32(reg_base);
+
+    return (regval & AON_ACOMP_POS_SEL_MASK) >> AON_ACOMP_POS_SEL_SHIFT;
 }
 
 int qcc74x_acomp_gpio_2_chanid(uint32_t pin, uint32_t *channel)

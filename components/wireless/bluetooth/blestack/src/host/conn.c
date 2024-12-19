@@ -2482,6 +2482,29 @@ int bt_conn_create_auto_stop(void)
 }
 #endif /* defined(CONFIG_BT_WHITELIST) */
 
+#if defined(QCC74x_BLE_SUPPORT_CUSTOMIZED_SCAN_PARAMERS_IN_GENERAL_CONN_ESTABLISH)
+u16_t scan_intvl_in_general_conn_est = BT_GAP_SCAN_FAST_INTERVAL_MIN;
+u16_t scan_window_in_general_conn_est = BT_GAP_SCAN_FAST_INTERVAL_MIN;
+int bt_conn_set_scan_parameters_in_general_conn_establish(u16_t scan_interval, u16_t scan_window)
+{
+	if (scan_interval < 0x0004 || scan_interval > 0x4000) {
+		return -EINVAL;
+	}
+
+	if (scan_window < 0x0004 || scan_window > 0x4000) {
+		return -EINVAL;
+	}
+
+	if (scan_window > scan_interval) {
+		return -EINVAL;
+	}
+
+	scan_intvl_in_general_conn_est = scan_interval;
+	scan_window_in_general_conn_est = scan_window;
+	return 0;
+}
+#endif
+
 struct bt_conn *bt_conn_create_le(const bt_addr_le_t *peer,
 				  const struct bt_le_conn_param *param)
 {

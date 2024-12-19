@@ -53,27 +53,6 @@
 static struct qcc74x_device_s *uart0;
 extern void shell_init_with_task(struct qcc74x_device_s *shell);
 
-#ifdef CONFIG_ANTI_ROLLBACK
-#define COMPILE_TIME __DATE__ " " __TIME__
-const char ver_name[4] __attribute__ ((section(".verinfo"))) = "app";
-const char git_commit[41] __attribute__ ((section(".verinfo"))) = "";
-const char time_info[30] __attribute__ ((section(".verinfo"))) = COMPILE_TIME;
-
-const qcc74xverinf_t app_ver __attribute__ ((section(".qcc74xverinf"))) = {
-    .anti_rollback = 0,
-    .x = 0,
-    .y = 0,
-    .z = 0,
-    .name = (uint32_t)ver_name,
-    .build_time = (uint32_t)time_info,
-    .commit_id = (uint32_t)git_commit,
-    .rsvd0 = 0,
-    .rsvd1 = 0,
-};
-
-uint8_t version = 0xFF;
-#endif
-
 void app_init_entry(void *param)
 {
     app_spiwifi_init();
@@ -87,33 +66,6 @@ int main(void)
 
 #ifdef LP_APP
     app_pm_init();
-#endif
-
-#ifdef CONFIG_ANTI_ROLLBACK
-    if(0 != qcc74x_get_app_version_from_efuse(&version)){
-        printf("error! can't read app version\r\n");
-        while(1){
-        }
-    }else{
-        printf("app version in efuse is: %d\r\n", version);
-    }
-
-    if(app_ver.anti_rollback < version){
-        printf("app version in application is: %d, less than app version in efuse, the application should not run up\r\n", app_ver.anti_rollback);
-    }else{
-        printf("app version in application is: %d, not less than app version in efuse, the application should run up\r\n", app_ver.anti_rollback);
-    }
-
-    /* change app version in efuse to app_ver.anti_rollback, default is 0 */
-    qcc74x_set_app_version_to_efuse(app_ver.anti_rollback);//be attention! app version in efuse is incremental(from 0 to 128), and cannot be reduced forever
-
-    if(0 != qcc74x_get_app_version_from_efuse(&version)){
-        printf("error! can't read app version\r\n");
-        while(1){
-        }
-    }else{
-        printf("app version in efuse is: %d\r\n", version);
-    }
 #endif
 
     uart0 = qcc74x_device_get_by_name("uart0");

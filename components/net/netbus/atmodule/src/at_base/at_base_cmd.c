@@ -490,7 +490,7 @@ static int at_setup_cmd_sysstore(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
-#define AVERAGE_COUNT 50
+#define AVERAGE_COUNT 5
 static int at_query_temp(int argc, const char **argv)
 {
     struct qcc74x_device_s *adc;
@@ -498,10 +498,20 @@ static int at_query_temp(int argc, const char **argv)
    
     struct qcc74x_adc_channel_s chan;
 
+    /* adc clock = XCLK / 2 / 32 */
+    struct qcc74x_adc_config_s cfg;
+    cfg.clk_div = ADC_CLK_DIV_32;
+    cfg.scan_conv_mode = false;
+    cfg.continuous_conv_mode = true;
+    cfg.differential_mode = false;
+    cfg.resolution = ADC_RESOLUTION_16B;
+    cfg.vref = ADC_VREF_2P0V;
+
     chan.pos_chan = ADC_CHANNEL_TSEN_P;
     chan.neg_chan = ADC_CHANNEL_GND;
 
     adc = qcc74x_device_get_by_name("adc");
+    qcc74x_adc_init(adc, &cfg);
     qcc74x_adc_tsen_init(adc, ADC_TSEN_MOD_INTERNAL_DIODE);
     
     qcc74x_adc_channel_config(adc, &chan, 1);
@@ -886,6 +896,7 @@ static int at_setup_ota_send(int argc, const char **argv)
     while(recv_size < len) {
         recv_size += AT_CMD_DATA_RECV(buffer + recv_size, len - recv_size);
     }
+    at_response_string("Recv %d bytes\r\n", recv_size);
 
     if (!g_ota_handle) {
         g_ota_handle = at_ota_start((at_ota_header_t *)buffer);
@@ -915,7 +926,7 @@ _fail:
     vPortFree(buffer);
     g_ota_handle = NULL;
     g_ota_recv_total = 0;
-    return AT_RESULT_CODE_SEND_FAIL;
+    return AT_RESULT_CODE_FAIL;
 }
 
 static int at_setup_ota_finish_reset(int argc, const char **argv)
@@ -1085,6 +1096,8 @@ static int at_setup_fs(int argc, const char **argv)
                 recv_size += AT_CMD_DATA_RECV(buffer + recv_size, len - recv_size);
             }
 
+            at_response_string("Recv %d bytes\r\n", recv_size);
+
             if (at_write_file(filename, offset, buffer, len) != len) {
                 free(buffer);
                 return AT_RESULT_CODE_ERROR;
@@ -1176,7 +1189,7 @@ static int at_query_gmac(int argc, const char **argv)
     at_response_string("+GMACSLOT1:%02x:%02x:%02x:%02x:%02x:%02x\r\n",
                       mac1[0], mac1[1], mac1[2], mac1[3], mac1[4], mac1[5]);
     at_response_string("+GMACSLOT2:%02x:%02x:%02x:%02x:%02x:%02x\r\n",
-                      mac2[0], mac0[1], mac2[2], mac2[3], mac2[4], mac2[5]);
+                      mac2[0], mac2[1], mac2[2], mac2[3], mac2[4], mac2[5]);
     
     return AT_RESULT_CODE_OK;
 }
@@ -1288,6 +1301,7 @@ static void adc_vbat_init(void)
     cfg.resolution = ADC_RESOLUTION_16B;
     cfg.vref = ADC_VREF_3P2V;
 
+    qcc74x_adc_init(adc, &cfg);
     qcc74x_adc_vbat_enable(adc);
 }
 
@@ -1316,6 +1330,7 @@ static int at_query_vbat(int argc, const char **argv)
 {
     int vbat_mv;
     //uint64_t time_us = qcc74x_mtimer_get_time_us();
+    adc_vbat_init();
     vbat_mv = adc_vbat_get();   
     //time_us = qcc74x_mtimer_get_time_us() - time_us;
 
@@ -1388,7 +1403,6 @@ bool at_base_cmd_regist(void)
             at_base_config->uart_cfg.parity,
             at_base_config->uart_cfg.flow_control);
 
-    adc_vbat_init();
     part_number_dump();
     at_register_function(at_base_config_default, NULL);
 

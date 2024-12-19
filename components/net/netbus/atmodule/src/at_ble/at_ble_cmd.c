@@ -324,25 +324,22 @@ static int at_exe_cmd_ble_adv_stop(int argc, const char **argv)
 
 static int at_query_cmd_ble_conn(int argc, const char **argv)
 {
-    if (at_ble_config->work_role == BLE_CLIENT) {
-        int i;
-        uint8_t addr[6];
-        int conn_num = 0;
 
-        for (i = 0; i < BLE_CONN_MAX_NUM; i++) {
-            if (at_ble_is_valid_conn_idx(i) && at_ble_is_connected(i) && at_ble_conn_get_addr(i, addr)) {
-                at_response_string("+BLECONN:%d,\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n", i, addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
-                conn_num++;
-            }
-        }
+    int i;
+    uint8_t addr[6];
+    int conn_num = 0;
 
-        if (conn_num == 0) {
-            at_response_string("+BLECONN:\r\n");
+    for (i = 0; i < BLE_CONN_MAX_NUM; i++) {
+        if (at_ble_is_valid_conn_idx(i) && at_ble_is_connected(i) && at_ble_conn_get_addr(i, addr)) {
+            at_response_string("+BLECONN:%d,\"%02x:%02x:%02x:%02x:%02x:%02x\"\r\n", i, addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+            conn_num++;
         }
-    } else if (at_ble_config->work_role == BLE_SERVER) {
-        return AT_RESULT_CODE_ERROR;
     }
 
+    if (conn_num == 0) {
+        at_response_string("+BLECONN:\r\n");
+    }
+    
     return AT_RESULT_CODE_OK;
 }
 

@@ -117,6 +117,30 @@ static int at_stop_keepalive_cmd(int argc, const char **argv)
     return AT_RESULT_CODE_OK;
 }
 
+static int at_twt_param_cmd(int argc, const char **argv)
+{
+    int s, t, e, n, m;
+
+    AT_CMD_PARSE_NUMBER(0, &s);
+    AT_CMD_PARSE_NUMBER(1, &t);
+    AT_CMD_PARSE_NUMBER(2, &e);
+    AT_CMD_PARSE_NUMBER(3, &n);
+    AT_CMD_PARSE_NUMBER(4, &m);
+
+    void app_pm_twt_param_set(int s, int t, int e, int n, int m);
+    //printf("%d %d %d %d %d\r\n", s, t, e, n, m);
+    app_pm_twt_param_set(s, t, e, n, m);
+
+    return AT_RESULT_CODE_OK;
+}
+
+static int at_twt_sleep_cmd(int argc, const char **argv)
+{
+    void app_pm_twt_enter(void);
+    app_pm_twt_enter();
+    return AT_RESULT_CODE_OK;
+}
+
 static const at_cmd_struct at_pwr_cmd[] = {
     {"+PWR", NULL, NULL, at_pwr_cmd_pwrmode, NULL, 1, 3},
     {"+SLWKDTIM", NULL, NULL, at_dtim_cmd, NULL, 1, 1},
@@ -125,6 +149,8 @@ static const at_cmd_struct at_pwr_cmd[] = {
     {"+SLWKTIMER", NULL, NULL, at_wakeup_timer_cmd, NULL, 2, 2},
     {"+START_KEEPALIVE", NULL, NULL, at_start_keepalive_cmd, NULL, 1, 1},
     {"+STOP_KEEPALIVE", NULL, NULL, NULL, at_stop_keepalive_cmd, 0, 0},
+    {"+TWT_PARAM", NULL, NULL, at_twt_param_cmd, NULL, 5, 5},
+    {"+TWT_SLEEP", NULL, NULL, NULL, at_twt_sleep_cmd, 0, 0},
 };
 
 bool at_pwr_cmd_regist(void)

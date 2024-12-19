@@ -11,7 +11,7 @@ endif()
 
 set(QCC74x_FW_POST_PROC ${QCC74x_SDK_BASE}/tools/qcc74x_tools/QConn_Secure/QConn_Secure${TOOL_SUFFIX})
 
-set(QCC74x_FW_POST_PROC_CONFIG --imgfile=${BIN_FILE})
+set(QCC74x_FW_POST_PROC_CONFIG --imgfile=${BIN_FILE} --appkeys=shared)
 
 if(BOARD_DIR)
 list(APPEND QCC74x_FW_POST_PROC_CONFIG --brdcfgdir=${BOARD_DIR}/${BOARD}/config)

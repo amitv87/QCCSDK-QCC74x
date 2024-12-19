@@ -102,6 +102,11 @@ static int _is_msgtype(uint8_t type)
     return 0;
 }
 
+spisync_t *get_spisync_handle(void)
+{
+	return g_spisync_current;
+}
+
 /*--------------------- internal process module ----------------------*/
 static void spisync_task(void *arg);
 
@@ -236,7 +241,7 @@ static int _spisync_reset_queuestream(spisync_t *spisync)
     xStreamBufferReset(spisync->ptx_streambuffer[1]);
     xStreamBufferReset(spisync->ptx_streambuffer[2]);
 
-    printf("_spisync_reset_queuestream end\r\n");
+    spisync_log("_spisync_reset_queuestream end\r\n");
 
     return 0;
 }
@@ -785,7 +790,37 @@ int _build_msg(spisync_msg_t *msg,
     return 0;
 }
 
-int spisync_build_msg(spisync_msg_t *msg,
+int spisync_build_msg_needcopy(spisync_msg_t *msg,
+                        uint32_t type,
+                        void *buf,
+                        uint32_t len,
+						uint32_t timeout)
+{
+    memset(msg, 0, sizeof(spisync_msg_t));
+    msg->type       = type;
+    msg->buf_len    = len;
+    msg->timeout    = timeout;
+
+    if (_is_streamtype(msg->type)) {
+        // No need to malloc in the stream case
+        msg->buf    = buf;
+    } else {
+        // need to malloc in the stream case
+        /* malloc and copy */
+        msg->buf = _msg_malloc(msg->buf_len);
+        if (!msg->buf) {
+            return -1;
+        }
+        memcpy(msg->buf, buf, msg->buf_len);
+        /* for cb free */
+        msg->cb     = _msg_free;
+        msg->cb_arg = msg->buf;
+    }
+
+    return 0;
+}
+
+int spisync_build_msg_zerocopy(spisync_msg_t *msg,
                         uint32_t type,
                         void *buf,
                         uint32_t len,
@@ -796,7 +831,6 @@ int spisync_build_msg(spisync_msg_t *msg,
     msg->buf        = buf;
     msg->buf_len    = len;
     msg->timeout    = timeout;
-
     return 0;
 }
 
@@ -841,10 +875,10 @@ static void spisync_goto_idle(spisync_t *s)
 
 	lramsync_suspend(&s->hw);
 	s->state = SPISYNC_STATE_IDLE;
-	spisync_log("spisync state %s --> idle\r\n", spisync_state_str[state]);
+	spisync_trace("spisync state %s --> idle\r\n", spisync_state_str[state]);
 }
 
-#define SPISYNC_DEFER_TXN	15
+#define SPISYNC_DEFER_TXN	0
 
 static void spisync_goto_active(spisync_t *s, int reset)
 {
@@ -853,7 +887,7 @@ static void spisync_goto_active(spisync_t *s, int reset)
 	state = s->state;
 	s->state = SPISYNC_STATE_ACTIVE;
 	s->countdown = SPISYNC_DEFER_TXN;
-	spisync_log("spisync state %s --> active\r\n", spisync_state_str[state]);
+	spisync_trace("spisync state %s --> active\r\n", spisync_state_str[state]);
 	if (reset) {
 		_reset_spisync(s);
 		lramsync_start(&s->hw);
@@ -866,6 +900,46 @@ static void spisync_goto_active(spisync_t *s, int reset)
 static void _ctrl_process(spisync_t *spisync)
 {
 }
+#if 1
+uint32_t spisync_checksum(void *buf, uint32_t len)
+{
+    uint32_t sum = 0;
+    uint16_t *data = (uint16_t *)buf;
+
+    // buf
+    for (uint32_t i = 0; i < len / 2; i++) {
+        sum += data[i];
+    }
+    if (len % 2) { // Handle odd length
+        sum += ((uint8_t *)buf)[len - 1] << 8; // Add last byte
+    }
+
+    // Wrap around
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+
+    return (uint32_t)~sum; // One's complement
+}
+#else
+uint32_t spisync_checksum(void *buf, uint32_t len)
+{
+    uint32_t *data = (uint32_t *)buf;
+    uint32_t sum = 0;
+
+    // 每次处理4个字节（1个word）
+    for (uint32_t i = 0; i < len / sizeof(uint32_t); i++) {
+        sum += data[i];
+    }
+
+    // 如果 len 不是 4 的倍数，处理剩余的字节
+    for (uint32_t i = (len / sizeof(uint32_t)) * sizeof(uint32_t); i < len; i++) {
+        sum += ((uint8_t *)buf)[i];
+    }
+
+    return sum;
+}
+#endif
 
 void _write_process(spisync_t *spisync)
 {
@@ -883,13 +957,12 @@ void _write_process(spisync_t *spisync)
     uint8_t type;
     spisync_msg_t msg;
     int res;
-    int slot_start = 0;
+    int slot_start = lramsync_get_next_write_slot(&spisync->hw);
 
     /* Check if there is an empty slot */
     empty_slot = 0;
     empty_flag = 0;
 
-    slot_start++;
     for (int m = slot_start; m < (slot_start+SPISYNC_TXSLOT_COUNT); m++) {
         latest_rseq = get_latest_ackseq(spisync);
         s_txseq = spisync->p_tx->slot[m%SPISYNC_TXSLOT_COUNT].tag.seq;
@@ -962,8 +1035,6 @@ void _write_process(spisync_t *spisync)
                 spisync->p_tx->slot[empty_slot].payload.seg[0].buf,
                 current_stream_len,
                 0);
-        spisync_trace("------------- write-> ackseq:%d, seq:%d, slot:%d, len:%d, avail:%d, current:%d, oldseq:%d\r\n",
-                latest_rseq, (spisync->tx_seq + 1), empty_slot, data_len, available_bytes, current, s_txseq);
         if ((data_len <= 0) || (data_len > SPISYNC_PAYLOADBUF_LEN)) {
             spisync_err("write process never here. except spi reset?, data_len:%d\r\n", data_len);
             return;
@@ -1010,6 +1081,7 @@ void _write_process(spisync_t *spisync)
     spisync->p_tx->slot[empty_slot].payload.seg[0].type = current_pack_type;
 
     // CRC check
+#if 0
     utils_crc32_stream_init(&crc_ctx);
     spisync_trace("utils_crc32_stream_feed_block slot:%d, buf:%p, len:%d\r\n",
             empty_slot,
@@ -1019,6 +1091,11 @@ void _write_process(spisync_t *spisync)
                                   (const uint8_t *)&spisync->p_tx->slot[empty_slot].payload.tot_len,
                                   spisync->p_tx->slot[empty_slot].payload.tot_len + 4);
     spisync->p_tx->slot[empty_slot].payload.crc = utils_crc32_stream_results(&crc_ctx);
+#else
+    spisync->p_tx->slot[empty_slot].payload.crc = 
+        spisync_checksum((const uint8_t *)&spisync->p_tx->slot[empty_slot].payload.tot_len,
+            spisync->p_tx->slot[empty_slot].payload.tot_len + 4);
+#endif
     spisync->p_tx->slot[empty_slot].tail.seq_mirror = spisync->tx_seq;
 
     // debug
@@ -1081,18 +1158,24 @@ static void _read_process(spisync_t *spisync)
                 continue;
             }
 
+#if 1// set 0 if disable BL616--->host crc
             // check crc 
+#if 0
             utils_crc32_stream_init(&crc_ctx);
             utils_crc32_stream_feed_block(&crc_ctx,
                                   (const uint8_t *)&spisync->p_rxcache->payload.tot_len,
                                   spisync->p_rxcache->payload.tot_len + 4);
             crctmp = utils_crc32_stream_results(&crc_ctx);
+#else
+            crctmp = spisync_checksum((const uint8_t *)&spisync->p_rxcache->payload.tot_len,
+                                  spisync->p_rxcache->payload.tot_len + 4);
+#endif
             if (spisync->p_rxcache->payload.crc != crctmp) {
                 spisync->rxcrcerr_cnt++;
                 spisync_trace("crc err, 0x%08X != 0x%08X\r\n", crctmp, spisync->p_rxcache->payload.crc);
                 continue;
             }
-
+#endif
             // push
             spisync->tsk_readcnt++;
 
@@ -1125,8 +1208,13 @@ static void _read_process(spisync_t *spisync)
                 if (_is_streamtype(pack_type)) {
                     if ((lentmp - PAYLOADBUF0_SEG_OFFSET) != xStreamBufferSend(spisync->prx_streambuffer[pack_type-D_STREAM_OFFSET],
                             spisync->p_rxcache->payload.seg[0].buf, (lentmp - PAYLOADBUF0_SEG_OFFSET), 0)) {
-                        spisync_err("flowctrl warning. except spi reset?\r\n");
+                        spisync_err("flowctrl warning. except spi reset? buf_len:%d\r\n", (lentmp > PAYLOADBUF0_SEG_OFFSET));
+                        //spisync->dbg_read_flowblock[pack_type]++;
+                        //spisync_status(spisync);
+                        //vTaskDelay(500);
+                        continue;
                     }
+
                 } else {
                     spisync_msg_t msg;
                     if (_build_msg(&msg, pack_type, spisync->p_rxcache->payload.seg[0].buf,
@@ -1253,8 +1341,10 @@ static void spisync_task(void *arg)
 
         case SPISYNC_STATE_IDLE:
         	if (eventBits & EVT_SPISYNC_POLL_BIT) {
-				if (spisync_active(spisync))
+				if (spisync_active(spisync)) {
+                    _write_process(spisync);
 					spisync_goto_active(spisync, 0);
+                }
         	}
             break;
 

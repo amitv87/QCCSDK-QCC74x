@@ -10,6 +10,7 @@ In order to achieve this goal, some parameters must be specified:
   --publickey_sign: signature of the public key, in base64 format
   --publickey_hash_sign: signature of the public key's hash, in base64 format
   --imgfile_sign: signature of the image file, in base64 format
+  --appkeys: true: APP uses different keys from bootloader; shared: APP uses the same key as bootloader
 
 Examples(examples/wifi/sta/wifi_tcp, qcc743):
 
@@ -30,12 +31,40 @@ step3: "QConn_Secure --brdcfgdir=bsp/board/qcc743dk/config --imgfile=./build/bui
 
 ***Secure boot with command line***
 
+****Boot2 and APP use the same key
+
 step1: "cd examples/wifi/sta/wifi_tcp"
 step2: "make"
-step3: "QConn_Secure --brdcfgdir=bsp/board/qcc743dk/config --imgfile=./build/build_out/wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
+step3: "QConn_Secure --brdcfgdir=bsp/board/qcc743dk/config --imgfile=./build/build_out/wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem --appkeys=shared"
+
+****Boot2 and APP use individual keys
+
+step1: "cd examples/wifi/sta/wifi_tcp"
+step2: "make"
+step3: "QConn_Secure --imgfile=./build/build_out/boot2_xxx.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
+step4: "QConn_Secure --imgfile=./build/build_out/wifi_tcp_qcc743.bin --key=0123456789ABCDEF0123456789ABCDEF --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc_app.pem --publickey=publickey_uecc_app.pem --edatafile_in=./build/build_out/efusedata.bin --appkeys=true"
 
 
 ***Secure boot with encrypt and sign server***
+
+****Boot2 and APP use the same key
+
+step1: deploy encrypt and sign server with QConn_Secure
+step2: "cd examples/wifi/sta/wifi_tcp"
+step3: "make"
+
+step4: upload build/build_out/boot2_xxx.bin to server (optional, if boot2 is not changed and already encrypt and sign,skip this step)
+step5: upload build/build_out/wifi_tcp_qcc743.bin to server (optional, if APP is not changed and already encrypt and sign,skip this step)
+step6: server excute "QConn_Secure --imgfile=boot2_xxx.bin,wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem --appkeys=shared"
+
+step7: download boot2_xxx.bin from server and overwrite the original one
+step8: download wifi_tcp_qcc743.bin from server and overwrite the original one
+
+step9: make flash
+step10: make efuse
+
+
+****Boot2 and APP use individual keys
 
 step1: deploy encrypt and sign server with QConn_Secure
 step2: "cd examples/wifi/sta/wifi_tcp"
@@ -45,8 +74,8 @@ step4: upload build/build_out/boot2_xxx.bin to server (optional, if boot2 is not
 step5: server excute "QConn_Secure --imgfile=boot2_xxx.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
 step6: download boot2_xxx.bin from server and overwrite the original one
 
-step7: upload build/build_out/wifi_tcp_qcc743.bin to server (optional, if boot2 is not changed and already encrypt and sign,skip this step)
-step8: server excute "QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc.pem --publickey=publickey_uecc.pem"
+step7: upload build/build_out/wifi_tcp_qcc743.bin to server (optional, if APP is not changed and already encrypt and sign,skip this step)
+step8: server excute "QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=0123456789ABCDEF0123456789ABCDEF --iv=100102030405060708090A0B00000000 --privatekey=privatekey_uecc_app.pem --publickey=publickey_uecc_app.pem --edatafile_in=efusedata.bin --appkeys=true"
 step9: download wifi_tcp_qcc743.bin from server and overwrite the original one
 
 step10: make flash
@@ -54,10 +83,73 @@ step11: make efuse
 
 
 Other options:
-	multi-files: "QConn_Secure --imgfile=./build/build_out/helloworld_qcc743.bin,./build/build_out/boot2_*.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000"
-	--edbg_mode:set dbg mode,open/pswd/close; ex:--edbg_mode=pswd
-	--epswwd:JTAG password value for hex string; ex:--epswwd=1234567890ABCDEF
-	--ehbn_sign:enable/disable signature check when HBN mode wakeup; ex:--ehbn_sign=true
-	--eanti_rollback:enable/disable anti-rollback function; ex:--eanti_rollback=true
-	--ejtag_close:close jtag port; ex:--ejtag_close=true
-	--edata:efuse data content:start,hex_str; ex:0x10,000102030405060708
+  multi-files: "QConn_Secure --imgfile=./build/build_out/helloworld_qcc743.bin,./build/build_out/boot2_*.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000"
+
+  --edatafile_in: input efuse data file;
+  e.g.: QConn_Secure --edatafile_in=./efusedata.bin --edbg_mode=close
+
+  --ehbn_jump: enable/disable hbn jump function;
+  e.g.1: encrypt image and disable hbn jump
+  QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --ehbn_jump=false
+  e.g.2: append hbn jump option for efusedata.bin
+  QConn_Secure --edatafile_in=./efusedata.bin --ehbn_jump=false
+
+  --eflash_pdelay: flash power up delay value, value: 0-3, 0:0ms, 1:1ms, 2:8ms, 3:16ms;
+  e.g.1: encrypt image and set flash power up delay value
+  QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --eflash_pdelay=3
+  e.g.2: append flash power up delay value for efusedata.bin
+  QConn_Secure --edatafile_in=./efusedata.bin --eflash_pdelay=3
+
+  --edbg_mode:set dbg mode,open/pswd/close; ex:--edbg_mode=pswd
+  e.g.1: encrypt image and set dbg mode
+  QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --edbg_mode=pswd
+  e.g.2: append set dbg mode for efusedata.bin
+  QConn_Secure --edatafile_in=./efusedata.bin --edbg_mode=pswd
+
+  --epswd:Debug port password value for hex string; password len should be 16 bytes
+  e.g.1: encrypt image and set debug port password value
+  QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --epswd=1234567890ABCDEF1234567890ABCDEF
+  e.g.2: append set debug port password value for efusedata.bin
+  QConn_Secure --edatafile_in=./efusedata.bin --epswd=1234567890ABCDEF1234567890ABCDEF
+
+  --ehbn_sign:enable/disable signature check when HBN mode wakeup;
+  e.g.1: encrypt image and enable signature check
+  QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --ehbn_sign=true
+  e.g.2: append enable signature check for efusedata.bin
+  QConn_Secure --edatafile_in=./efusedata.bin --ehbn_sign=true
+
+  --eanti_rollback:enable/disable anti-rollback function;
+  e.g.1: encrypt image and enable anti-rollback
+  QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --eanti_rollback=true
+  e.g.2: append enable anti-rollback for efusedata.bin
+  QConn_Secure --edatafile_in=./efusedata.bin --eanti_rollback=true
+
+  --ejtag_close:close jtag port; ex:--ejtag_close=true
+  e.g.1: encrypt image and close jtag port
+  QConn_Secure --imgfile=wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000 --ejtag_close=true
+  e.g.2: append close jtag port option for efusedata.bin
+  QConn_Secure --edatafile_in=./efusedata.bin --ejtag_close=true
+
+  --edata:append new efuse data:start,hex_str;
+  e.g.: QConn_Secure --edatafile_in=./efusedata.bin --edata="0x14,000102030405060708;0x55,99887766"
+
+  --datafile: user data file to encrypt like image,efuse will also be update;
+  e.g.: QConn_Secure --datafile=./build/build_out/wifi_tcp_qcc743.bin --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000
+
+  --keyoffset:AES Key offset in efuse;
+  e.g.: QConn_Secure --datafile=./build/build_out/wifi_tcp_qcc743.bin --edatafile_in=./efusedata.bin --keyoffset=0x100 --key=000102030405060708090A0B0C0D0E0F --iv=100102030405060708090A0B00000000
+
+  --dump_data:dump efuse data,mode: true/false
+  e.g.: QConn_Secure --edatafile_in=./efusedata.bin -dump_data=true
+
+  --hd_append:header append file
+  e.g.: QConn_Secure --imgfile=wifi_tcp_qcc743.bin --hd_append=./hd_append.bin
+
+  --fw_append_pkh:firmware append public key hash;
+  e.g.: QConn_Secure --imgfile=wifi_tcp_qcc743.bin --fw_append_pkh=true --publickey=publickey_uecc.pem
+
+  --publickey_str:ECC public key base 64 string;--privatekey_str:ECC private key base 64 string;
+  e.g.: QConn_Secure --imgfile=./build/build_out/wifi_tcp_qcc743.bin --publickey_str=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEb0B+ztCy6iK0K53PsEEWfPBSFTiUYY8MgtZEM/VNOnngKPnGDY9acMOvCX7l3cPpo6/fAiNCSgY9qnpcJdhRuQ== --privatekey_str=MHcCAQEEIPWAZexo3e8wEvbqxaK5NJfIsdOq9X9Iqke+etCNxZfmoAoGCCqGSM49AwEHoUQDQgAEb0B+ztCy6iK0K53PsEEWfPBSFTiUYY8MgtZEM/VNOnngKPnGDY9acMOvCX7l3cPpo6/fAiNCSgY9qnpcJdhRuQ==
+
+  --checkpartition:check partition in whole_flash_data.bin;
+  e.g.: QConn_Secure --checkpartition=whole_flash_data.bin

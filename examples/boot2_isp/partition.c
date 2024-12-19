@@ -57,7 +57,7 @@ extern int main(void);
  * @return 0 for invalid and 1 for valid
  *
 *******************************************************************************/
-static uint8_t pt_table_valid(pt_table_stuff_config *pt_stuff)
+uint8_t pt_table_valid(pt_table_stuff_config *pt_stuff)
 {
     pt_table_config *pt_table = &pt_stuff->pt_table;
     pt_table_entry_config *pt_entries = pt_stuff->pt_entries;

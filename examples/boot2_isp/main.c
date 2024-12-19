@@ -37,6 +37,7 @@ struct qcc74x_device_s *sha;
 ATTR_NOCACHE_NOINIT_RAM_SECTION struct qcc74x_sha256_ctx_s ctx_sha256;
 uint32_t g_anti_rollback_flag[3];
 uint32_t g_anti_ef_en = 0, g_anti_ef_app_ver = 0;
+uint32_t g_no_active_fw_age = 0;
 
 int qcc74xsp_do_ram_image_boot(pt_table_id_type active_id, pt_table_stuff_config *pt_stuff,
                            pt_table_entry_config *pt_entry);
@@ -223,6 +224,7 @@ static uint32_t qcc74xsp_boot2_deal_one_fw(pt_table_id_type active_id, pt_table_
             BOOT2_MSG_DBG("Do image copy\r\n");
             if (QCC74x_BOOT2_SUCCESS == qcc74xsp_boot2_do_fw_copy(active_id, pt_stuff, pt_entry)) {
                 pt_entry->active_index = !(pt_entry->active_index & 0x01);
+                /* do not care age, hold on origin age */
                 pt_entry->age++;
                 ret = pt_table_update_entry((pt_table_id_type)(!active_id), pt_stuff, pt_entry);
                 if (ret == PT_ERROR_SUCCESS) {
@@ -256,6 +258,9 @@ int32_t qcc74xsp_boot2_rollback_ptentry(pt_table_id_type active_id, pt_table_stu
 
     pt_entry->active_index = !(pt_entry->active_index & 0x01);
     pt_entry->age++;
+    /* rollback to old partition must be hold origin age */
+    pt_entry->age = ((pt_entry->age & 0x00FFFFFF) | (g_no_active_fw_age & 0xFF000000));
+
     ret = pt_table_update_entry((pt_table_id_type)(!active_id), pt_stuff, pt_entry);
 
     if (ret != PT_ERROR_SUCCESS) {
@@ -365,7 +370,6 @@ int main(void)
 
     hal_boot2_init_clock();
     qcc74xsp_boot2_start_timer();
-    hal_boot2_get_efuse_cfg(&g_efuse_cfg);
 
     qcc74x_eflash_loader_if_set(QCC74x_EFLASH_LOADER_IF_UART);
     qcc74x_eflash_loader_if_init();
@@ -378,6 +382,7 @@ int main(void)
     qcc74x_uart_set_console(uartx);
 #endif
 
+    hal_boot2_get_efuse_cfg(&g_efuse_cfg);
     simple_malloc_init(g_malloc_buf, sizeof(g_malloc_buf));
     g_boot2_read_buf = vmalloc(QCC74x_BOOT2_READBUF_SIZE);
     ret = hal_boot2_custom(NULL);
@@ -459,6 +464,13 @@ int main(void)
                 active_id = 0;
                 pt_table_init_default_fw(&pt_table_stuff[0], (QCC74x_PT_TABLE1_ADDRESS + 0x1000));
 
+            }
+            /* check partition is valid then save age info else age flag be stable */
+            if (pt_table_valid(&pt_table_stuff[!active_id]) == 1) {
+                pt_table_entry_config pt_entry_tmp[1] = {0};
+                /* get not active partition fw age info */
+                pt_table_get_active_entries_by_id(&pt_table_stuff[!active_id], 0, &pt_entry_tmp[0]);
+                g_no_active_fw_age = pt_entry_tmp[0].age;
             }
 
             BOOT2_MSG_DBG("Active PT:%d,Age %d\r\n", active_id, pt_table_stuff[active_id].pt_table.age);

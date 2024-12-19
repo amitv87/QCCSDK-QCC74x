@@ -57,6 +57,8 @@ CONFIG_ROMAPI ?=y
 CONFIG_DEBUG ?=y
 CONFIG_TLSF ?=y
 CONFIG_COREDUMP ?=y
+CONFIG_ANTI_ROLLBACK ?= n
+APP_ANTI_ROLLBACK ?= 0
 COMX ?=COM5
 BAUDRATE ?=2000000
 BOARD_DIR ?=
@@ -74,6 +76,8 @@ cmake_definition+= -DCONFIG_COMX=$(COMX)
 cmake_definition+= -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF
 cmake_definition+= -DCONFIG_TLSF=$(CONFIG_TLSF)
 cmake_definition+= -DCONFIG_COREDUMP=$(CONFIG_COREDUMP)
+cmake_definition+= -DCONFIG_ANTI_ROLLBACK=$(CONFIG_ANTI_ROLLBACK)
+cmake_definition+= -DAPP_ANTI_ROLLBACK=$(APP_ANTI_ROLLBACK)
 
 build:Makefile
 	$(CMAKE) -S . -B build -G $(cmake_generator) $(cmake_definition)

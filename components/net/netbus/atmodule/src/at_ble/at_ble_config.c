@@ -32,7 +32,7 @@ int at_ble_config_init(void)
     memset(at_ble_config, 0, sizeof(ble_config));
     at_ble_config->work_role = BLE_DISABLE;
     if (!at_config_read(AT_CONFIG_KEY_BLE_NAME, &at_ble_config->ble_name, sizeof(at_ble_config->ble_name))) {
-        strlcpy(at_ble_config->ble_name, "QCC743-AT", sizeof(at_ble_config->ble_name));
+        strlcpy(at_ble_config->ble_name, "QCC74x-AT", sizeof(at_ble_config->ble_name));
         bt_set_name(at_ble_config->ble_name); 
     }
     bt_set_name(at_ble_config->ble_name);
@@ -73,7 +73,7 @@ int at_ble_config_default(void)
     memset(at_ble_config, 0, sizeof(ble_config));
     at_ble_config->work_role = BLE_DISABLE;
     if (!at_config_read(AT_CONFIG_KEY_BLE_NAME, &at_ble_config->ble_name, sizeof(at_ble_config->ble_name))) {
-        strlcpy(at_ble_config->ble_name, "QCC743-AT", sizeof(at_ble_config->ble_name));
+        strlcpy(at_ble_config->ble_name, "QCC74x-AT", sizeof(at_ble_config->ble_name));
         bt_set_name(at_ble_config->ble_name); 
     }
     bt_set_name(at_ble_config->ble_name);

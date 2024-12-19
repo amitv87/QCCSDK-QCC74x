@@ -45,6 +45,7 @@
 
 #define DBG_TAG "MAIN"
 #include "log.h"
+#include "lwip/apps/mdns.h"
 
 struct qcc74x_device_s *gpio;
 
@@ -167,3 +168,24 @@ int main(void)
     while (1) {
     }
 }
+
+int cmd_mdns_start(int argc, char **argv)
+{
+void *wifi_mgmr_sta_netif();
+    mdns_resp_init();
+    mdns_resp_add_netif(netif_find("wl1"), argv[1]);
+
+    return 0;
+}
+
+SHELL_CMD_EXPORT_ALIAS(cmd_mdns_start, mdns_start, mdns start command);
+
+int cmd_gw_service_start(int argc, char **argv)
+{
+    int net_al_gw_service_enable(void *);
+    net_al_gw_service_enable(netif_find("wl1"));
+
+    return 0;
+}
+
+SHELL_CMD_EXPORT_ALIAS(cmd_gw_service_start, gw_service_start, start some gw service command);

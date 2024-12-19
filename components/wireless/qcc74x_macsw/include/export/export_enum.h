@@ -96,10 +96,6 @@ enum scan_msg_tag
      * Section of internal SCAN messages. No SCAN API messages should be defined below this point
      */
     SCAN_PROBE_TIMER,
-
-    SCAN_RAW_SEND_REQ,
-    SCAN_RAW_SEND_CFM,
-
     /// MAX number of messages
     SCAN_MAX,
 };
@@ -184,6 +180,14 @@ enum
     ME_SET_PS_MODE_REQ,
     /// Set Power Save mode confirmation
     ME_SET_PS_MODE_CFM,
+    // Get EDCA request
+    ME_GET_EDCA_REQ,
+    // Get EDCA confirmation
+    ME_GET_EDCA_CFM,
+    // Get the number of frames remaining in each Tx queue request
+    ME_GET_REMAINING_TX_REQ,
+    // Get the number of frames remaining in each Tx queue confirmation
+    ME_GET_REMAINING_TX_CFM,
 
     /*
      * Section of internal ME messages. No ME API messages should be defined below this point
@@ -415,6 +419,10 @@ enum mm_msg_tag
     MM_SET_BSS_COLOR_REQ,
     /// HE BSS Color Configuration Confirmation.
     MM_SET_BSS_COLOR_CFM,
+    /// RAW send start request.
+    MM_RAW_SEND_STRAT_REQ,
+    /// RAW send start confirmation.
+    MM_RAW_SEND_STRAT_CFM,
 
     /*
      * Section of internal MM messages. No MM API messages should be defined below this point
@@ -429,9 +437,10 @@ enum mm_msg_tag
     MM_SCAN_CHANNEL_END_IND,
     /// Internal request to move the AP TBTT by an offset
     MM_TBTT_MOVE_REQ,
-    /// Message indicating that start to send raw packet
+    /// Internal request to send raw packet.
     MM_RAW_SEND_REQ,
-
+    /// Timer for link statistics monitor
+    MM_LINK_TIMER_IND,
     /// MAX number of messages
     MM_MAX,
 };

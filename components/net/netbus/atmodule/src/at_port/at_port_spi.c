@@ -33,7 +33,7 @@ static uint8_t at_serial_parity = 0;
 static uint8_t at_serial_flow_control = 0;
 
 extern spisync_t *at_spisync;
-
+struct qcc74x_device_s *gpio;
 int at_port_init(void)
 {
 #if 0
@@ -45,7 +45,11 @@ int at_port_init(void)
         return 0;
     }
     return -1;
-#else
+#else 
+    gpio = qcc74x_device_get_by_name("gpio");
+
+    qcc74x_gpio_init(gpio, GPIO_PIN_28, GPIO_OUTPUT | GPIO_PULLUP | GPIO_SMT_EN | GPIO_DRV_0);
+
     return 1;
 #endif
 }
@@ -66,11 +70,17 @@ int at_port_deinit(void)
 
 int at_port_read_data(uint8_t*data, int len)
 {
+    spisync_msg_t msg;
     int nBytes = 0;
-    spisync_msg_t m;
 
-    spisync_build_msg(&m, SPISYNC_TYPESTREAM_AT, data, len, portMAX_DELAY);
-    nBytes = spisync_read(at_spisync, &m, 0);
+    SPISYNC_MSGINIT(&msg,
+                    SPISYNC_TYPESTREAM_AT,  /* type */
+                    0,                      /* copy */
+                    portMAX_DELAY,          /* timeout */
+                    data, len,              /* buf buf_len */
+                    NULL,                   /* cb */
+                    NULL);                  /* cb_arg */
+    nBytes = spisync_read(at_spisync, &msg, 0);
 #if 0
     if (nBytes) {
         printf("[AT_READ]:%d return %d-->", len, nBytes);
@@ -88,11 +98,17 @@ int at_port_read_data(uint8_t*data, int len)
     return nBytes;
 }
 
+void at_port_debug_gpio_set(uint8_t val)
+{
+    qcc74x_gpio_reset(gpio, GPIO_PIN_28);
+    qcc74x_gpio_set(gpio, GPIO_PIN_28);
+}
+
 #define AT_PORT_WRITE_TIMEOUT      (30000)// 30s
 int at_port_write_data(uint8_t *data, int len)
 {
     int msg_len;
-    spisync_msg_t m;
+    spisync_msg_t msg;
 
     if (at->fakeoutput) {
         //printf("[AT_WRITE]:%d-->", len);
@@ -107,8 +123,16 @@ int at_port_write_data(uint8_t *data, int len)
     if (!data) {
     	return 0;
     }
-    spisync_build_msg(&m, SPISYNC_TYPESTREAM_AT, data, len, AT_PORT_WRITE_TIMEOUT);
-    msg_len = spisync_write(at_spisync, &m, 0);
+
+    SPISYNC_MSGINIT(&msg,
+                SPISYNC_TYPESTREAM_AT,  /* type */
+                1,                      /* copy */
+                AT_PORT_WRITE_TIMEOUT,  /* timeout */
+                data, len,              /* buf buf_len */
+                NULL,                   /* cb */
+                NULL);                  /* cb_arg */
+
+    msg_len = spisync_write(at_spisync, &msg, 0);
     if (msg_len > 0) {
         return msg_len;
     }

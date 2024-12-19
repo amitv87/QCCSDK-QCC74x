@@ -22,7 +22,8 @@ QCC74xLOG_DEFINE_TAG(RFPARAM, DBG_TAG, true);
 #undef QCC74xLOG_TAG
 #define QCC74xLOG_TAG QCC74xLOG_GET_TAG(RFPARAM)
 
-#define rfparam_printf(...)   LOG_I(__VA_ARGS__)
+// #define rfparam_printf(...)   LOG_I(__VA_ARGS__)
+#define rfparam_printf(...)   printf("rfparam>>"__VA_ARGS__)
 
 // static uint8_t g_rfparam_buf[RFPARAM_WL_API_MEM_SIZE] = {0};
 static struct wl_cfg_t *g_rfparam_cfg = NULL;

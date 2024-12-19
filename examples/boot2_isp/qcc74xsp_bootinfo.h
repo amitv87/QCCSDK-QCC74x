@@ -119,5 +119,6 @@ extern boot2_efuse_hw_config g_efuse_cfg;
 extern uint8_t g_ps_mode;
 //extern uint8_t g_cpu_count;
 extern uint8_t *g_boot2_read_buf;
+extern uint32_t g_no_active_fw_age;
 
 #endif /* __QCC74xSP_BOOTINFO_H__ */

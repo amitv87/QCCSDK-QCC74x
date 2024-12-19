@@ -81,4 +81,3 @@ Connection to 192.168.1.3 3365 port [tcp/*] succeeded!
 123456  # echo received data
 
 ```
-

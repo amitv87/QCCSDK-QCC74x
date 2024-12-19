@@ -211,7 +211,7 @@ static void ping_timeout(void *arg)
     log_info("env-adress%p\r\n", env);
     log_info("env--dest%s\r\n", ipaddr_ntoa(&env->dest));
 #endif
-    while (env->req_list.first && sys_now() - ((struct t_hdr*)(env->req_list.first))->send_time > env->timeout){
+    while (env->req_list.first && sys_now() - ((struct t_hdr*)(env->req_list.first))->send_time >= env->timeout){
         printf("The sequence number %d timed out\r\n", ntohs(((struct t_hdr*)(env->req_list.first))->ping_seq));
         utils_memp_free(env->pool, (struct t_hdr*)(utils_list_pop_front(&env->req_list)));
         env->node_num--;
@@ -254,6 +254,10 @@ static void ping_free(void *arg)
         printf("The sequence number %d timed out\r\n", ntohs(((struct t_hdr*)(env->req_list.first))->ping_seq));
         utils_memp_free(env->pool, utils_list_pop_front(&env->req_list));
         env->node_num--;
+
+        if (env->cb) {
+            env->cb(env->ping_time);
+        }
     }
     raw_remove(env->pcb);
     utils_memp_deinit(env->pool);
@@ -325,6 +329,7 @@ struct ping_var *ping_api_init(u16_t interval, u16_t size, u32_t count, u16_t ti
     if (ping_init(env) != 0) {
         printf("ping_init failed\r\n");
         vPortFree(env);
+        env = NULL;
     }
     return env;
 }

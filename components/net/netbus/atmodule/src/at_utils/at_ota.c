@@ -166,6 +166,10 @@ at_ota_handle_t at_ota_start(at_ota_header_t *ota_header)
     ota_handle->part_size = ota_handle->pt_fw_entry.max_len[!ota_handle->pt_fw_entry.active_index];
     memcpy(ota_handle->sha256_img, ota_header->u.s.sha256, sizeof(ota_handle->sha256_img));
     
+    if (ota_handle->part_size < ota_handle->file_size) {
+        printf("[OTA] file_size overflow:0x%08x part_size:0x%08x\r\n", ota_handle->file_size, ota_handle->part_size);
+        goto _fail;
+    }
     ota_handle->sector_erased_size = ((ota_handle->part_size + 4095)/4096 + 31)/32;
     ota_handle->sector_erased = pvPortMalloc(4 * ota_handle->sector_erased_size);
     memset(ota_handle->sector_erased, 0, 4 * ota_handle->sector_erased_size);

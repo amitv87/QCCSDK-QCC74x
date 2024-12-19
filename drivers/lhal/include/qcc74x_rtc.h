@@ -67,6 +67,12 @@ void qcc74x_rtc_set_utc_time(const struct qcc74x_tm *time);
  */
 void qcc74x_rtc_get_utc_time(struct qcc74x_tm *time);
 
+/**
+ * @brief Get current utc timestamp(s).
+ *
+ */
+uint64_t qcc74x_rtc_get_utc_timestamp(void);
+
 #ifdef __cplusplus
 }
 #endif

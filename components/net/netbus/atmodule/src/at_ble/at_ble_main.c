@@ -127,11 +127,16 @@ struct ble_srv_data
     struct ble_char_data srv_char[BLE_CHAR_MAX_NUM];
 };
 
-static struct ble_srv_data g_ble_srv_data[BLE_SRV_MAX_NUM];
+static struct ble_srv_data *g_ble_srv_data = NULL;
 
 static void ble_gatts_srv_clean(void)
 {
-    memset(g_ble_srv_data,0,sizeof(g_ble_srv_data));
+    memset(g_ble_srv_data,0,sizeof(struct ble_srv_data)*BLE_SRV_MAX_NUM);
+    if(g_ble_srv_data != NULL)
+        vPortFree(g_ble_srv_data);
+    
+    g_ble_srv_data = NULL;
+
 }
 
 static struct ble_conn_data *ble_conn_data_get_by_idx(int idx)
@@ -436,7 +441,7 @@ static void ble_notification_all_cb(struct bt_conn *conn, u16_t handle,const voi
 {
     char *rdata = (char *)pvPortMalloc(32 + length);
     int data_len = 0;
-    if (!data) {
+    if (!rdata) {
         AT_BLE_PRINTF("ble_notificaion_callback malloc failed\r\n");
         return;
     }
@@ -447,8 +452,8 @@ static void ble_notification_all_cb(struct bt_conn *conn, u16_t handle,const voi
     memcpy(rdata + data_len, "\r\n", 2);
     data_len += 2;
     AT_CMD_DATA_SEND(rdata,data_len);
-    vPortFree(data);
-    data = NULL;
+    vPortFree(rdata);
+    rdata = NULL;
     
 }
 #if defined(CONFIG_BT_SMP)
@@ -1366,12 +1371,23 @@ int at_ble_gatts_service_register(int enable)
 {
     if(enable == 1)
     {
+        if(g_ble_dynamic_init == 0)
+        {
+            ble_dynamic_gatt_server_init();
+            ble_dynamic_gatt_cb_register(ble_dynamic_rd_cb,ble_dynamic_wr_cb,ble_dynamic_noti_cb);
+            g_ble_dynamic_init = 1;
+        }
         ble_add_service();
     }
     if(enable == 0)
     {
         if(ble_dynamic_unregister_service())
             return 1;
+        if(g_ble_dynamic_init == 1)
+        {
+            ble_dynamic_gatt_server_deinit();
+            g_ble_dynamic_init = 0;
+        }
     }
 
     return 0;
@@ -1589,12 +1605,14 @@ struct ble_discover_data
     struct ble_disc_char disc_char[BLE_GATTC_CHAR_MAX_NUM];
 };
 
-static struct ble_discover_data g_ble_disc_srv[BLE_GATTC_SRV_MAX_NUM];
-
+static struct ble_discover_data* g_ble_disc_srv =NULL;
 
 static void ble_disc_srv_clean(void)
 {
-    memset(g_ble_disc_srv, 0, sizeof(g_ble_disc_srv));
+    memset(g_ble_disc_srv, 0, sizeof(struct ble_discover_data)*BLE_GATTC_SRV_MAX_NUM);
+    if(g_ble_disc_srv != NULL)
+        vPortFree(g_ble_disc_srv);
+    g_ble_disc_srv = NULL;
 }
 
 static int ble_disc_srv_set(char *uuid, uint16_t start_handle, uint16_t end_handle, uint8_t type)
@@ -1724,7 +1742,7 @@ int at_ble_gattc_service_discover(int idx, int timeout)
     if (conn_data == NULL || conn_data->state != BLE_CONN_STATE_CONNECTED)
         return 0;
 
-    ble_disc_srv_clean();
+    memset(g_ble_disc_srv, 0, sizeof(struct ble_discover_data)*BLE_GATTC_SRV_MAX_NUM);
 
     g_ble_discover_finish = 0;
     g_ble_discover_type = 1; //discover primary services
@@ -1745,6 +1763,7 @@ int at_ble_gattc_service_discover(int idx, int timeout)
             if (g_ble_discover_finish) {
                break;
             }
+            vTaskDelay(50);
         }
     }
 
@@ -1767,6 +1786,7 @@ int at_ble_gattc_service_discover(int idx, int timeout)
             if (g_ble_discover_finish) {
                break;
             }
+            vTaskDelay(50);
         }
     }
 
@@ -1822,6 +1842,7 @@ int at_ble_gattc_service_char_discover(int idx, int srv_idx, int timeout)
 
                 return 1;
             }
+            vTaskDelay(50);
         }
         return 0;
     }
@@ -2027,6 +2048,7 @@ int at_ble_gattc_service_read(int idx, int srv_idx, int char_idx, int timeout)
             while(at_current_ms_get() - start_time < timeout) {
                 if (g_ble_read_finish)
                    return 1;
+                vTaskDelay(50);
             }
             return 0;
         }
@@ -2213,6 +2235,12 @@ int at_ble_init(int role)
                 if(g_ble_role==BLE_SERVER)
                 {
                     ble_gatts_srv_clean();
+                    if(g_ble_dynamic_init == 1)
+                    {
+                        ble_dynamic_gatt_server_deinit();
+                        g_ble_dynamic_init = 0;
+                    }
+
                 }
                 if(g_ble_role == BLE_CLIENT)
                 {
@@ -2239,10 +2267,18 @@ int at_ble_init(int role)
     g_ble_role = role;
     if(g_ble_role == BLE_CLIENT)
     {
+        if(g_ble_disc_srv == NULL)
+            g_ble_disc_srv = pvPortMalloc(sizeof(struct ble_discover_data)*BLE_GATTC_SRV_MAX_NUM);
+        
+        memset(g_ble_disc_srv, 0, sizeof(struct ble_discover_data)*BLE_GATTC_SRV_MAX_NUM);
         bt_gatt_register_notification_callback(ble_notification_all_cb);
     }
     if(g_ble_role == BLE_SERVER)
     {
+        if(g_ble_srv_data == NULL)
+            g_ble_srv_data = pvPortMalloc(sizeof(struct ble_srv_data)*BLE_SRV_MAX_NUM);
+        memset(g_ble_srv_data,0,sizeof(struct ble_srv_data)*BLE_SRV_MAX_NUM);
+
         if(g_ble_dynamic_init == 0)
         {
             ble_dynamic_gatt_server_init();

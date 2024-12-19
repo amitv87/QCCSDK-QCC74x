@@ -189,7 +189,7 @@ SECTIONS
 
         . = ALIGN(4);
         __tcm_data_end__ = .;
-    } > dtcm_memory
+    } > itcm_memory
 
     /*************************************************************************/
     /* .stack_dummy section doesn't contains any symbols. It is only
@@ -244,6 +244,16 @@ SECTIONS
         *(.sdata.*)
         *(.sdata2)
         *(.sdata2.*)
+
+        _bt_gatt_service_static_list_start = .;
+        KEEP(*(SORT_BY_NAME("._bt_gatt_service_static.static.*")))
+        _bt_gatt_service_static_list_end = .;
+        _bt_l2cap_fixed_chan_list_start = .;
+        KEEP(*(SORT_BY_NAME("._bt_l2cap_fixed_chan.static.*")))
+        _bt_l2cap_fixed_chan_list_end = .;
+        _bt_l2cap_br_fixed_chan_list_start = .;
+        KEEP(*(SORT_BY_NAME("._bt_l2cap_br_fixed_chan.static.*")))
+        _bt_l2cap_br_fixed_chan_list_end = .;
 
         . = ALIGN(4);
         __qcc74xlog_tags_start__ = .;

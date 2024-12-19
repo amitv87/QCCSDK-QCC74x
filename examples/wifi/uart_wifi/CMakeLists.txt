@@ -23,14 +23,14 @@ if (CONFIG_LPAPP)
     sdk_add_compile_definitions(-DPM_PDS_LDO_LEVEL_SOC_DEFAULT=10)
     sdk_add_compile_definitions(-DPM_PDS_LDO_LEVEL_AON_DEFAULT=10)
     sdk_add_compile_definitions(-DTICKLESS_DEBUG=0)
+    sdk_add_compile_definitions(-DLP_RAM_REUSE=1)
+    sdk_add_compile_definitions(-DCONFIG_LPFW_INIT_SKIP_COPY=1)
 
     if (CONFIG_DCDC_ENABLE)
         sdk_add_compile_definitions(-DPM_PDS_LDO_LEVEL_RT_DEFAULT=8)
     else ()
         sdk_add_compile_definitions(-DPM_PDS_LDO_LEVEL_RT_DEFAULT=10)
     endif ()
-
-    sdk_add_compile_definitions(-DLP_FW_START_ADDR=0x63026800)
 
     target_sources(app PRIVATE
                        app/src/app_uartwifi.c

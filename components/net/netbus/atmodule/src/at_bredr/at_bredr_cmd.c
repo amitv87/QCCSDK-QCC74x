@@ -97,12 +97,13 @@ static int at_setup_cmd_avrcp_change_vol(int argc, const char **argv);
 static bool init = false;
 static struct bt_conn_info conn_info;
 static struct bt_conn *default_conn = NULL;
-static struct bt_br_discovery_result result[10] = { 0 };
+
 static struct bt_conn_cb conn_callbacks = {
     .connected = bredr_connected,
     .disconnected = bredr_disconnected,
 };
 
+struct bt_br_discovery_result *discovery_result = NULL;
 #if CONFIG_BT_A2DP
 struct k_thread media_transport;
 static void a2dp_chain(struct bt_conn *conn, uint8_t state);
@@ -502,7 +503,7 @@ static int at_exe_cmd_bredr_disconnect(int argc, const char **argv)
 static int at_exe_cmd_bredr_write_local_name(int argc, const char **argv)
 {
     int err;
-    char *name = "QCC-BT";
+    char *name = "QCC74X-AT";
 
     err = bt_br_write_local_name(name);
     if (err) {
@@ -592,10 +593,42 @@ static int at_setup_cmd_bredr_unpair(int argc, const char **argv)
     }
 }
 
+typedef struct {
+    uint8_t data_type;
+    uint8_t data_length;
+    uint8_t *data;
+} eir_data_t;
+
+static void bredr_parse_eir_data(const uint8_t *eir, size_t eir_len, char* eir_name)
+{
+    size_t pos = 0;
+    while (pos < eir_len) {
+        eir_data_t data_field;
+        data_field.data_length = eir[pos++];
+        data_field.data_type = eir[pos++];
+        data_field.data = &eir[pos];
+
+        if (pos + data_field.data_length - 1 >= eir_len) {
+            break;
+        }
+
+        switch (data_field.data_type) {
+            case 0x08: // Shortened Local Name
+            case 0x09: // Complete Local Name
+                memcpy(eir_name,  data_field.data,(data_field.data_length - 1));
+                break;
+            default:
+                pos += data_field.data_length - 1;
+                break;
+        }
+    }
+}
+
 static void bt_br_discv_cb(struct bt_br_discovery_result *results,
 				  size_t count)
 {
     char addr_str[18];
+    char name_str[31];
     uint32_t dev_class;
     int i;
 
@@ -604,23 +637,45 @@ static void bt_br_discv_cb(struct bt_br_discovery_result *results,
     }
 
     for (i=0;i<count;i++) {
+        memset(addr_str,0,18);
+        memset(name_str,0,31);
         dev_class = (results[i].cod[0] | (results[i].cod[1] << 8) | 
                      (results[i].cod[1] << 16));
         bt_addr_to_str(&results[i].addr, addr_str, sizeof(addr_str));
-        AT_BREDR_PRINTF("addr %s,class 0x%lx,rssi %d\r\n",addr_str,
-                     dev_class,results[i].rssi);
+        bredr_parse_eir_data(&results[i].eir,240,name_str);
+        at_response_string("+BREDR: Discovery ADDR: %s,CLASS: 0x%lx,RSSI: %d, NAME: %s\r\n",addr_str,
+                     dev_class,results[i].rssi,name_str);
     }
+    if(discovery_result!= NULL)
+    {
+        memset(discovery_result,0,sizeof(struct bt_br_discovery_result)*10);
+        vPortFree(discovery_result);
+        discovery_result = NULL;
+    }
+            
 }
 
 static int at_exe_cmd_bredr_start_inquiry(int argc, const char **argv)
 {
     struct bt_br_discovery_param param;
+    if(discovery_result == NULL)
+    {
+        discovery_result = pvPortMalloc(sizeof(struct bt_br_discovery_result)*10);
+        if(discovery_result!= NULL)
+            memset(discovery_result,0,sizeof(struct bt_br_discovery_result)*10);
+        else
+            return AT_RESULT_CODE_ERROR;
+    }
+    else
+    {
+        return AT_RESULT_CODE_ERROR;
+    }
 
     //Valid range 0x01 - 0x30.
     param.length = 0x05;
     param.limited = 0;
-
-    int err = bt_br_discovery_start(&param,result,10,bt_br_discv_cb);
+    
+    int err = bt_br_discovery_start(&param,discovery_result,10,bt_br_discv_cb);
     if (err) {
         AT_BREDR_PRINTF("BREDR discovery failed\n");
         return AT_RESULT_CODE_ERROR;

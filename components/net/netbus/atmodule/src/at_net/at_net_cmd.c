@@ -32,6 +32,11 @@
 
 #define AT_NET_CMD_PRINTF printf
 
+#define AT_NET_TX_MAX_LEN  (8192)
+
+//static __attribute__((section(".wifi_ram."))) uint8_t at_net_tx_buffer[AT_NET_TX_MAX_LEN];
+static uint8_t at_net_tx_buffer[AT_NET_TX_MAX_LEN];
+
 /*static int string_is_valid_ip(char *string)
 {
     uint32_t ipaddr;
@@ -217,7 +222,11 @@ static int at_setup_cmd_cipdns(int argc, const char **argv)
 
 static void _dns_found_callback(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
 {
+    SemaphoreHandle_t sem = (SemaphoreHandle_t)callback_arg;
+    
     at_response_string("+CIPDOMAIN:\"%s\"\r\n", ipaddr_ntoa((ip_addr_t *)ipaddr));
+
+    xSemaphoreGive(sem);
 }
 
 static int at_setup_cmd_cipdomain(int argc, const char **argv)
@@ -227,6 +236,7 @@ static int at_setup_cmd_cipdomain(int argc, const char **argv)
     ip_addr_t addr;
     uint8_t dns_addrtype;
     int ret;
+    SemaphoreHandle_t sem = NULL;
 
     AT_CMD_PARSE_STRING(0, hostname, sizeof(hostname));
     AT_CMD_PARSE_OPT_NUMBER(1, &ip_network, ip_network_valid);
@@ -248,13 +258,21 @@ static int at_setup_cmd_cipdomain(int argc, const char **argv)
     }
 #endif
 
-    ret = dns_gethostbyname_addrtype(hostname, &addr, _dns_found_callback, NULL, dns_addrtype);
+    sem = xSemaphoreCreateBinary();
+    if (sem == NULL) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
+    ret = dns_gethostbyname_addrtype(hostname, &addr, _dns_found_callback, sem, dns_addrtype);
     //hostinfo = gethostbyname(hostname);
     if (ret == ERR_OK) {
 
         at_response_string("+CIPDOMAIN:\"%s\"\r\n", ipaddr_ntoa((ip_addr_t *)&addr));
 
+    } else if (ret == ERR_INPROGRESS) {
+        xSemaphoreTake(sem, portMAX_DELAY);
     }
+    vSemaphoreDelete(sem);
     return AT_RESULT_CODE_OK;
 }
 
@@ -604,6 +622,8 @@ static int at_setup_cmd_cipsend(int argc, const char **argv)
     int recv_num = 0;
     int send_num = 0;
 
+    AT_DEBUG_POINT(0);
+
     if (at_net_config->mux_mode == NET_LINK_SINGLE) {
         AT_CMD_PARSE_NUMBER(0, &length);
         AT_CMD_PARSE_OPT_STRING(1, remote_host, sizeof(remote_host), remote_host_valid);
@@ -618,7 +638,7 @@ static int at_setup_cmd_cipsend(int argc, const char **argv)
     if (!at_net_client_id_is_valid(linkid)) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (length <= 0 || length > 8192) {
+    if (length <= 0 || length > AT_NET_TX_MAX_LEN) {
         return AT_RESULT_CODE_ERROR;
     }
     if (remote_host_valid) {
@@ -630,6 +650,12 @@ static int at_setup_cmd_cipsend(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
 
+    if (remote_host_valid && remote_port_valid && (!at_net_client_is_connected(linkid))) {
+        if (at_net_client_udp_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, 0, 0) != 0) {
+            return AT_RESULT_CODE_FAIL;
+        }
+    }
+
     if (!at_net_client_is_connected(linkid)) {
         return AT_RESULT_CODE_FAIL;
     }
@@ -638,22 +664,23 @@ static int at_setup_cmd_cipsend(int argc, const char **argv)
             return AT_RESULT_CODE_FAIL;
         }
     }
+    AT_DEBUG_POINT(0);
 
-    char *buffer = (char *)pvPortMalloc(length);
-    if (!buffer) {
-        AT_NET_CMD_PRINTF("malloc %d bytes failed\r\n", length);
-        return AT_RESULT_CODE_FAIL;
-    }
-    at_response_result(AT_RESULT_CODE_OK);
+    at_response_string("%s%s", AT_CMD_MSG_OK, AT_CMD_MSG_WAIT_DATA);
+    //at_response_result(AT_RESULT_CODE_OK);
 
-    AT_CMD_RESPONSE(AT_CMD_MSG_WAIT_DATA);
+    //AT_CMD_RESPONSE(AT_CMD_MSG_WAIT_DATA);
     while(recv_num < length) {
-        recv_num += AT_CMD_DATA_RECV(buffer + recv_num, length - recv_num);
+        AT_DEBUG_POINT(0);
+        recv_num += AT_CMD_DATA_RECV(at_net_tx_buffer + recv_num, length - recv_num);
     }
+    AT_DEBUG_POINT(0);
     at_response_string("Recv %d bytes\r\n", recv_num);
+    AT_DEBUG_POINT(0);
 
-    send_num = at_net_client_send(linkid, buffer, recv_num);
-    vPortFree(buffer);
+    //send_num = at_net_client_send_async(linkid, at_net_tx_buffer, recv_num, portMAX_DELAY);
+    send_num = at_net_client_send(linkid, at_net_tx_buffer, recv_num);
+    AT_DEBUG_POINT(0);
 
     if (send_num == recv_num) {
         return AT_RESULT_CODE_SEND_OK;
@@ -716,6 +743,12 @@ static int at_setup_cmd_cipsendl(int argc, const char **argv)
     }
     if (remote_port_valid && (remote_port_valid <= 0 || remote_port_valid > 65535)) {
         return AT_RESULT_CODE_ERROR;
+    }
+
+    if (remote_host_valid && remote_port_valid && (!at_net_client_is_connected(linkid))) {
+        if (at_net_client_udp_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, 0, 0) != 0) {
+            return AT_RESULT_CODE_FAIL;
+        }
     }
 
     if (!at_net_client_is_connected(linkid)) {
@@ -816,7 +849,7 @@ static int at_setup_cmd_cipsendex(int argc, const char **argv)
     if (!at_net_client_id_is_valid(linkid)) {
         return AT_RESULT_CODE_ERROR;
     }
-    if (length <= 0 || length > 8192) {
+    if (length <= 0 || length > AT_NET_TX_MAX_LEN) {
         return AT_RESULT_CODE_ERROR;
     }
     if (remote_host_valid) {
@@ -828,6 +861,12 @@ static int at_setup_cmd_cipsendex(int argc, const char **argv)
         return AT_RESULT_CODE_ERROR;
     }
 
+    if (remote_host_valid && remote_port_valid && (!at_net_client_is_connected(linkid))) {
+        if (at_net_client_udp_connect(linkid, &remote_ipaddr, (uint16_t)remote_port, 0, 0) != 0) {
+            return AT_RESULT_CODE_FAIL;
+        }
+    }
+
     if (!at_net_client_is_connected(linkid)) {
         return AT_RESULT_CODE_FAIL;
     }
@@ -837,27 +876,22 @@ static int at_setup_cmd_cipsendex(int argc, const char **argv)
         }
     }
 
-    char *buffer = (char *)pvPortMalloc(length);
-    if (!buffer) {
-        AT_NET_CMD_PRINTF("malloc %d bytes failed\r\n", length);
-        return AT_RESULT_CODE_FAIL;
-    }
-    at_response_result(AT_RESULT_CODE_OK);
+    at_response_string("%s%s", AT_CMD_MSG_OK, AT_CMD_MSG_WAIT_DATA);
+    //at_response_result(AT_RESULT_CODE_OK);
 
-    AT_CMD_RESPONSE(AT_CMD_MSG_WAIT_DATA);
+    //AT_CMD_RESPONSE(AT_CMD_MSG_WAIT_DATA);
     while(recv_num < length) {
-        ret = AT_CMD_DATA_RECV(buffer + recv_num, length - recv_num);
+        ret = AT_CMD_DATA_RECV(at_net_tx_buffer + recv_num, length - recv_num);
         if (ret > 0) {
             recv_num += ret;
-            recv_num = at_senddata_parse(buffer, recv_num, &index, &finish);
+            recv_num = at_senddata_parse(at_net_tx_buffer, recv_num, &index, &finish);
             if (finish)
                 break;
         }
     }
     at_response_string("Recv %d bytes\r\n", recv_num);
 
-    send_num = at_net_client_send(linkid, buffer, recv_num);
-    vPortFree(buffer);
+    send_num = at_net_client_send(linkid, at_net_tx_buffer, recv_num);
 
     if (send_num != recv_num) {
         return AT_RESULT_CODE_FAIL;
@@ -947,6 +981,12 @@ static int at_setup_cmd_ciprecvmode(int argc, const char **argv)
     if (at_get_work_mode() != AT_WORK_MODE_CMD) {
         return AT_RESULT_CODE_ERROR;
     }
+    for (int linkid = 0; linkid < AT_NET_CLIENT_HANDLE_MAX; linkid++) {
+        if (at_net_client_is_connected(linkid)) {
+            return AT_RESULT_CODE_ERROR;
+        }
+    }
+    
     at_net_config->recv_mode = mode;
     return AT_RESULT_CODE_OK;
 }
@@ -1017,6 +1057,9 @@ static int at_setup_cmd_ciprecvbuf(int argc, const char **argv)
     } else {
         AT_CMD_PARSE_NUMBER(0, &linkid);
         AT_CMD_PARSE_NUMBER(1, &size);
+    }
+    if (size <= 0) {
+        return AT_RESULT_CODE_ERROR;
     }
 
     if (!at_net_client_id_is_valid(linkid)) {
@@ -1712,6 +1755,14 @@ static int at_setup_cmd_ping(int argc, const char **argv)
         interval = 1000;
     }
 
+    if (len <= 0 || len >= 65535) {
+        return AT_RESULT_CODE_ERROR;
+    }
+    
+    if (interval <= 0 || interval >= 65535) {
+        return AT_RESULT_CODE_ERROR;
+    }
+
     hostinfo = gethostbyname(hostname);
     if (hostinfo) {
 #if LWIP_IPV6
@@ -1723,9 +1774,11 @@ static int at_setup_cmd_ping(int argc, const char **argv)
         if (env) {
             while (env->requests_count <= 0) //wait start
                 vTaskDelay(1);
-            while (env->node_num > 0) //wait finish
-                vTaskDelay(interval);
-        }
+            //while (env->node_num > 0) //wait finish
+            //    vTaskDelay(interval);
+        } else {
+            return AT_RESULT_CODE_ERROR;
+        } 
     } else {
         return AT_RESULT_CODE_ERROR;
     }
@@ -1934,6 +1987,8 @@ static int at_query_cmd_cipsslcconf(int argc, const char **argv)
 }
 
 static const at_cmd_struct at_net_cmd[] = {
+    {"+CIPSEND", NULL, NULL, at_setup_cmd_cipsend, at_exe_cmd_cipsend, 1, 4},
+    {"+CIPRECVDATA", NULL, NULL, at_setup_cmd_ciprecvdata, NULL, 1, 2},
     {"+CIFSR", NULL, NULL, NULL, at_exe_cmd_cifsr, 0, 0},
     {"+CIPV6", NULL, at_query_cmd_cipv6, at_setup_cmd_cipv6, NULL, 1, 1},
     {"+CIPDNS", NULL, at_query_cmd_cipdns, at_setup_cmd_cipdns, NULL, 1, 4},
@@ -1943,7 +1998,6 @@ static const at_cmd_struct at_net_cmd[] = {
     {"+CIPSTARTEX", NULL, NULL, at_setup_cmd_cipstartex, NULL, 3, 6},
     {"+CIPTCPOPT", NULL, at_query_cmd_ciptcport, at_setup_cmd_ciptcport, NULL, 1, 5},
     {"+CIPCLOSE", NULL, NULL, at_setup_cmd_cipclose, at_exe_cmd_cipclose, 1, 1},
-    {"+CIPSEND", NULL, NULL, at_setup_cmd_cipsend, at_exe_cmd_cipsend, 1, 4},
     {"+CIPSENDL", NULL, NULL, at_setup_cmd_cipsendl, NULL, 1, 4},
     {"+CIPSENDLCFG", NULL, at_query_cmd_cipsendlcfg, at_setup_cmd_cipsendlcfg, NULL, 2, 2},
     {"+CIPSENDEX", NULL, NULL, at_setup_cmd_cipsendex, NULL, 1, 4},
@@ -1951,7 +2005,6 @@ static const at_cmd_struct at_net_cmd[] = {
     {"+CIPEVT", NULL, at_query_cmd_cipevt, at_setup_cmd_cipevt, NULL, 1, 1},
     {"+CIPMUX", NULL, at_query_cmd_cipmux, at_setup_cmd_cipmux, NULL, 1, 1},
     {"+CIPRECVMODE", NULL, at_query_cmd_ciprecvmode, at_setup_cmd_ciprecvmode, NULL, 1, 1},
-    {"+CIPRECVDATA", NULL, NULL, at_setup_cmd_ciprecvdata, NULL, 1, 2},
     {"+CIPRECVBUF", NULL, at_query_cmd_ciprecvbuf, at_setup_cmd_ciprecvbuf, NULL, 1, 2},
     {"+CIPRECVLEN", NULL, at_query_cmd_ciprecvlen, NULL, NULL, 0, 0},
     {"+CIPSERVER", NULL, at_query_cmd_cipserver, at_setup_cmd_cipserver, NULL, 1, 5},

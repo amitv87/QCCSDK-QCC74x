@@ -30,6 +30,9 @@
 #include <inttypes.h>
 #include "spisync.h"
 #include "app_atmodule.h"
+#include "power_manager.h"
+#include "app_pm.h"
+#include "spi_cmd_processor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -40,7 +43,6 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define DEMO_AT 1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,15 +52,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-osThreadId_t spi_taskhandle;
-
 osThreadId_t console_taskhandle;
-const osThreadAttr_t console_tsk_attr = {
-  .name = "console",
-  .priority = (osPriority_t) osPriorityRealtime7,
-  .stack_size = 1024*4,
-};
-
 
 StreamBufferHandle_t uart_strm_buffer;
 
@@ -82,8 +76,6 @@ struct at_desc {
 	int post_delay_ms;
 };
 static at_host_handle_t g_at_handle;
-static volatile uint32_t g_send_flag = 0;
-static volatile uint32_t g_send_tick = 0;
 
 static char *argc_parse(const char *argv)
 {
@@ -94,7 +86,6 @@ static char *argc_parse(const char *argv)
 	}
 	return s ? (s + 1) : NULL;
 }
-
 
 void qcc74x_lp_gpio_wakeup()
 {
@@ -109,7 +100,7 @@ static void spisync_tx_perf(void *arg)
     uint8_t buffer[SPISYNC_PAYLOADBUF_LEN];
 
     spisync_msg_t msg;
-    spisync_build_msg(&msg, type, buffer, sizeof(buffer), 0xffffffff);
+    spisync_build_msg_zerocopy(&msg, type, buffer, sizeof(buffer), portMAX_DELAY);
 
     uint32_t success_count = 0;
     uint32_t byte_count = 0;
@@ -184,7 +175,8 @@ static void spisync_rx_perf(void *arg)
     uint8_t buffer[2048];
 
     spisync_msg_t msg;
-    spisync_build_msg(&msg, type, (uint32_t *)buffer, sizeof(buffer), 0xffffffff);
+    /* FIXME */
+    spisync_build_msg_needcopy(&msg, type, buffer, sizeof(buffer), portMAX_DELAY);
 
     uint32_t success_count = 0;
     uint32_t byte_count = 0;
@@ -241,7 +233,7 @@ static void spisync_start_rx_perf(const char *arg)
     osThreadId_t task_handle;
     osThreadAttr_t task_attr = {
       .name = "ss_rx_perf",
-	  .priority = osPriorityNormal,
+	  .priority = 55,
       .stack_size = 6 * 1024,
     };
 
@@ -267,7 +259,8 @@ static void spisync_rx_once(const char *arg)
 	}
 
 	memset(buf, 0x88, sizeof(buf));
-	spisync_build_msg(&msg, type, buf, sizeof(buf), 5000);
+	/* FIXME */
+	spisync_build_msg_needcopy(&msg, type, buf, sizeof(buf), 5000);
 	ret = spisync_read(g_at_handle->arg, &msg, 0);
 	printf("spisync_read ret %d, msg len %"PRIu32"\r\n", ret, msg.buf_len);
 }
@@ -286,60 +279,171 @@ static void spisync_tx_once(const char *arg)
 	}
 
 	memset(buf, 0x88, sizeof(buf));
-	spisync_build_msg(&msg, type, buf, sizeof(buf), 5000);
+	/* FIXME */
+	spisync_build_msg_needcopy(&msg, type, buf, sizeof(buf), 5000);
 	ret = spisync_write(g_at_handle->arg, &msg, 0);
 	printf("spisync_write ret %d\r\n", ret);
 }
 
-static int cli_handle_one(const char *argv)
+static void do_ss_dump(const char *arg)
+{
+	spisync_status(g_at_handle->arg);
+}
+
+static void do_ss_tx_once(const char *arg)
+{
+	spisync_tx_once(arg);
+}
+
+static void do_ss_rx_once(const char *arg)
+{
+	spisync_rx_once(arg);
+}
+
+static void do_ss_tx_perf(const char *arg)
+{
+	spisync_start_tx_perf(arg);
+}
+
+static void do_ss_rx_perf(const char *arg)
+{
+	spisync_start_rx_perf(arg);
+}
+
+static void do_ips(const char *arg)
+{
+	char *ip_addr = NULL;
+
+	ip_addr = argc_parse(arg);
+	at_iperf_tcp_rx_start(g_at_handle, ip_addr, 5001);
+}
+
+static void do_ipus(const char *arg)
+{
+	char *ip_addr = NULL;
+
+	ip_addr = argc_parse(arg);
+	at_iperf_udp_rx_start(g_at_handle, ip_addr, 5001);
+}
+
+static void do_ipu(const char *arg)
+{
+	char *ip_addr = NULL;
+
+	ip_addr = argc_parse(arg);
+	at_iperf_udp_tx_start(g_at_handle, ip_addr, 5001);
+}
+
+static void do_ipc(const char *arg)
+{
+	char *ip_addr = NULL;
+
+	ip_addr = argc_parse(arg);
+	at_iperf_tcp_tx_start(g_at_handle, ip_addr, 5001);
+}
+
+static void do_at_iperf_stop(const char *arg)
+{
+	at_iperf_stop(g_at_handle, 0);
+}
+
+static void do_ota_start(const char *arg)
+{
+	char *ip_addr = NULL;
+
+	ip_addr = argc_parse(arg);
+	at_ota_start(g_at_handle, ip_addr, 3365);
+}
+
+static void do_ota_stop(const char *arg)
+{
+	at_ota_finish(g_at_handle);
+}
+
+static void do_sleep(const char *arg)
 {
 	int ret;
 
-	printf("executing command %s\r\n", argv);
-	if (strstr(argv, "ss_dump")) {
-		spisync_status(g_at_handle->arg);
-	} else if (strstr(argv, "ss_tx_once")) {
-		spisync_tx_once(argv);
-	} else if (strstr(argv, "ss_rx_once")) {
-		spisync_rx_once(argv);
-	} else if (strstr(argv, "ss_tx_perf")) {
-		spisync_start_tx_perf(argv);
-	} else if (strstr(argv, "ss_rx_perf")) {
-		spisync_start_rx_perf(argv);
-	} else if (strstr(argv, "ips")) {
-		char *ip_addr = NULL;
-		ip_addr = argc_parse(argv);
-		at_iperf_tcp_rx_start(g_at_handle, ip_addr, 5001); //port defaulf 5001
-	} else if (strstr(argv, "ipus")) {
-		char *ip_addr = NULL;
-		ip_addr = argc_parse(argv);
-		at_iperf_udp_rx_start(g_at_handle, ip_addr, 5001); //port defaulf 5001
-	} else if (strstr(argv, "ipc")) {
-		char *ip_addr = NULL;
-		ip_addr = argc_parse(argv);
-		at_iperf_tcp_tx_start(g_at_handle, ip_addr, 5001); //port defaulf 8888
-	} else if (strstr(argv, "ipu")) {
-		char *ip_addr = NULL;
-		ip_addr = argc_parse(argv);
-		at_iperf_udp_tx_start(g_at_handle, ip_addr, 5001); //port defaulf 8888
-	} else if (strstr(argv, "iperf_stop")) {
-		at_iperf_stop(g_at_handle, 0);
-	} else if (strstr(argv, "ota_start")) {
-		char *ip_addr = NULL;
-		ip_addr = argc_parse(argv);
-		at_ota_start(g_at_handle, ip_addr, 3365); //OTA port defaulf 3365
-	} else if (strstr(argv, "wakeup 28")) {
-        qcc74x_lp_gpio_wakeup();
-    }
+	printf("Requesting to sleep\r\n");
+	ret = power_manager_request_sleep(get_app_power_manager());
+	if (ret < 0)
+		printf("failed to request sleep, %d\r\n", ret);
+}
+
+static void do_wakeup(const char *arg)
+{
+	int ret;
+
+	printf("Requesting to wakeup\r\n");
+	ret = power_manager_request_wakeup(get_app_power_manager());
+	if (ret < 0)
+		printf("failed to request wakeup, %d\r\n", ret);
+}
+
+static void do_mock_sleep_ack(const char *arg)
+{
+	int ret;
+
+	ret = power_manager_handle_sleep_ack(get_app_power_manager());
+	if (ret < 0)
+		printf("Failed to handle sleep ack, %d\r\n", ret);
+}
+
+static void do_mock_wakeup_ack(const char *arg)
+{
+	int ret;
+
+	ret = power_manager_handle_wakeup_ack(get_app_power_manager());
+	if (ret < 0)
+		printf("Failed to handle wakeup ack, %d\r\n", ret);
+}
+
+struct cmd_entry {
+	const char *name;
+	void (*func)(const char *arg);
+};
+
+static const struct cmd_entry cmds[] = {
+	{"ss_dump", do_ss_dump},
+	{"ss_tx_once", do_ss_tx_once},
+	{"ss_rx_once", do_ss_rx_once},
+	{"ss_tx_perf", do_ss_tx_perf},
+	{"ss_rx_perf", do_ss_rx_perf},
+	{"ips", do_ips},
+	{"ipus", do_ipus},
+	{"ipc", do_ipc},
+	{"ipu", do_ipu},
+	{"iperf_stop", do_at_iperf_stop},
+	{"ota_start", do_ota_start},
+	{"ota_stop", do_ota_stop},
+	{"wakeup", do_wakeup},
+	{"sleep", do_sleep},
+	{"mock_sleep_ack", do_mock_sleep_ack},
+	{"mock_wakeup_ack", do_mock_wakeup_ack},
+};
+
+static int cli_handle_one(const char *argv)
+{
+	int i;
+    int cmd_len;
+
+	for (i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {
+		const struct cmd_entry *cmd = &cmds[i];
+
+        cmd_len = strlen(cmd->name);
+		if ((!strncmp(argv, cmd->name, cmd_len)) && 
+            ((argv[cmd_len] == ' ') || (argv[cmd_len] == '\r') || (argv[cmd_len] == '\n'))) {
+			printf("executing command %s\r\n", argv);
+			if (cmd->func)
+				cmd->func(argv);
+		}
+	}
 	return 0;
 }
 
 static int _console_to_at(const char *buf, uint32_t len)
 {
-	if (strstr(buf, "AT") == NULL && strstr(buf, "+++") == NULL) {
-		return -1;
-	}
-    int ret = at_host_send(g_at_handle, 0, (uint8_t *)buf, len);
+    int ret = at_host_send(g_at_handle, 0, (uint8_t *)buf, len, 0);
 
     if (ret < len) {
         printf("%s send fail\r\n", __func__);
@@ -347,21 +451,26 @@ static int _console_to_at(const char *buf, uint32_t len)
     return 0;
 }
 
+#define CONSOLE_AT_ENABLE 1
 #define HOSTCMD_KEYWORD "HOSTCMD "
 
 static int console_cli_run(const char *cmd)
 {
-    char *cmd_parse = NULL;
+#if CONSOLE_AT_ENABLE
+	int off = 0;
 
-    if (strstr(cmd, HOSTCMD_KEYWORD) != NULL) {
-        cmd_parse = (char *)cmd + strlen(HOSTCMD_KEYWORD);
-		cli_handle_one(cmd_parse);
+	off = strlen(HOSTCMD_KEYWORD);
+    if (!strncmp(cmd, HOSTCMD_KEYWORD, off)) {
+        cmd = (char *)cmd + off;
+		cli_handle_one(cmd);
         return 0;
     }
-    return -1;
-}
 
-#define CONSOLE_AT_ENABLE 0
+    return _console_to_at(cmd, strlen(cmd));
+#else
+    cli_handle_one(cmd);
+#endif
+}
 
 static void uart_console_task(void *param)
 {
@@ -388,19 +497,6 @@ static void uart_console_task(void *param)
 		ret = xStreamBufferReceive(uart_strm_buffer, &buf[in],
 								BUF_SPACE(), portMAX_DELAY);
 		if (ret) {
-#if CONSOLE_AT_ENABLE
-            if (console_cli_run(&buf[in]) != 0) {
-            	_console_to_at(&buf[in], ret);
-            }
-            in = 0;
-#else 
-#if 0
-		    /* echo */
-			for (int i = 0; i < ret; i++) {
-				putchar(buf[in + i]);
-				fflush(stdout);
-			}
-#endif
 			/* new data arrives */
 			in += ret;
 
@@ -427,11 +523,7 @@ static void uart_console_task(void *param)
 						 */
 						memcpy(cmd, buf, out);
 						cmd[out] = '\0';
-
-                        if (console_cli_run(cmd) != 0) {
-                            _console_to_at(cmd, strlen(cmd));
-                        }
-						//cli_handle_one(cmd);
+						console_cli_run(cmd);
 						/* Shift out the old command. */
 						memmove(buf, &buf[out], in - out);
 						in -= out;
@@ -441,7 +533,6 @@ static void uart_console_task(void *param)
 					break;
 				}
 			}
-#endif
 		}
 	}
 }
@@ -480,6 +571,18 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
   */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
+	int ret;
+
+	osThreadAttr_t defaultTask_attributes = {
+	  .name = "defaultTask",
+	  .priority = (osPriority_t) osPriorityNormal,
+	  .stack_size = 128 * 4
+	};
+	osThreadAttr_t console_tsk_attr = {
+	  .name = "console",
+	  .priority = (osPriority_t) osPriorityRealtime7,
+	  .stack_size = 1024*4,
+	};
 	uart_strm_buffer = xStreamBufferCreate(1024 * 3, 1);
 	if (!uart_strm_buffer)
 		printf("failed to create stream buffer for uart\r\n");
@@ -506,11 +609,24 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   console_taskhandle = osThreadNew(uart_console_task, NULL, &console_tsk_attr);
-  if (!console_taskhandle)
+  if (!console_taskhandle) {
 	  printf("failed to create console task\r\n");
+	  while (1);
+  }
 
   g_at_handle = at_spisync_init();
 
+  ret = spi_cmd_processor_init();
+  if (ret < 0) {
+	  printf("Failed to init spi command processor, %d\r\n", ret);
+	  while (1);
+  }
+
+  ret = app_pm_init();
+  if (ret < 0) {
+	  printf("Failed to init power manager app\r\n");
+	  while (1);
+  }
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */

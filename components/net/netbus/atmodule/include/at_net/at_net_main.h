@@ -25,9 +25,17 @@ int at_net_stop(void);
 
 int at_net_sock_is_build(void);
 
+int at_net_throuthput_udp_linktype(int linkid);
+
 int at_net_client_get_valid_id(void);
 
-int at_net_client_id_is_valid(int id);
+static inline int at_net_client_id_is_valid(int id)
+{
+    if (id < 0 || id >= AT_NET_CLIENT_HANDLE_MAX)
+        return 0;
+    else
+        return 1;
+}
 
 int at_net_client_tcp_connect(int id, ip_addr_t *remote_ip, uint16_t remote_port, int keepalive);
 

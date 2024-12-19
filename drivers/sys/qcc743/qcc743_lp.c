@@ -188,6 +188,86 @@ const uint32_t hbn_ucode[] = {
 };
 // #endif
 
+/* jump to lpfw form bootrom */
+ATTR_HBN_CODE_SECTION void lp_fw_pre(void)
+{
+    uint32_t tmpVal;
+
+    /* xclk  select XTAL40M */
+    (*(volatile uint32_t *)0X2000f030) |= (1 << 0);
+
+    /* mtimer CLk set 1M = 40M/40 */
+    (*(volatile uint32_t *)0X20009014) &= ~(0x3FF << 0);
+    (*(volatile uint32_t *)0X20009014) |= (39 << 0);
+
+    /* mtimer cnt reset */
+    (*(volatile uint32_t *)0X20009014) |= (1 << 30);
+    (*(volatile uint32_t *)0X20009014) &= ~(1 << 30);
+
+    /* Set bus remap */
+    tmpVal = QCC74x_RD_REG(TZ1_BASE, TZC_SEC_TZC_ROM_TZSRG_CTRL);
+    tmpVal = QCC74x_SET_REG_BIT(tmpVal, TZC_SEC_TZC_BUS_RMP_EN);
+    QCC74x_WR_REG(TZ1_BASE, TZC_SEC_TZC_ROM_TZSRG_CTRL, tmpVal);
+
+    /* Set Lock */
+    tmpVal = QCC74x_RD_REG(TZ1_BASE, TZC_SEC_TZC_ROM_TZSRG_CTRL);
+    tmpVal = QCC74x_SET_REG_BIT(tmpVal, TZC_SEC_TZC_BUS_RMP_EN_LOCK);
+    QCC74x_WR_REG(TZ1_BASE, TZC_SEC_TZC_ROM_TZSRG_CTRL, tmpVal);
+
+    QCC74x_WR_REG(HBN_BASE, HBN_RSV1, 0);
+    QCC74x_WR_REG(HBN_BASE, HBN_RSV0, 0);
+
+    /* jump to lp_fw */
+    void (*pFunc)(void);
+    pFunc = (void (*)(void))LP_FW_START_ADDR;
+    pFunc();
+}
+
+extern uint32_t __hbn_load_addr;
+extern uint32_t __hbn_ram_start__;
+extern uint32_t __hbn_ram_end__;
+
+/* load hbn ram */
+static void qcc74x_load_hbn_ram(void)
+{
+    uint32_t *pSrc, *pDest;
+
+    /* BF Add HBNRAM data copy */
+    pSrc = &__hbn_load_addr;
+    pDest = &__hbn_ram_start__;
+    uint8_t i = 0;
+
+    for (; pDest < &__hbn_ram_end__;) {
+        QCC74x_LP_LOG("0x%08x, ", *pSrc);
+        *pDest++ = *pSrc++;
+        i++;
+        if (!(i % 8)) {
+            QCC74x_LP_LOG("\r\n");
+        }
+    }
+}
+
+#if LP_RAM_REUSE
+void load_ram_lp_code(void)
+{
+    uint32_t *tmp_src, *tmp_dst;
+
+    extern uint32_t __ram_lp_code_start__;
+    extern uint32_t __ram_lp_code_end__;
+    extern uint32_t __ram_lp_load_addr;
+
+    tmp_src = &__ram_lp_load_addr;
+    tmp_dst = &__ram_lp_code_start__;
+
+    for (; tmp_dst < &__ram_lp_code_end__;) {
+        *tmp_dst++ = *tmp_src++;
+    }
+    csi_dcache_clean();
+    csi_icache_invalid();
+}
+#endif
+
+
 #define GET_OFFSET(_type, _member) ((unsigned long)(&((_type *)0)->_member))
 
 void lp_fw_save_cpu_para(uint32_t save_addr)
@@ -380,7 +460,7 @@ static void rtc_wakeup_init(uint64_t rtc_wakeup_cmp_cnt, uint64_t sleep_us)
     QCC74x_WR_REG(HBN_BASE, HBN_CTL, (uint32_t)tmpVal);
 }
 
-#if 0
+#if 1
 ATTR_NOCACHE_NOINIT_RAM_SECTION struct qcc74x_sha256_ctx_s ctx_sha256;
 
 static void lpfw_sec_sha256(uint32_t addr, uint32_t len, uint8_t *result)
@@ -426,8 +506,6 @@ static void shared_func_init(void)
 
 void qcc74x_lp_fw_init()
 {
-    uintptr_t dst_addr = LP_FW_START_ADDR;
-    uint32_t lpfw_size = *((uint32_t *)__lpfw_start - 7);
     uint32_t chip_version = 0;
 
     /* clean iot2lp_para */
@@ -463,21 +541,28 @@ void qcc74x_lp_fw_init()
     iot2lp_para->bcn_delay_sliding_win_point = 0;
     iot2lp_para->bcn_delay_sliding_win_status = 0;
 
+#ifndef CONFIG_LPFW_INIT_SKIP_COPY
+    uintptr_t dst_addr = LP_FW_START_ADDR;
+    uint32_t lpfw_size = *((uint32_t *)__lpfw_start - 7);
+
     /* First load */
     memcpy((void *)dst_addr, __lpfw_start, lpfw_size);
+#endif
 
     /* get chip version*/
     chip_version = QCC74x_RD_WORD(0x90015800);
     if (chip_version == 0x06160001) {
         /* only first version need pre jump */
-        memcpy((void *)LP_FW_PRE_JUMP_ADDR, hbn_ucode, sizeof(hbn_ucode));
+        qcc74x_load_hbn_ram();
+        // memcpy((void *)LP_FW_PRE_JUMP_ADDR, hbn_ucode, sizeof(hbn_ucode));
     } else {
         /* later version use OCRAM for recovery */
         QCC74x_WR_WORD(0x22FC0000, 0x4e42484d);
         QCC74x_WR_WORD(0x22FC0004, 0x4e42484d);
         QCC74x_WR_WORD(0x22FC0008, LP_FW_PRE_JUMP_ADDR);
         /* em-buff need pre jump */
-        memcpy((void *)LP_FW_PRE_JUMP_ADDR, hbn_ucode, sizeof(hbn_ucode));
+        qcc74x_load_hbn_ram();
+        // memcpy((void *)LP_FW_PRE_JUMP_ADDR, hbn_ucode, sizeof(hbn_ucode));
         Tzc_Sec_OCRAM_Access_Set_Advance(0, 0x22FC0000, (0x400), 0x0);
     }
 
@@ -1216,6 +1301,7 @@ int ATTR_TCM_SECTION qcc74x_lp_fw_enter(qcc74x_lp_fw_cfg_t *qcc74x_lp_fw_cfg)
     rtc_sleep_us = qcc74x_lp_fw_cfg->rtc_timeout_us;
 
     if (qcc74x_lp_fw_cfg->lpfw_copy) {
+#if 0
         /* ensure integrity of lpfw  */
         /* Copy move to idle task */
         /* Set em_sel */
@@ -1227,6 +1313,15 @@ int ATTR_TCM_SECTION qcc74x_lp_fw_enter(qcc74x_lp_fw_cfg_t *qcc74x_lp_fw_cfg)
         uint8_t* lpfw_crc32=NULL;
         lpfw_crc32= (uint8_t *)(__lpfw_start - 64);
         if (memcmp((void*)&crc, lpfw_crc32, 4) != 0) {
+            assert(0);
+        }
+#endif
+        L1C_DCache_Clean_All();
+        uint8_t result[32];
+        uint8_t *lpfw_sha256 = (uint8_t *)(__lpfw_start - 64);
+        lpfw_sec_sha256(dst_addr, lpfw_size, result);
+        if (memcmp(result, lpfw_sha256, 32) != 0) {
+            /* Unreoverable Error!!!! */
             assert(0);
         }
     }
@@ -1578,6 +1673,10 @@ int ATTR_TCM_SECTION qcc74x_lp_fw_enter(qcc74x_lp_fw_cfg_t *qcc74x_lp_fw_cfg)
 
 #ifdef CONF_PSRAM_RESTORE
     board_psram_x8_init();
+#endif
+
+#if LP_RAM_REUSE
+    load_ram_lp_code();
 #endif
 
     LP_HOOK(post_sys, iot2lp_para);

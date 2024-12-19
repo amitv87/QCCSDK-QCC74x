@@ -163,6 +163,7 @@ pt_table_error_type pt_table_create(pt_table_id_type pt_id);
 pt_table_error_type pt_table_get_iap_para(pt_table_iap_param_type *para);
 pt_table_error_type pt_table_set_iap_para(pt_table_iap_param_type *para);
 void pt_table_init_default_fw(pt_table_stuff_config *pt_stuff, uint32_t fw_addr);
+uint8_t pt_table_valid(pt_table_stuff_config *pt_stuff);
 
 /*@} end of group PARTITION_Public_Functions */
 

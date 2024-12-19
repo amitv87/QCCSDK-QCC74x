@@ -28,17 +28,19 @@
 #include "board.h"
 #include "board_rf.h"
 #include "shell.h"
+#if defined(CFG_BLE_ENABLE)
 #include "bluetooth.h"
 #include "conn.h"
 #include "conn_internal.h"
 #include "btble_lib_api.h"
-#include "qcc743_glb.h"
 #include "hci_driver.h"
 #include "hci_core.h"
-
+#endif
+#include "qcc743_glb.h"
 #include "spisync.h"
 
 extern int enable_tickless;
+static TaskHandle_t twt_time_update_task_hd = NULL;
 
 void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer, uint32_t *pulIdleTaskStackSize)
 {
@@ -105,6 +107,8 @@ static void set_cpu_bclk_80M_and_gate_clk(void)
 
 static int lp_exit(void *arg)
 {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
     set_cpu_bclk_80M_and_gate_clk();
 
     /* recovery system_clock_init\peripheral_clock_init\console_init*/
@@ -120,6 +124,9 @@ static int lp_exit(void *arg)
     qcc74x_uart_rxint_mask(uart_shell, false);
     qcc74x_irq_attach(uart_shell->irq_num, uart_shell_isr, NULL);
     qcc74x_irq_enable(uart_shell->irq_num);
+
+    vTaskNotifyGiveFromISR(twt_time_update_task_hd, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 
     //GLB_GPIO_Func_Init(GPIO_FUN_JTAG, pinList, 4);
 
@@ -202,6 +209,25 @@ static void cmd_tickless(int argc, char **argv)
     qcc74x_lp_fw_bcn_loss_cfg_dtim_default(lpfw_cfg.dtim_origin);
     printf("sta_ps %ld\r\n", wifi_mgmr_sta_ps_enter());
     enable_tickless = 1;
+}
+
+static void cmd_twt(int argc, char **argv)
+{
+    lpfw_cfg.dtim_origin = 0;
+
+    qcc74x_lp_fw_bcn_loss_cfg_dtim_default(lpfw_cfg.dtim_origin);
+    printf("sta_ps %ld\r\n", wifi_mgmr_sta_ps_enter());
+    enable_tickless = 1;
+}
+
+int pm_status_update(int status)
+{
+    //update status
+    if (status) {
+        enable_tickless = 0;
+    } else {
+        enable_tickless = 1;
+    }
 }
 
 static int test_tcp_keepalive(int argc, char **argv)
@@ -304,9 +330,90 @@ static void cmd_io_dbg(int argc, char **argv)
     }
 }
 
+#define BASE_ADDRESS 0x2000f000
+#define OFFSET 0x204
+
+void modify_register_bits_incremental(int increment)
+{
+    volatile uint32_t *reg_address = (volatile uint32_t *)(BASE_ADDRESS + OFFSET);
+
+    uint32_t mask = (0x3F << 11);
+    uint32_t current_value = *reg_address;
+    uint32_t target_bits = (current_value & mask) >> 11;
+
+    /*
+    printf("Before change:\r\n");
+    printf("  Register value (full): 0x%08X\r\n", current_value);
+    printf("  bit11 to bit16 value: 0x%X\r\n", target_bits);
+    */
+
+    target_bits = (int32_t)(target_bits) + increment;
+    if (target_bits > 0x3F) {
+        target_bits = 0x3F;
+    } else if (target_bits < 0) {
+        target_bits = 0;
+    }
+
+    current_value = (current_value & ~mask) | (target_bits << 11);
+    *reg_address = current_value;
+    current_value = *reg_address;
+    target_bits = (current_value & mask) >> 11;
+
+    /*
+    printf("After change:\r\n");
+    printf("  Register value (full): 0x%08X\r\n", current_value);
+    printf("  bit11 to bit16 value: 0x%X\r\n", target_bits);
+    */
+}
+
+static void cmd_xtal32k_calibration(int argc, char **argv)
+{
+    uint32_t offset;
+
+    offset = atoi(argv[1]);
+    printf("offset:%d\r\n", offset);
+    modify_register_bits_incremental(offset); 
+}
+
+static void cmd_xtal32k_calc(int argc, char **argv)
+{
+    uint64_t rtc_us, rtc_cal_us;
+    uint64_t mtimer_us, mtimer_cal_us;
+    uint64_t mius;
+
+
+    uint32_t delay;
+
+    delay = atoi(argv[1]);
+    printf("delay:%ld\r\n", delay);
+
+    //xtal 32k calibration
+    __disable_irq();
+    rtc_us = qcc74x_rtc_get_time(NULL);
+    mtimer_us = qcc74x_mtimer_get_time_us();
+    __enable_irq();
+
+    vTaskDelay(delay);
+
+    __disable_irq();
+    rtc_cal_us = qcc74x_rtc_get_time(NULL);
+    mtimer_cal_us = qcc74x_mtimer_get_time_us();
+    __enable_irq();
+
+    rtc_us = ((rtc_cal_us - rtc_us) * 1000000) / 32768;
+    mtimer_us = mtimer_cal_us - mtimer_us;
+
+    if (rtc_us > mtimer_us) {
+        mius = rtc_us - mtimer_us;
+    } else {
+        mius = mtimer_us - rtc_us;
+    }
+    printf("mtimer:%llu rtc:%llu minus:%llu\r\n", mtimer_us, rtc_us, mius);
+}
+
 static void lp_io_wakeup_callback(uint64_t wake_up_io_bits)
 {
-    enable_tickless = 0;
+    enable_tickless = 1;
 
      //TODO ;can not call in interupt context
     //if (wifi_mgmr_sta_state_get()) {
@@ -314,7 +421,9 @@ static void lp_io_wakeup_callback(uint64_t wake_up_io_bits)
     //}
 
     //call resume spi
-    spisync_ps_wakeup(NULL);
+    spisync_wakeuparg_t wakeup_arg;
+    wakeup_arg.wakeup_reason = 0;
+    spisync_ps_wakeup(NULL, &wakeup_arg);
 }
 
 static qcc74x_lp_io_cfg_t lp_wake_io_cfg = {
@@ -400,11 +509,58 @@ static void cmd_32k_output(int argc, char **argv)
     write_register(0x20000930, 0x40000F02);
 }
 
+TimerHandle_t xArpTimer = NULL;
+static void arp_send(TimerHandle_t xTimer) {
+
+    if (!wifi_mgmr_sta_state_get()) {
+        return;
+    }
+
+    LOCK_TCPIP_CORE();
+    do {
+        assert(netif_default != NULL);
+        etharp_request(netif_default, &netif_default->gw);
+    } while(0);
+    UNLOCK_TCPIP_CORE();
+}
+
+static void cmd_send_arp(int argc, char **argv)
+{
+    if (argc != 2) {
+    printf("Need param\r\n");
+    return;
+    }
+
+    if (atoi(argv[1])) {
+        if (xArpTimer) {
+            printf("Arp timer already created.\r\n");
+            return;
+        }
+        xArpTimer = xTimerCreate("traffic probe",  pdMS_TO_TICKS(55*1000), pdFALSE, (void*)0, arp_send);
+
+        xTimerStart(xArpTimer, 0);
+        printf("create period 55s arp timer success.\r\n");
+    } else {
+        if (xArpTimer) {
+            xTimerDelete(xArpTimer, portMAX_DELAY);
+            xArpTimer = NULL;
+            printf("Delete arp timer.\r\n");
+        }
+    }
+
+    return;
+
+}
+
 SHELL_CMD_EXPORT_ALIAS(cmd_tickless, tickless, cmd tickless);
+SHELL_CMD_EXPORT_ALIAS(cmd_twt, twt, cmd twt);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_lp, wifi_lp_test, wifi low power test);
 SHELL_CMD_EXPORT_ALIAS(test_tcp_keepalive, lpfw_tcp_keepalive, tcp keepalive test);
 SHELL_CMD_EXPORT_ALIAS(cmd_io_dbg, io_debug, cmd io_debug);
 SHELL_CMD_EXPORT_ALIAS(cmd_32k_output, output_32k, cmd 32k output);
+SHELL_CMD_EXPORT_ALIAS(cmd_xtal32k_calibration, xtal_calibration, cmd xtal calibration);
+SHELL_CMD_EXPORT_ALIAS(cmd_xtal32k_calc, calc, cmd xtal32k calc);
+SHELL_CMD_EXPORT_ALIAS(cmd_send_arp, arp_send, cmd send arp);
 #endif
 
 static void xtal32k_input(void)
@@ -419,7 +575,6 @@ static void xtal32k_input(void)
 
 static TaskHandle_t xtal32k_check_entry_task_hd = NULL;
 static uint32_t xtal_reg_val = 0;
-static TaskHandle_t hello_entry_task_hd = NULL;
 
 /**********************************************************
     rc32k coarse trim task func
@@ -493,12 +648,12 @@ static void rc32k_coarse_trim_task(void)
     printf("rc32k_coarse_trim: rc32k code:%d\r\n", iot2lp_para->rc32k_fr_ext);
 }
 
-static void hello_entry_task(void *pvParameters)
+static void twt_time_update_task(void *pvParameters)
 {
     while(1) {
-        enable_tickless = 0;
-        printf("exit ps \r\n");
-        vTaskDelay(15000);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        void twt_update_next_sp(void);
+        twt_update_next_sp();
     }
 }
 
@@ -540,9 +695,9 @@ static int xtal32k_check_entry_task(int crystal_flag)
     if (crystal_flag) {
         gpioCfg.gpioPin = 16;
         GLB_GPIO_Init(&gpioCfg);
-        printf("--------------------------- use passive crystal.\r\n");
+        printf("use passive crystal.\r\n");
     } else {
-        printf("----------------------- use active crtstal.\r\n");
+        printf("use active crtstal.\r\n");
     }
 
     gpioCfg.gpioPin = 17;
@@ -666,7 +821,9 @@ void timerCallback(TimerHandle_t xTimer)
     //if (wifi_mgmr_sta_state_get()) {
     //    wifi_mgmr_sta_ps_exit();
     //}
-    spisync_ps_wakeup(NULL);
+    spisync_wakeuparg_t wakeup_arg;
+    wakeup_arg.wakeup_reason = 2;
+    spisync_ps_wakeup(NULL, &wakeup_arg);
 }
 
 void createAndStartTimer(const char* timerName, TickType_t timerPeriod)
@@ -747,6 +904,28 @@ void keepalive_callback(TimerHandle_t xTimer)
     wifi_mgmr_null_data_send();
 }
 
+void app_pm_twt_param_set(int s, int t, int e, int n, int m)
+{
+    twt_setup_params_struct_t param;
+    param.setup_type = s;
+    param.flow_type = t;
+    param.wake_int_exp = e;
+    param.wake_dur_unit = 0; 
+    param.min_twt_wake_dur = n;
+    param.wake_int_mantissa = m;
+
+    wifi_mgmr_sta_twt_setup(&param);
+}
+
+void app_pm_twt_enter(void)
+{
+    lpfw_cfg.dtim_origin = 0;
+
+    qcc74x_lp_fw_bcn_loss_cfg_dtim_default(lpfw_cfg.dtim_origin);
+    printf("sta_ps %ld\r\n", wifi_mgmr_sta_ps_enter());
+    enable_tickless = 1;
+}
+
 int app_create_keepalive_timer(uint32_t periods)
 {
     TickType_t timerPeriod = pdMS_TO_TICKS(periods * 1000);
@@ -798,10 +977,63 @@ int app_delete_keepalive_timer(void)
     return 0;
 }
 
+static void xtal32k_calibration(void)
+{
+    uint32_t retry_cnt = 5;
+    uint64_t timeout_start;
+
+    uint64_t rtc_cnt, rtc_record_us, rtc_now_us;
+    uint64_t mtimer_record_us, mtimer_now_us;
+
+    uint32_t rtc_us, mtimer_us;
+    int32_t diff_us;
+
+    qcc74x_lp_set_32k_clock_ready(0);
+
+    while (retry_cnt) {
+        retry_cnt--;
+
+        __disable_irq();
+        mtimer_record_us = qcc74x_mtimer_get_time_us();
+        HBN_Get_RTC_Timer_Val((uint32_t *)&rtc_cnt, (uint32_t *)&rtc_cnt + 1);
+        __enable_irq();
+
+        rtc_record_us = QCC74x_PDS_CNT_TO_US(rtc_cnt);
+
+        vTaskDelay(1000);
+
+        __disable_irq();
+        mtimer_now_us = qcc74x_mtimer_get_time_us();
+        HBN_Get_RTC_Timer_Val((uint32_t *)&rtc_cnt, (uint32_t *)&rtc_cnt + 1);
+        __enable_irq();
+
+        rtc_now_us = QCC74x_PDS_CNT_TO_US(rtc_cnt);
+
+        rtc_us = (uint32_t)(rtc_now_us - rtc_record_us);
+        mtimer_us = (uint32_t)(mtimer_now_us - mtimer_record_us);
+        diff_us = rtc_us - mtimer_us;
+
+        if(diff_us < 0){
+            modify_register_bits_incremental(-8);
+        }else if (diff_us > 25){
+            modify_register_bits_incremental(8);
+        } else {
+            printf("xtal32k_check: mtimer_us:%ld, rtc_us:%ld minus:%ld\r\n", mtimer_us, rtc_us, diff_us);
+            break;
+        }
+
+        printf("xtal32k_check: mtimer_us:%ld, rtc_us:%ld minus:%ld\r\n", mtimer_us, rtc_us, diff_us);
+    }
+
+    qcc74x_lp_set_32k_clock_ready(1);
+}
 
 static void xtal32k_select_task(void *pvParameters)
 {
     if (xtal32k_check_entry_task(1)) {
+        //calibration xtal32k
+        xtal32k_calibration();
+        
     } else {
         xtal32k_check_entry_task(0);
     }
@@ -844,5 +1076,5 @@ int app_pm_init(void)
 
     app_pm_use_crystal_oscillator();
 
-    //xTaskCreate(hello_entry_task, (char*)"hello_check_entry", 512, NULL, 10, &hello_entry_task_hd);
+    xTaskCreate(twt_time_update_task, (char*)"twt_time_update_entry", 256, NULL, 10, &twt_time_update_task_hd);
 }

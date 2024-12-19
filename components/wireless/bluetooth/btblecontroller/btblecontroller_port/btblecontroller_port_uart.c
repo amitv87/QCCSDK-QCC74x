@@ -30,8 +30,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "btble_dma_uart.h"
+#include "ll.h"
 
-#define QCC74x_DMA_UART 0
+#define QCC74x_DMA_UART 1
 
 /*
  * DEFINES
@@ -282,12 +283,6 @@ void btble_uart_read_data_from_dma(void)
     if(uart_env.rx.remain_size > 0)
     {
         uint16_t data_len = btble_dma_uart_read(uart_env.rx.remain_data, (uint16_t)uart_env.rx.remain_size);
-        if(uart_env.rx.remain_data)
-        {
-           uint8_t *trace_data = uart_env.rx.remain_data;
-          
-          
-        }
         uart_env.rx.remain_data += data_len;
         uart_env.rx.remain_size -= data_len;
         if(uart_env.rx.remain_size == 0)
@@ -368,7 +363,9 @@ __attribute__((weak)) void btble_uart_read(uint8_t *bufptr, uint32_t size, void 
     uart_env.rx.callback = callback;
     uart_env.rx.dummy = dummy;
     #if (QCC74x_DMA_UART)
+    GLOBAL_INT_DISABLE();
     btble_uart_read_data_from_dma();
+    GLOBAL_INT_RESTORE();
     #else
     if (size < 8) {
         qcc74x_uart_feature_control(btble_uart, UART_CMD_SET_RX_FIFO_THREHOLD, size - 1);

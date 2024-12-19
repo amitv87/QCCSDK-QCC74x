@@ -106,30 +106,33 @@ SECTIONS
 
         INCLUDE run_in_ram_function.ld.in
 
-        *libfreertos.a:*.o(.text*)
-        *libfreertos.a:*.o(.rodata.CSWTCH*)
-        *libfreertos.a:*.o(.rodata.ullMachineTimerCompareRegisterBase)
-        *libfreertos.a:*.o(.rodata.uxTimerIncrementsForOneTick)
-        *libfreertos.a:*.o(.rodata.uxTimerIncrementsForOneTick)
-        *libfreertos.a:*.o(.rodata.xISRStackTop)
+        *libfreertos.a:*.o*(.text*)
+        *libfreertos.a:*.o*(.rodata.CSWTCH*)
+        *libfreertos.a:*.o*(.rodata.ullMachineTimerCompareRegisterBase)
+        *libfreertos.a:*.o*(.rodata.uxTimerIncrementsForOneTick)
+        *libfreertos.a:*.o*(.rodata.uxTimerIncrementsForOneTick)
+        *libfreertos.a:*.o*(.rodata.xISRStackTop)
 
-        /* *libqcc743_phyrf.a:*.o(.text*) */
-        /* *libqcc743_phyrf.a:*.o(.rodata*) */
+        /* *libqcc743_phyrf.a:*.o*(.text*) */
+        /* *libqcc743_phyrf.a:*.o*(.rodata*) */
 
-        *libc.a:lib_a-memset.c.o(.text)
-        *libc.a:lib_a-memset.c.o(.rodata)
-        *libc.a:lib_a-memcpy.c.o(.text)
-        *libc.a:lib_a-memcpy.c.o(.rodata)
-        *libc.a:lib_a-memcpy-asm.c.o(.text)
-        *libc.a:lib_a-memcpy-asm.c.o(.rodata)
-        *libc.a:lib_vikmemcpy.c.o(.text*)
-        *libc.a:lib_vikmemcpy.c.o(.rodata*)
-        *libc.a:lib_memset.c.o(.text*)
-        *libc.a:lib_memset.c.o(.rodata*)
-        *libgcc.a:_clzsi2.o(.text)
-        *libgcc.a:_clzsi2.o(.rodata)
-        *libgcc.a:_clz.o(.text)
-        *libgcc.a:_clz.o(.rodata)
+        *wifi6_lwip_adapter.a:net_tg_al.c.o*(.text*)
+        *lwip.a:udp.c.o*(.text*)
+
+        *libc.a:lib_a-memset.c.o*(.text)
+        *libc.a:lib_a-memset.c.o*(.rodata)
+        *libc.a:lib_a-memcpy.c.o*(.text)
+        *libc.a:lib_a-memcpy.c.o*(.rodata)
+        *libc.a:lib_a-memcpy-asm.c.o*(.text)
+        *libc.a:lib_a-memcpy-asm.c.o*(.rodata)
+        *libc.a:lib_vikmemcpy.c.o*(.text*)
+        *libc.a:lib_vikmemcpy.c.o*(.rodata*)
+        *libc.a:lib_memset.c.o*(.text*)
+        *libc.a:lib_memset.c.o*(.rodata*)
+        *libgcc.a:_clzsi2.o*(.text)
+        *libgcc.a:_clzsi2.o*(.rodata)
+        *libgcc.a:_clz.o*(.text)
+        *libgcc.a:_clz.o*(.rodata)
 
         *(.tcm_code.*)
         *(.tcm_const.*)

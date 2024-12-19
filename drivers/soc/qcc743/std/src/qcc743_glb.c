@@ -4316,6 +4316,243 @@ QCC74x_Sts_Type ATTR_TCM_SECTION GLB_Get_PAD_Bonging_to_GND_Sts(void)
     }
 }
 
+const uint32_t ATTR_CLOCK_CONST_SECTION usbPllSdmin_12M = 0x28000;
+const uint32_t ATTR_CLOCK_CONST_SECTION sscDivSdmin_24M = 0x28000;
+
+void glb_40M_delay_us(uint32_t us)
+{
+    for (uint32_t i = 0; i < us; i++) {
+        GLB_CLK_SET_DUMMY_WAIT;
+        GLB_CLK_SET_DUMMY_WAIT;
+        GLB_CLK_SET_DUMMY_WAIT;
+    }
+}
+
+/****************************************************************************/ /**
+ * @brief  power on wifipll quickly
+ *
+ * @param  xtalType: XTAL frequency type
+ * @param  pllType: only power on xtal
+ *******************************************************************************/
+QCC74x_Err_Type ATTR_CLOCK_SECTION GLB_Fast_Power_On_WIFIPLL(const GLB_WA_PLL_Cfg_Type *const cfg, uint8_t waitStable)
+{
+    uint32_t REG_PLL_BASE_ADDRESS = 0;
+    uint32_t tmpVal = 0;
+
+    REG_PLL_BASE_ADDRESS = GLB_BASE + GLB_WIFI_PLL_CFG0_OFFSET;
+
+    /* Step1:config parameter */
+    /* cfg1:Set wifipll_refclk_sel and wifipll_refdiv_ratio */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 1);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_REFDIV_RATIO, cfg->basicCfg->clkpllRefdivRatio);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 1, tmpVal);
+
+    /* cfg2:Set wifipll_int_frac_sw,wifipll_icp_1u,wifipll_icp_5u */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 2);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_INT_FRAC_SW, cfg->basicCfg->clkpllIntFracSw);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_ICP_1U, cfg->basicCfg->clkpllIcp1u);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_ICP_5U, cfg->basicCfg->clkpllIcp5u);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 2, tmpVal);
+
+    /* cfg3:Set wifipll_rz,wifipll_cz,wifipll_c3,wifipll_r4_short,wifipll_r4_en */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 3);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_RZ, cfg->basicCfg->clkpllRz);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_CZ, cfg->basicCfg->clkpllCz);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_C3, cfg->basicCfg->clkpllC3);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_R4_SHORT, cfg->basicCfg->clkpllR4Short);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_C4_EN, cfg->basicCfg->clkpllC4En);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 3, tmpVal);
+
+    /* cfg4:Set wifipll_sel_sample_clk */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 4);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_SEL_SAMPLE_CLK, cfg->basicCfg->clkpllSelSampleClk);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 4, tmpVal);
+
+    /* cfg5:Set wifipll_vco_speed */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 5);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_VCO_SPEED, cfg->basicCfg->clkpllVcoSpeed);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 5, tmpVal);
+
+    /* cfg6:Set wifipll_sdm_bypass,wifipll_sdmin */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 6);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_SDM_CTRL_HW, cfg->basicCfg->clkpllSdmCtrlHw);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_SDM_BYPASS, cfg->basicCfg->clkpllSdmBypass);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_SDMIN, cfg->clkpllSdmin);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 6, tmpVal);
+
+    /* cfg10:always set usbpll_sdmin */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 10);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_USBPLL_SDMIN, usbPllSdmin_12M);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 10, tmpVal);
+
+    /* cfg12:always set sscdiv_sdmin */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 12);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_SSCDIV_SDMIN, sscDivSdmin_24M);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 12, tmpVal);
+
+    /* Step2:config pu */
+    /* cfg0 : pu_wifipll_sfreg=1 */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_PU_WIFIPLL_SFREG, 1);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 0, tmpVal);
+
+    /* delay > 2us */
+    glb_40M_delay_us(3);
+
+    /* cfg0 : pu_wifipll=1 */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_PU_WIFIPLL, 1);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 0, tmpVal);
+
+    /* delay > 2us */
+    glb_40M_delay_us(3);
+
+    /* toggle sdm_reset (pulse 0 > 1us) */
+    /* cfg0 : wifipll_sdm_reset */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_SDM_RSTB, 1);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 0, tmpVal);
+    glb_40M_delay_us(2);
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_SDM_RSTB, 0);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 0, tmpVal);
+    glb_40M_delay_us(2);
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_SDM_RSTB, 1);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 0, tmpVal);
+
+    /* Step3:reset pll */
+    /* cfg0 : toggle wifipll_reset_fbdv, pulse 0 > 1us */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_FBDV_RSTB, 1);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 0, tmpVal);
+    glb_40M_delay_us(2);
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_FBDV_RSTB, 0);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 0, tmpVal);
+    glb_40M_delay_us(2);
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_WIFIPLL_FBDV_RSTB, 1);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 0, tmpVal);
+
+    /* Step4:enable output clock */
+    /* cfg8 : wifipll clock enable */
+    tmpVal = QCC74x_RD_WORD(REG_PLL_BASE_ADDRESS + 4 * 8);
+    tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV3);
+    // tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV4);
+    // tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV5);
+    // tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV6);
+    // tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV8);
+    // tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV10);
+    // tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV12);
+    // tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV20);
+    // tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_WIFIPLL_EN_DIV30);
+    QCC74x_WR_WORD(REG_PLL_BASE_ADDRESS + 4 * 8, tmpVal);
+
+    if (waitStable) {
+        /* Wait 1.5*30us    */
+        glb_40M_delay_us(45);
+    }
+
+    return SUCCESS;
+}
+
+/****************************************************************************/ /**
+ * @brief  power on xtal and wifipll quickly
+ *
+ * @param  xtalType: XTAL frequency type
+ * @param  pllType: only power on xtal
+ *
+ * @return SUCCESS or ERROR
+ *
+*******************************************************************************/
+QCC74x_Err_Type ATTR_CLOCK_SECTION GLB_Fast_Power_On_XTAL_40M_And_WIFIPLL(void)
+{
+    uint32_t tmpVal;
+    volatile uint8_t refClk;
+
+    refClk = GLB_PLL_REFCLK_XTAL;
+
+    /* power on xtal first */
+    tmpVal = QCC74x_RD_REG(AON_BASE, AON_TSEN);
+    if (!QCC74x_IS_REG_BIT_SET(tmpVal, AON_XTAL_RDY) ){
+        AON_Power_On_XTAL();
+    }
+
+    /* power on wifipll */
+    GLB_Power_Off_WIFIPLL();
+    GLB_WIFIPLL_Ref_Clk_Sel(refClk);
+    GLB_Fast_Power_On_WIFIPLL(&wifiPllCfg_960M_Fast[0], 0);
+
+    glb_40M_delay_us(30);
+
+    /* enable all PLL clock output */
+    /* GLB reg_pll_en = 1, cannot be zero */
+    tmpVal = QCC74x_RD_REG(GLB_BASE, GLB_SYS_CFG0);
+    tmpVal = QCC74x_SET_REG_BIT(tmpVal, GLB_REG_PLL_EN);
+    QCC74x_WR_REG(GLB_BASE, GLB_SYS_CFG0, tmpVal);
+
+    GLB_CLK_SET_DUMMY_WAIT;
+
+    return SUCCESS;
+}
+
+QCC74x_Err_Type ATTR_CLOCK_SECTION GLB_Fast_Set_MCU_System_CLK_Div(uint8_t mcuClkDiv, uint8_t mcuPBclkDiv)
+{
+    uint32_t tmpVal;
+    uint32_t timeout = 1024;
+
+    /* config hclk_div=mcuClkDiv */
+    tmpVal = QCC74x_RD_REG(GLB_BASE, GLB_SYS_CFG0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_REG_HCLK_DIV, mcuClkDiv);
+    QCC74x_WR_REG(GLB_BASE, GLB_SYS_CFG0, tmpVal);
+
+    /* config bclk_div=mcuPBclkDiv */
+    tmpVal = QCC74x_RD_REG(GLB_BASE, GLB_SYS_CFG0);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_REG_BCLK_DIV, mcuPBclkDiv);
+    QCC74x_WR_REG(GLB_BASE, GLB_SYS_CFG0, tmpVal);
+    /* bclk act pulse */
+    tmpVal = QCC74x_RD_REG(GLB_BASE, GLB_SYS_CFG1);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, GLB_REG_BCLK_DIV_ACT_PULSE, 1);
+    QCC74x_WR_REG(GLB_BASE, GLB_SYS_CFG1, tmpVal);
+
+    timeout = 1024;
+    do {
+        tmpVal = QCC74x_RD_REG(GLB_BASE, GLB_SYS_CFG1);
+        tmpVal = QCC74x_GET_REG_BITS_VAL(tmpVal, GLB_STS_BCLK_PROT_DONE);
+    } while ((--timeout) && (!tmpVal));
+    if (!timeout) {
+        return ERROR;
+    }
+
+    GLB_CLK_SET_DUMMY_WAIT;
+
+    return SUCCESS;
+}
+
+QCC74x_Err_Type ATTR_CLOCK_SECTION GLB_Fast_Set_MCU_System_CLK(uint8_t clkFreq)
+{
+    uint32_t tmpVal;
+
+    /* select pll output clock before select root clock */
+    tmpVal = QCC74x_RD_REG(PDS_BASE, PDS_CPU_CORE_CFG1);
+    tmpVal = QCC74x_SET_REG_BITS_VAL(tmpVal, PDS_REG_PLL_SEL, 3);
+    QCC74x_WR_REG(PDS_BASE, PDS_CPU_CORE_CFG1, tmpVal);
+
+    /* For high speed, set DIV first */
+    GLB_Fast_Set_MCU_System_CLK_Div(3, 0);
+    /* Set IROM 2T Access 0 since we use RC32M, unuseful now */
+    /* MCU_MISC_IROM_2T_Access_Set(0); */
+    //GLB_PLL_CGEN_Clock_UnGate(GLB_PLL_CGEN_TOP_WIFIPLL_320M);
+    QCC74x_WR_WORD(0x2000058C,QCC74x_RD_WORD(0x2000058C)|(1<<14));
+    HBN_Set_MCU_Root_CLK_Sel(HBN_MCU_ROOT_CLK_PLL);
+    QCC74x_WR_WORD(0x2000f030,QCC74x_RD_WORD(0x2000f030)|(1<<1));
+
+    GLB_CLK_SET_DUMMY_WAIT;
+
+    return SUCCESS;
+}
+
 /*@} end of group GLB_Public_Functions */
 
 /*@} end of group GLB */

@@ -246,11 +246,17 @@ typedef enum {
     WIFI_MODE_802_11N_5     = 0x10,
     /// 802.11ac at 5GHz
     WIFI_MODE_802_11AC_5    = 0x20,
+    /// 802.11ac at 2.4GHz
+    WIFI_MODE_802_11AC_2_4  = 0x40,
     /// 802.11ax at 2.4GHz
-    WIFI_MODE_802_11AX_2_4  = 0x40,
-    /// Reserved for future use
-    WIFI_MODE_RESERVED      = 0x80,
+    WIFI_MODE_802_11AX_2_4  = 0x80,
 } WiFi_Mode_t;
+
+#define IS_11B_ONLY(mode) (mode == WIFI_MODE_802_11B)
+#define IS_11G_EN(mode)   (mode & WIFI_MODE_802_11G)
+#define IS_11N_EN(mode)   (mode & (WIFI_MODE_802_11N_2_4 | WIFI_MODE_802_11N_5))
+#define IS_11AC_EN(mode)  (mode & (WIFI_MODE_802_11AC_2_4 | WIFI_MODE_802_11AC_5))
+#define IS_11AX_EN(mode)  (mode & WIFI_MODE_802_11AX_2_4)
 
 /// Scan result element, parsed from beacon or probe response frames.
 struct mac_scan_result

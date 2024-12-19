@@ -101,7 +101,7 @@ static void __at_rx_task(void *arg)
 
 	while (1) {
 
-		memset(evt_head, 0, sizeof(evt_head));
+		//memset(evt_head, 0, sizeof(evt_head));
 		ret = _at_read(handle, evt_head, sizeof(evt_head));
 
 		if (ret > 0) {
@@ -122,12 +122,14 @@ static void __at_rx_task(void *arg)
 static int at_resp_ok(at_host_handle_t at, const char *cmd, int len)
 {
 	osEventFlagsSet(at->evt, AT_HOST_RESP_EVT_OK);
+	//printf("at_resp_ok\r\n");
 	return 0;
 }
 
 static int at_resp_wait_data(at_host_handle_t at, const char *cmd, int len)
 {
 	osEventFlagsSet(at->evt, AT_HOST_RESP_EVT_WAIT_DATA);
+	//printf("at_resp_wait_data\r\n");
 	return 0;
 }
 
@@ -136,6 +138,20 @@ static int at_resp_send_ok(at_host_handle_t at, const char *cmd, int len)
 	osEventFlagsSet(at->evt, AT_HOST_RESP_EVT_SEND_OK);
 	return 0;
 }
+
+static int at_resp_recv_btyes(at_host_handle_t at, const char *cmd, int len)
+{
+	int data_len = 0;
+
+    sscanf(cmd, "Recv %d bytes\r\n", &data_len);
+
+    if (data_len > 0) {
+    	osEventFlagsSet(at->evt, AT_HOST_RESP_EVT_RECV_BTYES);
+    }
+
+	return 0;
+}
+
 
 static int at_resp_ciprecvdata(at_host_handle_t at, const char *cmd, int len)
 {
@@ -165,7 +181,8 @@ static int at_resp_ciprecvdata(at_host_handle_t at, const char *cmd, int len)
 	head_len = countDigits(data_len) + 14;
 	frame_len = head_len + data_len + strlen("\r\n");
 
-	if ((ret = len - head_len) > 0) {
+	ret = ((len - head_len) > (data_len + 2)) ? (data_len + 2) : (len - head_len);
+	if (ret > 0) {
 		memcpy(data_buf, cmd + head_len, ret);
 		wptr = data_buf + ret;
 	}
@@ -185,8 +202,8 @@ static int at_resp_ciprecvdata(at_host_handle_t at, const char *cmd, int len)
 	if (data_buf[data_len] == '\r' && data_buf[data_len + 1] == '\n') {
 
 	} else {
-		printf("frame err !!!\r\n");
-		assert(0);
+		printf("frame err tail %s\r\n", &data_buf[data_len]);
+		//assert(0);
 	}
 _end:
 	msg.event = AT_HOST_RESP_EVT_CIPRECVDATA;
@@ -215,7 +232,7 @@ static int at_resp_ipd(at_host_handle_t at, const char *cmd, int len)
 
 	memcpy(ipd_buf, cmd, len);
 
-    sscanf(ipd_buf, "\r\n+IPD:%d,%d", &linkid, &data_len);
+    sscanf(ipd_buf, "+IPD:%d,%d", &linkid, &data_len);
 
     if (at->recv_mode == AT_NET_RECV_MODE_ACTIVE) {
 
@@ -264,22 +281,23 @@ static int at_resp_ipd(at_host_handle_t at, const char *cmd, int len)
 
 int at_host_recvmode_set(at_host_handle_t at, uint8_t mode)
 {
-	at_host_printf(at, AT_HOST_RESP_EVT_OK, "AT+CIPRECVMODE=%d\r\n", mode);
+	at_host_printf(at, AT_HOST_RESP_EVT_OK, 0, "AT+CIPRECVMODE=%d\r\n", mode);
 	at->recv_mode = mode;
 }
 
-int at_host_recvdata(at_host_handle_t at, int linkid, uint8_t *buf, uint32_t buf_size)
+int at_host_recvdata(at_host_handle_t at, int linkid, uint8_t *buf, uint32_t buf_size, uint32_t timeout)
 {
 	at_host_msg_t msg;
 	int ret = 0;
 
-	at_host_printf(at, 0, "AT+CIPRECVDATA=%d,%d\r\n", linkid, buf_size);
+	at_host_printf(at, 0, 0, "AT+CIPRECVDATA=%d,%d\r\n", linkid, buf_size);
 
-	if (osMessageQueueGet(at->queue, &msg, 0, 0xffffffff) != 0) {
+	if (osMessageQueueGet(at->queue, &msg, 0, timeout) != 0) {
 		return -1;
 	}
-	at_host_wait(at, AT_HOST_RESP_EVT_OK, 1000);
+	//at_host_wait(at, AT_HOST_RESP_EVT_OK, 1000);
 
+	//at_host_wait(at, AT_HOST_RESP_EVT_OK, 1000);
 	if (msg.msg_len) {
 		ret = buf_size > msg.msg_len ? msg.msg_len : buf_size;
 		memcpy(buf, msg.msg_buf, ret);
@@ -293,10 +311,13 @@ int at_host_recvdata(at_host_handle_t at, int linkid, uint8_t *buf, uint32_t buf
 int at_host_wait(at_host_handle_t at, int wait_evt, uint32_t timeout)
 {
 	int rflags = osEventFlagsWait(at->evt, wait_evt, osFlagsWaitAll, timeout);
-	return (rflags & 0xffffff);
+    if (rflags >= osErrorISR && rflags <= osOK) {
+        return 0;
+    }
+    return rflags; 
 }
 
-int at_host_send(at_host_handle_t at, int wait_evt, uint8_t *data, int len)
+int at_host_send(at_host_handle_t at, int wait_evt, uint8_t *data, int len, uint32_t timeout)
 {
 	int ret = 0;
 	osEventFlagsClear(at->evt, wait_evt);
@@ -305,15 +326,17 @@ int at_host_send(at_host_handle_t at, int wait_evt, uint8_t *data, int len)
 		ret = at->ops->f_write_data(at->arg, data, len);
 	}
 
+	//at_gpio_debug();
+
 	if (wait_evt) {
-		if (!(at_host_wait(at, wait_evt, 10000) & wait_evt)) {
+		if (!(at_host_wait(at, wait_evt, timeout) & wait_evt)) {
 			ret = -1;
 		}
 	}
 	return ret;
 }
 
-int at_host_printf(at_host_handle_t at, int wait_evt, const char *fmt, ...)
+int at_host_printf(at_host_handle_t at, int wait_evt, uint32_t timeout, const char *fmt, ...)
 {
 	char buf[128];
 	va_list ap;
@@ -325,10 +348,10 @@ int at_host_printf(at_host_handle_t at, int wait_evt, const char *fmt, ...)
 
 	ret = (len > sizeof(buf)) ? sizeof(buf) : len;
 
-	if (at_host_send(at, wait_evt, buf, len) < 0) {
+	if (at_host_send(at, wait_evt, buf, len, timeout) < 0) {
 		ret = -1;
 	}
-
+	//at_gpio_debug();
 	return ret;
 }
 
@@ -379,10 +402,11 @@ int at_host_response_register(at_host_handle_t at, const at_response_t *cmd, int
 static const at_response_t at_response_cmd[] = {
 	{"\r\nOK\r\n", at_resp_ok},
 	//{"\r\n+CIP", at_resp_ips},
-	{"\r\n+IPD", at_resp_ipd},
+	{"+IPD", at_resp_ipd},
 	{"\r\n>", at_resp_wait_data},
 	{"\r\nSEND OK\r\n", at_resp_send_ok},
 	{"+CIPRECVDATA:", at_resp_ciprecvdata},
+	{"Recv ", at_resp_recv_btyes},
 };
 
 at_host_handle_t at_host_init(const struct at_host_drv *ops, void *arg)

@@ -362,12 +362,14 @@ int32_t qcc74xsp_mediaboot_parse_one_group_xz(boot2_image_config *boot_img_cfg, 
             if (!boot_img_cfg->basic_cfg.hash_ignore) {
                 //MSG("xz Cal hash len %d\r\n",boot_img_cfg->basic_cfg.img_len_cnt);
                 if(input != NULL){
+#if CONFIG_ANTI_ROLLBACK
                     if (g_boot2_parse_xz_image_status == 1) {
                         ret = qcc74xsp_mediaboot_version_check(input, NULL);
                         if (ret != SUCCESS) {
                             return QCC74x_BOOT2_IMG_Roll_Back;
                         }
                     }
+#endif
                     qcc74x_sha256_update(sha, &ctx_sha256, input, len);
                     g_boot2_parse_xz_image_status = 2;
                 }
@@ -429,7 +431,10 @@ int32_t qcc74xsp_mediaboot_version_check(uint8_t *image_start, uint8_t group_rol
     uint32_t read_buf[3];
 
     /* get version_real from efuse */
-    if(SUCCESS == hal_get_app_version_from_efuse(&ef_app_version)){
+    if(SUCCESS == qcc74x_get_app_version_from_efuse(&ef_app_version)){
+        /* anti-rollback enabled, update itself's version first */
+        qcc74x_set_boot2_version_to_efuse(boot2_ver.anti_rollback);
+
         g_anti_ef_en = 1;
         g_anti_ef_app_ver = ef_app_version;
         BOOT2_MSG_DBG("efuse version %d\r\n", ef_app_version);
@@ -575,6 +580,7 @@ int32_t qcc74xsp_mediaboot_main(uint32_t group_boot_header_addr[QCC74xSP_BOOT2_C
         }
     }
 
+#if CONFIG_ANTI_ROLLBACK
     if(ERROR == qcc74xsp_mediaboot_version_check(NULL, group_roll_back)) {
         for (i = 0; i < QCC74xSP_BOOT2_CPU_GROUP_MAX; i++) {
             if (g_boot_img_cfg[i].img_valid) {
@@ -585,6 +591,7 @@ int32_t qcc74xsp_mediaboot_main(uint32_t group_boot_header_addr[QCC74xSP_BOOT2_C
         // arch_delay_ms(5);
         return QCC74x_BOOT2_IMG_Roll_Back;
     }
+#endif
 
 #if QCC74xSP_BOOT2_CPU_MAX > 1
     BOOT2_MSG_DBG("group[%d],core[%d] halt cpu %d\r\n", 0, 1, g_boot_img_cfg[0].cpu_cfg[1].halt_cpu);

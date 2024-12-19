@@ -260,23 +260,24 @@ void dumpnode(struct filenode *node, FILE *f)
 		}
 		dumpri(&ri, node, f);
 	} else if (S_ISREG(node->modes)) {
-		int offset, len, fd, max, avail;
+		int offset, len, max, avail;
+		FILE *fp;
 		ri.nextfh |= __htonl(ROMFH_REG);
 		dumpri(&ri, node, f);
 		offset = 0;
 		max = node->size;
 		/* XXX warn about size mismatch */
-		fd = open(node->realname, O_RDONLY);
-		if (fd) {
+		fp = fopen(node->realname, "rb");
+		if (fp) {
 			while(offset < max) {
 				avail = max-offset < sizeof(bigbuf) ? max-offset : sizeof(bigbuf);
-				len = read(fd, bigbuf, avail);
+				len = fread(bigbuf, 1, avail, fp);
 				if (len <= 0)
 					break;
 				dumpdata(bigbuf, len, f);
 				offset+=len;
 			}
-			close(fd);
+			fclose(fp);
 		}
 		max = (max+15)&~15;
 		while (offset < max) {

@@ -28,9 +28,10 @@
 #include "at_net_ssl.h"
 #include "at_wifi_config.h"
 
-#define AT_NET_TASK_STACK_SIZE     (2048)
+#define AT_NET_TASK_STACK_SIZE     (1024)
 #define AT_NET_TASK_PRIORITY       (15)
-#define AT_NET_RECV_BUF_SIZE       (2920)
+#define AT_NET_RECV_BUF_SIZE       (4096)
+#define AT_NET_SEND_BUF_SIZE       (1024*8)
 #define AT_NET_PRINTF              printf
 #define AT_NET_DEBUG               printf
 
@@ -89,7 +90,10 @@ typedef struct {
     int so_sndtimeo;
     StreamBufferHandle_t recv_buf;
     uint32_t recvbuf_size;
-
+#if AT_TCP_SEND_ASYNC
+    StreamBufferHandle_t send_buf;
+    uint32_t sendbuf_size;
+#endif
     char ca_path[32];
     char cert_path[32];
     char priv_key_path[32];
@@ -735,7 +739,7 @@ static int net_is_active(void)
     return 0;
 }
 
-static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length, ip_addr_t *ipaddr, uint16_t port)
+static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length, ip_addr_t *ipaddr, uint16_t port, uint32_t timeout)
 {
     if (ipd == NET_IPDINFO_CONNECTED) {
         if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT ||  at_base_config->sysmsg_cfg.bit.link_state_msg) {
@@ -773,25 +777,25 @@ static int net_socket_ipd(net_ipdinfo_type ipd, int id, void *buffer, int length
         if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT && at_net_config->wips_enable) {
             if (at_net_config->ipd_info == NET_IPDINFO_DISABLE_IPPORT) {
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_write(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d"), length);
+                    at_write(AT_NET_IPD_EVT_HEAD("+IPD:%d"), length);
                 else
-                    at_write(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,%d"), id, length);
+                    at_write(AT_NET_IPD_EVT_HEAD("+IPD:%d,%d"), id, length);
             } else {
 
                 if (at_net_config->mux_mode == NET_LINK_SINGLE)
-                    at_write(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,\"%s\",%d"), length, ipaddr_ntoa(ipaddr), port);
+                    at_write(AT_NET_IPD_EVT_HEAD("+IPD:%d,\"%s\",%d"), length, ipaddr_ntoa(ipaddr), port);
                 else
-                    at_write(AT_NET_IPD_EVT_HEAD("\r\n+IPD:%d,%d,\"%s\",%d"), id, length, ipaddr_ntoa(ipaddr), port);
+                    at_write(AT_NET_IPD_EVT_HEAD("+IPD:%d,%d,\"%s\",%d"), id, length, ipaddr_ntoa(ipaddr), port);
             }
             if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
-                xStreamBufferSend(g_at_client_handle[id].recv_buf, buffer, length, portMAX_DELAY);
+                xStreamBufferSend(g_at_client_handle[id].recv_buf, buffer, length, timeout);
             } else {
                 memcpy(buffer + length, "\r\n", 2);
                 length += 2;
                 AT_CMD_DATA_SEND(buffer, length);
             }
         } else if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
-            xStreamBufferSend(g_at_client_handle[id].recv_buf, buffer, length, portMAX_DELAY);
+            xStreamBufferSend(g_at_client_handle[id].recv_buf, buffer, length, timeout);
         } else {
             if (at_get_work_mode() != AT_WORK_MODE_THROUGHPUT) {
                 memcpy(buffer + length, "\r\n", 2);
@@ -901,12 +905,23 @@ static int net_socket_connect(int id, net_client_type type, ip_addr_t *ipaddr, u
     g_at_client_handle[id].so_linger = so_linger;
     g_at_client_handle[id].tcp_nodelay = tcp_nodelay;
     g_at_client_handle[id].so_sndtimeo = so_sndtimeo;
-    if (g_at_client_handle[id].recv_buf) {
-        vStreamBufferDelete(g_at_client_handle[id].recv_buf);
+
+    if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
+        if (g_at_client_handle[id].recv_buf) {
+            vStreamBufferDelete(g_at_client_handle[id].recv_buf);
+        }
+        g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
     }
-    g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
+
+#if AT_TCP_SEND_ASYNC
+    if (g_at_client_handle[id].send_buf) {
+        vStreamBufferDelete(g_at_client_handle[id].send_buf);
+    }
+    g_at_client_handle[id].send_buf = xStreamBufferCreate(g_at_client_handle[id].sendbuf_size, 1);
+    vTaskResume(xTaskGetHandle("net_send_task"));
+#endif
     net_unlock();
-    net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, &g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
+    net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, &g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port, 0);
     return 0;
 }
 
@@ -946,7 +961,7 @@ static int net_socket_close(int id)
     else if (type == NET_CLIENT_SSL)
        ssl_client_close(fd, priv);
 
-    net_socket_ipd(NET_IPDINFO_DISCONNECTED, id, NULL, 0, 0, 0);
+    net_socket_ipd(NET_IPDINFO_DISCONNECTED, id, NULL, 0, 0, 0, 0);
     return 0;
 }
 
@@ -979,7 +994,7 @@ static int net_socket_recv(int id)
     int num = 0;
     struct sockaddr_in remote_addr;
     int len = sizeof(remote_addr);
-    static char at_net_recv_buf[AT_NET_RECV_BUF_SIZE + 2];
+    static char __attribute__((section(".wifi_ram."))) at_net_recv_buf[AT_NET_RECV_BUF_SIZE + 2];
 
     int type = g_at_client_handle[id].type;
     int fd = g_at_client_handle[id].fd;
@@ -1031,13 +1046,15 @@ static int net_socket_recv(int id)
 
         static uint32_t count = 0;
         static uint32_t sum = 0;
+
         uint32_t diff = xTaskGetTickCount() - count;
             
         sum += num;
-        if (diff >= 1000) {
+        if (diff >= pdMS_TO_TICKS(1000)) {
             printf("RX:%.4f Mbps\r\n", (float)sum * 8 / 1000 / 1000 * diff / 1000);
             count = xTaskGetTickCount();
             sum = 0;
+            //ps_cmd(0,0,0,0);
         }
 
         net_socket_ipd(NET_IPDINFO_RECVDATA, 
@@ -1045,7 +1062,8 @@ static int net_socket_recv(int id)
                        at_net_recv_buf, 
                        num, 
                        &g_at_client_handle[id].remote_ip, 
-                       g_at_client_handle[id].remote_port);
+                       g_at_client_handle[id].remote_port,
+                       (type == NET_CLIENT_UDP) ? 0 : portMAX_DELAY);
 
         net_lock();
         g_at_client_handle[id].recv_time = os_get_time_ms();
@@ -1136,7 +1154,7 @@ static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, 
             g_at_client_handle[id].remote_port = ntohs(remote_addr.sin_port);
         }
         g_at_client_handle[id].local_port = port;
-        g_at_client_handle[id].udp_mode = 0;
+        g_at_client_handle[id].udp_mode = 2;
         g_at_client_handle[id].tetype = 1;
         g_at_client_handle[id].recv_timeout = timeout;
         g_at_client_handle[id].recv_time = os_get_time_ms();
@@ -1144,13 +1162,16 @@ static int net_socket_accept(int fd, int type, uint16_t port, uint16_t timeout, 
         g_at_client_handle[id].so_linger = -1;
         g_at_client_handle[id].tcp_nodelay = 0;
         g_at_client_handle[id].so_sndtimeo = 0;
-        if (g_at_client_handle[id].recv_buf) {
-            vStreamBufferDelete(g_at_client_handle[id].recv_buf);
+
+        if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
+            if (g_at_client_handle[id].recv_buf) {
+                vStreamBufferDelete(g_at_client_handle[id].recv_buf);
+            }
+            g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
         }
-        g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
         net_unlock();
 
-        net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, &g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port);
+        net_socket_ipd(NET_IPDINFO_CONNECTED, id, NULL, 0, &g_at_client_handle[id].remote_ip, g_at_client_handle[id].remote_port, 0);
         return 1;
     }
 
@@ -1230,10 +1251,19 @@ static void net_poll_reconnect(void)
         g_at_client_handle[id].remote_ip = ipaddr;
         g_at_client_handle[id].remote_port = port;
         g_at_client_handle[id].local_port = local_port;
-        if (g_at_client_handle[id].recv_buf) {
-            vStreamBufferDelete(g_at_client_handle[id].recv_buf);
+        if (at_net_config->recv_mode == NET_RECV_MODE_PASSIVE) {
+            if (g_at_client_handle[id].recv_buf) {
+                vStreamBufferDelete(g_at_client_handle[id].recv_buf);
+            }
+            g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
         }
-        g_at_client_handle[id].recv_buf = xStreamBufferCreate(g_at_client_handle[id].recvbuf_size, 1);
+#if AT_TCP_SEND_ASYNC
+        if (g_at_client_handle[id].send_buf) {
+            vStreamBufferDelete(g_at_client_handle[id].send_buf);
+        }
+        g_at_client_handle[id].send_buf = xStreamBufferCreate(g_at_client_handle[id].sendbuf_size, 1);
+        vTaskResume(xTaskGetHandle("net_send_task"));
+#endif
         net_unlock();
     }
 }
@@ -1372,6 +1402,32 @@ static void net_main_task(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+#if AT_TCP_SEND_ASYNC
+static void net_send_task(void *pvParameters)
+{
+    int len;
+    int linkid = 0;
+    static __attribute__((section(".wifi_ram." ATTR_UNI_SYMBOL))) uint8_t buffer[4096];
+
+    while (1) {
+
+        for (linkid = 0; linkid < AT_NET_CLIENT_HANDLE_MAX; linkid++) {
+            if (g_at_client_handle[linkid].send_buf) {
+                break;
+            }
+        }
+
+        if (linkid >= AT_NET_CLIENT_HANDLE_MAX) {
+            vTaskSuspend(NULL);
+        } else {
+            //len = xStreamBufferBytesAvailable(g_at_client_handle[linkid].send_buf);
+            len = xStreamBufferReceive(g_at_client_handle[linkid].send_buf, buffer, sizeof(buffer), portMAX_DELAY);
+            at_net_client_send(linkid, buffer, len);
+        }
+    }
+}
+#endif 
+
 static int at_net_init(void)
 {
     if (g_at_client_handle)
@@ -1401,6 +1457,9 @@ static int at_net_init(void)
         at_net_ssl_path_set(id, at_net_config->sslconf[id].ca_file, 
                             at_net_config->sslconf[id].cert_file, 
                             at_net_config->sslconf[id].key_file); 
+#if AT_TCP_SEND_ASYNC
+        g_at_client_handle[id].sendbuf_size = AT_NET_SEND_BUF_SIZE;
+#endif
     }
 
     return 0;
@@ -1446,14 +1505,6 @@ int at_net_client_get_valid_id(void)
     return -1;
 }
 
-int at_net_client_id_is_valid(int id)
-{
-    if (id < 0 || id >= AT_NET_CLIENT_HANDLE_MAX)
-        return 0;
-    else
-        return 1;
-}
-
 int at_net_client_tcp_connect(int id, ip_addr_t *remote_ip, uint16_t remote_port, int keepalive)
 {
     CHECK_NET_CLIENT_ID_VALID(id);
@@ -1497,7 +1548,7 @@ int at_net_client_set_remote(int id, ip_addr_t *ipaddr, uint16_t port)
 
     g_at_client_handle[id].remote_ip = *ipaddr;
     g_at_client_handle[id].remote_port = port;
-    AT_NET_PRINTF("net set id: %d remote_ip: %s remote_port: %d\r\n", id, ipaddr_ntoa(ipaddr), port);
+    //AT_NET_PRINTF("net set id: %d remote_ip: %s remote_port: %d\r\n", id, ipaddr_ntoa(ipaddr), port);
     return 0;
 }
 
@@ -1552,6 +1603,19 @@ int at_net_client_get_recvsize(int id)
     else
         return 0;
 }
+
+#if AT_TCP_SEND_ASYNC
+int at_net_client_send_async(int id, void * buffer, int length, int timeout)
+{
+    CHECK_NET_CLIENT_ID_VALID(id);
+
+    if (!g_at_client_handle[id].send_buf) {
+        return 0;
+    }
+    
+    return xStreamBufferSend(g_at_client_handle[id].send_buf, buffer, length, timeout);
+}
+#endif
 
 int at_net_client_send(int id, void * buffer, int length)
 {
@@ -1732,6 +1796,14 @@ int at_net_server_close(void)
     return 0;
 }
 
+int at_net_throuthput_udp_linktype(int linkid)
+{
+    if ((!at_net_client_id_is_valid(linkid)) || (!at_net_client_is_connected(linkid))) {
+        return 0;
+    }
+    return (g_at_client_handle[linkid].type == NET_CLIENT_UDP);
+}
+
 static void at_net_sntp_sync(void)
 {
     uint64_t time_stamp, time_stamp_ms;
@@ -1801,6 +1873,13 @@ int at_net_start(void)
         AT_NET_PRINTF("ERROR: create net_main_task failed, ret = %d\r\n", ret);
         return -1;
     }
+#if AT_TCP_SEND_ASYNC
+    ret = xTaskCreate(net_send_task, (char*)"net_send_task", 1024, NULL, 30, NULL);
+    if (ret != pdPASS) {
+        AT_NET_PRINTF("ERROR: create net_main_task failed, ret = %d\r\n", ret);
+        return -1;
+    }
+#endif
     return 0;
 }
 

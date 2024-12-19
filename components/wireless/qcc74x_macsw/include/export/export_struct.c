@@ -198,6 +198,7 @@ struct_func_set_def(scanu_start_req, uint8_t, ssid_cnt)
     struct_func_set_def(scanu_get_scan_result_req, uint8_t, idx)
     struct_func_len(scanu_get_scan_result_req)
 
+    struct_func_set_def(sm_connect_req, uint32_t, mode)
     struct_func_set_def(sm_connect_req, struct mac_ssid, ssid)
     struct_func_getp_def(sm_connect_req, void, bssid)
     struct_func_set_def(sm_connect_req, struct mac_chan_def, chan)
@@ -223,12 +224,25 @@ struct_func_set_def(scanu_start_req, uint8_t, ssid_cnt)
     struct_func_set_def(sm_external_auth_required_rsp, uint16_t, status)
     struct_func_len(sm_external_auth_required_rsp)
 
-    struct_func_set_def(scan_raw_send_req, void *, pkt)
-    struct_func_set_def(scan_raw_send_req, uint32_t, len)
-    struct_func_set_def(scan_raw_send_req, uint8_t, index)
-    struct_func_set_def(scan_raw_send_req, int, vif_idx)
-    struct_func_set_def(scan_raw_send_req, struct mac_chan_op, chan)
-    struct_func_len(scan_raw_send_req)
+    struct_func_set_def(mm_raw_send_start_req, void *, pkt)
+    struct_func_set_def(mm_raw_send_start_req, uint32_t, len)
+    struct_func_set_def(mm_raw_send_start_req, int, vif_idx)
+    struct_func_set_def(mm_raw_send_start_req, struct mac_chan_op, chan)
+    struct_func_set_def(mm_raw_send_start_req, uint32_t, duration)
+    struct_func_set_def(mm_raw_send_start_req, void*, cb)
+    struct_func_set_def(mm_raw_send_start_req, void*, env)
+    struct_func_set_def(mm_raw_send_start_req, int, need_rx)
+    struct_func_set_def(mm_raw_send_start_req, bool, adhoc);
+    struct_func_set_def(mm_raw_send_start_req, struct mac_addr *, ra);
+    struct_func_set_def(mm_raw_send_start_req, struct mac_addr *, ta);
+    struct_func_set_def(mm_raw_send_start_req, uint8_t, rate);
+    struct_func_set_def(mm_raw_send_start_req, uint8_t, rts_thrshold);
+    struct_func_set_def(mm_raw_send_start_req, uint8_t, retry_limit);
+    struct_func_set_def(mm_raw_send_start_req, int8_t, tx_power);
+    struct_func_set_def(mm_raw_send_start_req, void*, cb_cfm);
+    struct_func_len(mm_raw_send_start_req)
+    struct_func_get_def(mm_raw_send_start_cfm, uint8_t, status)
+    struct_func_len(mm_raw_send_start_cfm)
 
     struct_func_set_def(mm_add_if_req, uint8_t, type)
     struct_func_set_def(mm_add_if_req, struct mac_addr, addr)
@@ -420,6 +434,18 @@ void mm_start_req_set_tx_timeout(void *pa, uint16_t array[], int len)
     struct_func_get_def(dbg_get_sys_stat_cfm, uint32_t, doze_time)
     struct_func_get_def(dbg_get_sys_stat_cfm, uint32_t, stats_time)
     struct_func_len(dbg_get_sys_stat_cfm)
+
+    struct_func_set_def(me_get_edca_req, uint8_t, hw_queue)
+    struct_func_len(me_get_edca_req)
+
+    struct_func_get_def(me_get_edca_cfm, uint32_t, ac_param)
+    struct_func_len(me_get_edca_cfm)
+
+    struct_func_get_def(me_get_remaining_tx_cfm, uint8_t, tx0_cnt)
+    struct_func_get_def(me_get_remaining_tx_cfm, uint8_t, tx1_cnt)
+    struct_func_get_def(me_get_remaining_tx_cfm, uint8_t, tx2_cnt)
+    struct_func_get_def(me_get_remaining_tx_cfm, uint8_t, tx3_cnt)
+    struct_func_len(me_get_remaining_tx_cfm)
 
 #if NX_TWT
     struct_func_set_def(twt_setup_req, uint8_t, vif_idx);

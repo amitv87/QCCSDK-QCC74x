@@ -31,7 +31,7 @@ extern "C" {
 #define AT_CONFIG_KEY_WIFI_HOSTNAME         "WIFIHOSTNAME"
 #define AT_CONFIG_KEY_WIFI_LAPOPT           "WIFILAPOPT"
 
-#define AT_WIFI_COUNTRY_CODE                {"CN", "JP", "US", "EU", "Wd"}
+#define AT_WIFI_COUNTRY_CODE                {"CN", "JP", "US", "EU", "00"}
 
 #define IP_SET_ADDR(a,b,c,d) (((uint32_t)((a) & 0xff)) | \
                                             ((uint32_t)((b) & 0xff) << 8) | \
@@ -50,8 +50,8 @@ typedef struct {
 } wifi_mac_addr;
 
 typedef struct {
-    char ssid[32];
-    char psk[64];
+    char ssid[33];
+    char psk[65];
     char pmk[66];
     uint16_t freq;
     uint8_t bssid[6];
@@ -133,8 +133,6 @@ typedef enum {
 typedef struct {
     uint8_t country_policy;
     uint8_t country_code;
-    uint8_t start_channel;
-    uint8_t total_channel_count;
 } wifi_country_code;
 
 

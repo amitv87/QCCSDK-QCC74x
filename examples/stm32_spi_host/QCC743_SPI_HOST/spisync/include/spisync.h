@@ -23,17 +23,17 @@
 /* Config msg/stream size */
 #define SPISYNC_RXMSG_PBUF_ITEMS       (3)
 #define SPISYNC_RXMSG_SYSCTRL_ITEMS    (2)
-#define SPISYNC_RXMSG_USER1_ITEMS      (1)
-#define SPISYNC_RXSTREAM_AT_BYTES      (1536*3)
-#define SPISYNC_RXSTREAM_USER1_BYTES   (1536*1)
-#define SPISYNC_RXSTREAM_USER2_BYTES   (1536*1)
+#define SPISYNC_RXMSG_USER1_ITEMS      (8)
+#define SPISYNC_RXSTREAM_AT_BYTES      (SPISYNC_PAYLOADBUF_LEN*2*6)
+#define SPISYNC_RXSTREAM_USER1_BYTES   (SPISYNC_PAYLOADBUF_LEN*1)
+#define SPISYNC_RXSTREAM_USER2_BYTES   (SPISYNC_PAYLOADBUF_LEN*1)
 
 #define SPISYNC_TXMSG_PBUF_ITEMS       (11)
 #define SPISYNC_TXMSG_SYSCTRL_ITEMS    (2)
-#define SPISYNC_TXMSG_USER1_ITEMS      (2)
-#define SPISYNC_TXSTREAM_AT_BYTES      (1536*3)
-#define SPISYNC_TXSTREAM_USER1_BYTES   (1536*1)
-#define SPISYNC_TXSTREAM_USER2_BYTES   (1536*1)
+#define SPISYNC_TXMSG_USER1_ITEMS      (8)
+#define SPISYNC_TXSTREAM_AT_BYTES      (SPISYNC_PAYLOADBUF_LEN*2*6)
+#define SPISYNC_TXSTREAM_USER1_BYTES   (SPISYNC_PAYLOADBUF_LEN*1)
+#define SPISYNC_TXSTREAM_USER2_BYTES   (SPISYNC_PAYLOADBUF_LEN*1)
 
 /* task config */
 #define SPISYNC_STACK_SIZE             (12048)
@@ -95,7 +95,7 @@ typedef struct __slot_payload {
     uint16_t tot_len;
     uint8_t  res[2];
     union {
-        uint8_t     raw[1536 + 4];
+        uint8_t     raw[SPISYNC_PAYLOADBUF_LEN + 4];
         slot_seg_t  seg[1];
     };
     uint32_t crc;
@@ -198,7 +198,16 @@ int spisync_reg_typecb  (spisync_t *spisync, spisync_ops_t *msg);
 int spisync_deinit      (spisync_t *spisync);
 int spisync_read        (spisync_t *spisync, spisync_msg_t *msg, uint32_t flags);
 int spisync_write       (spisync_t *spisync, spisync_msg_t *msg, uint32_t flags);
-int spisync_build_msg   (spisync_msg_t *msg, uint32_t type, void *buf, uint32_t len, uint32_t timeout);
+int spisync_build_msg_needcopy(spisync_msg_t *msg,
+                        uint32_t type,
+                        void *buf,
+                        uint32_t len,
+						uint32_t timeout);
+int spisync_build_msg_zerocopy(spisync_msg_t *msg,
+                        uint32_t type,
+                        void *buf,
+                        uint32_t len,
+                        uint32_t timeout);
 
 /* debug api */
 int spisync_status              (spisync_t *spisync);
@@ -215,11 +224,6 @@ int spisync_set_clamp(spisync_t *spisync, uint8_t type, uint32_t cnt);
 int spisync_dump          (spisync_t *spisync);
 int spisync_dump_internal (spisync_t *spisync);
 
-int spisync_iperf         (spisync_t *spisync, int enable);
-int spisync_iperftx       (spisync_t *spisync, uint32_t time_sec);
-
-int spisync_iperf_test(spisync_t *spisync, uint8_t tx_en, uint8_t type, uint32_t per, uint32_t t);
-int spisync_type_test(spisync_t *spisync, uint32_t period, uint32_t t);
-
+spisync_t *get_spisync_handle(void);
 #endif
 

@@ -41,12 +41,20 @@
 #define HAL_BOOT2_PSRAM_INFO_MASK (0x3000000)
 #define HAL_BOOT2_PSRAM_INFO_POS  (24)
 
-#define QCC74x_FLASH_XIP_BASE QCC743_FLASH_XIP_BASE
-
 #define HAL_BOOT2_UINT32_BIT_LEN               (32)
 #define HAL_BOOT2_UINT64_BIT_LEN               (64)
 #define HAL_BOOT2_UINT96_BIT_LEN               (96)
 #define HAL_BOOT2_UINT128_BIT_LEN              (128)
+
+#define HAL_APP_NO_ENCRYPT                    0b0000 /*!< app no encrypt */
+#define HAL_APP_ENCRYPT_SAME_AS_BOOT2         0b0001 /*!< app use the same AES key as boot2,see 0x00[3:0] */
+#define HAL_APP_ENCRYPT_INDIVIDUAL_AES128     0b0010 /*!< app use its own AES-128 key */
+#define HAL_APP_ENCRYPT_INDIVIDUAL_AES256     0b0100 /*!< app use its own AES-256key */
+#define HAL_APP_ENCRYPT_INDIVIDUAL_AES128_XTS 0b1010 /*!< app use its own AES-128 key with XTS mode */
+
+#define HAL_APP_NO_SIGN                       0b00   /*!< app no sign */
+#define HAL_APP_SIGN_SAME_AS_BOOT2            0b01   /*!< app use the same sign key as boot2 */
+#define HAL_APP_SIGN_INDIVIDUAL               0b10   /*!< app use its own sign key */
 
 typedef enum {
     HAL_REBOOT_AS_BOOTPIN,     /*!< reboot as bootpin level */
@@ -123,10 +131,11 @@ typedef struct
     uint8_t encrypted[HAL_BOOT2_CPU_GROUP_MAX];
     uint8_t sign[HAL_BOOT2_CPU_GROUP_MAX];
     uint8_t hbn_check_sign;
-    uint8_t rsvd[3];
+    uint8_t app_encrypt_type;
+    uint8_t app_sign_type;
+    uint8_t rsvd[1];
     uint8_t chip_id[8];
-    uint8_t pk_hash_cpu0[HAL_BOOT2_PK_HASH_SIZE];
-    uint8_t pk_hash_cpu1[HAL_BOOT2_PK_HASH_SIZE];
+    uint8_t pk_hash_cpu[HAL_BOOT2_CPU_GROUP_MAX][HAL_BOOT2_PK_HASH_SIZE];
     uint8_t uart_download_cfg;
     uint8_t sf_pin_cfg;
     uint8_t keep_dbg_port_closed;
@@ -291,8 +300,4 @@ void hal_boot2_uart_gpio_init(void);
 void hal_boot2_debug_uart_gpio_init(void);
 void hal_boot2_debug_uart_gpio_deinit(void);
 void hal_boot2_clean_cache(void);
-int32_t hal_get_app_version_from_efuse(uint8_t *version);
-int32_t hal_set_app_version_to_efuse(uint8_t version);
-int32_t hal_get_boot2_version_from_efuse(uint8_t *version);
-int32_t hal_set_boot2_version_to_efuse(uint8_t version);
 #endif

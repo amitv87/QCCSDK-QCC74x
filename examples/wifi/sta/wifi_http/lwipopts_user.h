@@ -133,4 +133,6 @@ extern int *__errno(void);
 #define LWIP_NETIF_TX_SINGLE_PBUF 1
 #define LWIP_RAND()                                      ((u32_t)random())
 
+#define LWIP_IPV6 1
+
 #endif /* LWIP_HDR_LWIPOPTS_H__ */

@@ -56,9 +56,9 @@ static void wifi_ap_update_sta_ip(uint8_t mac[6], uint32_t ip);
 static int g_wifi_sta_is_connected = 0;
 static int g_wifi_sta_use_dhcp = 0;
 static int g_wifi_sta_disconnect_reason = 0;
-static int g_wifi_waiting_connect_result = 0;
 static int g_wifi_sniffer_is_start = 0;
 static int g_wifi_ap_is_start = 0;
+static int g_wifi_reconnect_disable = 0;
 
 /** Mac address length  */
 #define DHCP_MAX_HLEN               6
@@ -164,6 +164,7 @@ static void wifiopt_sta_disconnect(int force)
         g_wifi_sta_is_connected = 0;
     }
 #else
+        g_wifi_reconnect_disable = force;
         wifi_mgmr_sta_autoconnect_disable();
         wifi_mgmr_sta_disconnect();
         vTaskDelay(500);
@@ -317,6 +318,10 @@ static void reconnect_event(void *arg)
             (!at_wifi_config->reconn_cfg.repeat_count)) {
             break;
         }
+        if (g_wifi_reconnect_disable) {
+            g_wifi_reconnect_disable = 0;
+            break;
+        }
         printf("xxxxxxxxxxxxx %d %d\r\n", state, wifi_mgmr_sta_state_get());
         if (state == FHOST_STA_DISCONNECTED) {
             repeat_count++;
@@ -333,9 +338,11 @@ static void reconnect_event(void *arg)
 static void wifi_sta_enable_reconnect(int enable)
 {
     static TaskHandle_t task = NULL;
+
     if ((at_wifi_config->reconn_cfg.interval_second > 0) && (at_wifi_config->reconn_cfg.repeat_count > 0)) {
+        g_wifi_reconnect_disable = 0;
         if (!task) {
-            xTaskCreate(reconnect_event, (char*)"reconnect", 1024, &task, 15, &task);
+            xTaskCreate(reconnect_event, (char*)"reconnect", 512, &task, 15, &task);
         }
     }
 }
@@ -508,16 +515,9 @@ static void wifi_sniffer_data_recv(void *env, uint8_t *pkt, int pkt_len)
 #endif
 }
 
-static const char *reason_code_get(int code)
+static int reason_code_get(int code)
 {
-    if (code == WLAN_FW_BEACON_LOSS) {
-        return "BEACON_LOSS";
-    } else if (code == WLAN_FW_NETWORK_SECURITY_NOMATCH || 
-               code == WLAN_FW_SCAN_NO_BSSID_AND_CHANNEL) {
-        return "NO_SSID";
-    } else {
-        return "PSK_ERR";
-    }
+    return code;
 }
 
 static void at_wifi_event_cb(uint32_t code, void *private_data)
@@ -552,14 +552,15 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
                     }
                 }
                 g_wifi_sta_is_connected = 0;
-                wifi_sta_enable_reconnect(1);
-            } else {
-                if (at_wifi_config->wevt_enable) {
-                    at_response_string("+CW:ERROR,%s\r\n", reason_code_get(wifi_mgmr_sta_info_status_code_get()));
+
+                if (!g_wifi_reconnect_disable) {
+                    wifi_sta_enable_reconnect(1);
                 }
+            } 
+            if (at_wifi_config->wevt_enable) {
+                at_response_string("+CW:ERROR,%d\r\n", reason_code_get(wifi_mgmr_sta_info_status_code_get()));
             }
             g_wifi_sta_disconnect_reason = wifi_mgmr_sta_info_status_code_get();// qcc74x_fw_api.h eg: WLAN_FW_BEACON_LOSS 
-            g_wifi_waiting_connect_result = 0;
             at_wifi_config->connecting_state = 0;
         }
         break;
@@ -622,7 +623,6 @@ static void at_wifi_event_cb(uint32_t code, void *private_data)
                 }
 
                 g_wifi_sta_disconnect_reason = 0;
-                g_wifi_waiting_connect_result = 0;
             }
             at_net_dns_load();
         }
@@ -687,7 +687,7 @@ static void wifi_event_start(uint32_t code)
 }
 
 static wifi_conf_t conf = {
-    .country_code = "Wd",
+    .country_code = "00",
 };
 void wifi_event_handler(uint32_t code)
 {
@@ -786,7 +786,7 @@ int at_wifi_sta_connect(int timeout)
 
 int at_wifi_sta_disconnect(void)
 {
-    wifiopt_sta_disconnect(0);
+    wifiopt_sta_disconnect(1);
     return 0;
 }
 
@@ -849,7 +849,7 @@ int at_wifi_sniffer_start(void)
     }
     
     wifiopt_ap_stop(0);
-    wifiopt_sta_disconnect(0);
+    wifiopt_sta_disconnect(1);
 
     g_wifi_sniffer_is_start = 1;
     return 0;
@@ -901,8 +901,8 @@ int at_wifi_start(void)
 
     memset(&g_wifi_ap_sta_info, 0, sizeof(g_wifi_ap_sta_info));
 #endif
-    xTaskCreate(wifi_event_task_entry, (char *)"wifi_event", 1024, NULL, 15, NULL);
-    event_queue = xQueueCreate(6, sizeof(uint32_t));
+    xTaskCreate(wifi_event_task_entry, (char *)"wifi_event", 512, NULL, 15, NULL);
+    event_queue = xQueueCreate(4, sizeof(uint32_t));
     vTaskDelay(100);
 
     return 0;

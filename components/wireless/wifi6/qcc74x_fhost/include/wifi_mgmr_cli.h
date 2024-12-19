@@ -46,3 +46,7 @@ void cmd_non_pref_chan(int argc, char **argv);
 void cmd_non_pref_chan_notify(int argc, char **argv);
 void cmd_wifi_mgmr_sta_twt_setup(int argc, char **argv);
 void cmd_wifi_mgmr_sta_twt_teardown(int argc, char **argv);
+void cmd_wifi_adhoc_send(int argc, char *argv[]);
+void cmd_adhoc_start(int argc, char *argv[]);
+void cmd_adhoc_stop(int argc, char *argv[]);
+void cmd_wifi_mode_set (int argc, char *argv[]);

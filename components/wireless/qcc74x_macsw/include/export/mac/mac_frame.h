@@ -337,8 +337,14 @@
 #define MAC_QOSCTRL_QUEUE_SIZE_PRESENT  0x10
 #define MAC_QOSCTRL_QUEUE_SIZE_OFT      8
 #define MAC_QOSCTRL_QUEUE_SIZE_UNKNOWN  (0xFF << MAC_QOSCTRL_QUEUE_SIZE_OFT)
+#ifdef CONFIG_WFA
+#define MAC_QOSCTRL_QUEUE_SIZE_ZERO     (0x0 << MAC_QOSCTRL_QUEUE_SIZE_OFT)
+#define MAC_QOSCTRL_HE_QUEUE_SIZE       (MAC_QOSCTRL_QUEUE_SIZE_PRESENT |                \
+                                         MAC_QOSCTRL_QUEUE_SIZE_ZERO)
+#else
 #define MAC_QOSCTRL_HE_QUEUE_SIZE       (MAC_QOSCTRL_QUEUE_SIZE_PRESENT |                \
                                          MAC_QOSCTRL_QUEUE_SIZE_UNKNOWN)
+#endif
 #define MAC_QOSCTRL_ACK_OFT             5
 #define MAC_QOSCTRL_ACK_NORMAL          0x0000
 #define MAC_QOSCTRL_ACK_NOACK           0x0020

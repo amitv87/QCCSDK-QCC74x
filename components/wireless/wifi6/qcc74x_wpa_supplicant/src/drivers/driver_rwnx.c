@@ -297,18 +297,28 @@ static void wpa_rwnx_driver_release_tx_frame(struct wpa_rwnx_tx_frame *tx_frame)
 	os_free(tx_frame);
 }
 
-static int *rwnx_init_rates(int *num)
+static int *rwnx_init_rates(int *num, bool is_11b_only)
 {
 	int leg_rate[] = {10, 20, 55, 110, 60, 90, 120, 180, 240, 360, 480, 540};
+	int leg_rate_11b_only[] = {10, 20, 55, 110};
 	int *rates;
 
 	/* Assume all legacy rates are supported */
-	rates = os_malloc(sizeof(leg_rate));
+    if (is_11b_only) {
+	    rates = os_malloc(sizeof(leg_rate_11b_only));
+    } else {
+	    rates = os_malloc(sizeof(leg_rate));
+    }
 	if (!rates)
 		return NULL;
 
-	os_memcpy(rates, leg_rate, sizeof(leg_rate));
-	*num = sizeof(leg_rate) / sizeof(int);
+    if (is_11b_only) {
+	    os_memcpy(rates, leg_rate_11b_only, sizeof(leg_rate_11b_only));
+	    *num = sizeof(leg_rate_11b_only) / sizeof(int);
+    } else {
+	    os_memcpy(rates, leg_rate, sizeof(leg_rate));
+	    *num = sizeof(leg_rate) / sizeof(int);
+    }
 	return rates;
 }
 
@@ -1395,7 +1405,7 @@ static struct hostapd_hw_modes *wpa_rwnx_driver_get_hw_feature_data(void *priv,
 			rwnx_to_hostapd_channel(chan_tag, chan);
 		}
 
-		mode->rates = rwnx_init_rates(&mode->num_rates);
+		mode->rates = rwnx_init_rates(&mode->num_rates, feat.ap_11b_only);
 		if (!mode->rates)
 			goto err;
 
@@ -1422,7 +1432,7 @@ static struct hostapd_hw_modes *wpa_rwnx_driver_get_hw_feature_data(void *priv,
 			rwnx_to_hostapd_channel(chan_tag, chan);
 		}
 
-		mode->rates = rwnx_init_rates(&mode->num_rates);
+		mode->rates = rwnx_init_rates(&mode->num_rates, feat.ap_11b_only);
 		if (!mode->rates)
 			goto err;
 
@@ -1508,6 +1518,9 @@ static int wpa_rwnx_driver_get_capa(void *priv, struct wpa_driver_capa *capa)
 #endif
 #if RW_MESH_EN
 	capa->flags |= WPA_DRIVER_FLAGS_MESH;
+#endif
+#ifdef CONFIG_WFA
+    capa->flags |= WPA_DRIVER_FLAGS_OBSS_SCAN;
 #endif
 
 	capa->wmm_ac_supported = 0;

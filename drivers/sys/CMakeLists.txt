@@ -38,6 +38,7 @@ endif()
 
 if(CONFIG_PM)
     sdk_add_compile_definitions(-DCONFIG_PM)
+    sdk_add_compile_definitions(-DLP_FW_START_ADDR=0x63029000)
 endif()
 
 sdk_add_include_directories(${CHIP})

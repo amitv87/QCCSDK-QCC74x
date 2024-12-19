@@ -167,3 +167,24 @@ int main(void)
     while (1) {
     }
 }
+
+int cmd_gethostbyname(int argc, char **argv)
+{
+  struct hostent *hostinfo = gethostbyname(argv[1]);
+  char buffer[46];
+
+  if (hostinfo) {
+    ip_addr_t addr = *(ip_addr_t *)hostinfo->h_addr;
+    if (ipaddr_ntoa_r(&addr, (char *)buffer, sizeof(buffer))) {
+      printf("Host found: ");
+      printf("%s\n", buffer);
+    } else {
+        printf("ipaddr_ntoa_r failed");
+    }
+  } else {
+    printf("No host found\n");
+  }
+  return 0;
+}
+
+SHELL_CMD_EXPORT_ALIAS(cmd_gethostbyname, gethostbyname, gethostbyname command);

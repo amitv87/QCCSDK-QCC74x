@@ -19,7 +19,6 @@
 #endif
 
 #include "qcc74x_wdg.h"
-#include "mfg_version.h"
 #include "sdk_version.h"
 #include "mfg_sdio.h"
 
@@ -3222,7 +3221,7 @@ int32_t mfg_board_get_average_temp()
 
 static int32_t mfg_cmd_get_info(uint8_t *data, uint16_t len)
 {
-    extern qcc74xverinf_t mfg_ver;
+    extern qcc74xverinf_t app_ver;
 
     if (data[0] == ':') {
         switch (data[1]) {
@@ -3233,8 +3232,8 @@ static int32_t mfg_cmd_get_info(uint8_t *data, uint16_t len)
             case 'v': {
                 mfg_print("#*#*");
                 /* mfg_print("%s\r\n", PROJECT_SDK_VERSION); */
-                mfg_print("version:%d.%d.%d\r\n",(int)mfg_ver.x,(int)mfg_ver.y,(int)mfg_ver.z);
-                /* mfg_print("        %d %d\r\n",(int)mfg_ver.rsvd0,(int)mfg_ver.rsvd1); */
+                mfg_print("version:%d.%d.%d\r\n",(int)app_ver.x,(int)app_ver.y,(int)app_ver.z);
+                /* mfg_print("        %d %d\r\n",(int)app_ver.rsvd0,(int)app_ver.rsvd1); */
             } break;
             case 'd': {
                 mfg_print("#*#*");

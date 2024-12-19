@@ -7,6 +7,9 @@
 #include <stddef.h>
 #include "FreeRTOS.h"
 #include "task.h"
+#ifdef CFG_QCC74x_WIFI_PS_ENABLE
+#include "timers.h"
+#endif
 
 /**
  * Type by which tasks are referenced.
@@ -32,6 +35,11 @@ typedef void *        rtos_semaphore;
 /// RTOS mutex
 typedef void *        rtos_mutex;
 
+#ifdef CFG_QCC74x_WIFI_PS_ENABLE
+typedef TimerHandle_t rtos_timer_t;
+
+typedef void (*rtos_timer_callback_t)(void *);
+#endif
 
 #define g_tskIDLE_PRIORITY 0
 #define RTOS_TASK_PRIORITY(prio)  (g_tskIDLE_PRIORITY + (prio))
@@ -83,7 +91,7 @@ enum
     /// TCP/IP task stack size
     FHOST_TCPIP_STACK_SIZE = 1024,
     /// RX task stack size
-    FHOST_RX_STACK_SIZE = 512,
+    FHOST_RX_STACK_SIZE = 768,
     /// TX task stack size
     FHOST_TX_STACK_SIZE = 384,
     /// WPA task stack size

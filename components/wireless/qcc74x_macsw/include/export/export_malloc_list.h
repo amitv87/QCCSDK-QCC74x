@@ -14,7 +14,8 @@
 
     struct_func_alloc_def(sm_disconnect_req);
     struct_func_alloc_def(sm_external_auth_required_rsp);
-    struct_func_alloc_def(scan_raw_send_req);
+    struct_func_alloc_def(mm_raw_send_start_req);
+    struct_func_alloc_def(mm_raw_send_start_cfm);
 
     struct_func_alloc_def(mm_add_if_req);
     struct_func_alloc_def(mm_add_if_cfm);
@@ -60,3 +61,6 @@
     struct_func_alloc_def(twt_teardown_req);
     struct_func_alloc_def(twt_teardown_cfm);
 #endif
+    struct_func_alloc_def(me_get_edca_req);
+    struct_func_alloc_def(me_get_edca_cfm);
+    struct_func_alloc_def(me_get_remaining_tx_cfm);

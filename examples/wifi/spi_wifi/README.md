@@ -97,7 +97,7 @@ AT+PWR=2              // Standby mode.
 1. Execute the command `AT+PWR=1`
 2. You can see that the current has decreased, and then measure the subsequent average power consumption.
 
-#### Testing IO Wakeup(support gpio 28, 29. only supoport standby mode now)
+#### Testing IO Wakeup(support gpio 16, 28. only supoport standby mode now)
 
 1. Reset the demo board.
 2. Execute the command `AT+SLWKIO=16,0` in serial port tool.
@@ -569,3 +569,111 @@ Prerequisites for Bluetooth Power Consumption Testing: Prior to measuring the po
 | AT+BLEADVSTART   | Start BLE ADV                                                                    |
 | AT+BLECONNPARAM=0,800,800,0,1500 | Set 1 sec connection interval after the connection is established|
 | AT+PWR=2   | Enter low power mode                                                                   |
+
+
+# Target Wake Time (TWT) Usage Documentation
+
+## Overview
+This chapter provides a comprehensive guide for configuring and testing the Target Wake Time (TWT) feature using QCC743 and SPI Wi-Fi modules. It includes setup procedures, testing steps, command explanations, and notes on power consumption optimization.
+
+---
+
+## Testing KPIs
+With a wakeup interval of 32.768 seconds, the results are as follows:
+- **Service Period (SP):** 12.8 ms
+  **Power Consumption:** 168 μA
+- **Service Period (SP):** 30 ms
+  **Power Consumption:** 206 μA
+
+---
+
+## Testing Procedure
+1. **Enable Configuration:**
+   - Enable `CONFIG_USE_LPAPP` in the firmware.
+   - Compile the SPI Wi-Fi firmware.
+2. **Compile and Flash Firmware:**
+   - Use appropriate tools to compile and flash the firmware onto the board.
+3. **Connect to Access Point (AP):**
+   - Establish a connection to a TWT-compatible router (e.g., TP-Link AX5400).
+4. **Setup TWT on QCC743:**
+   - Execute the following command:
+     ```shell
+     wifi_mgmr_sta_twt_setup -s 1 -t 0 -e 16 -n 120 -m 500
+     ```
+5. **Activate TWT:**
+   - Enter the command:
+     ```shell
+     twt
+     ```
+6. **Measure Power Consumption:**
+   - Record power usage using specialized equipment in a shielded environment.
+
+---
+
+## Command Explanations
+### TWT Configuration Command:
+```shell
+wifi_mgmr_sta_twt_setup -s 1 -t 1 -e <WakeIntervalExponent> -n <WakeDuration> -m <WakeIntervalMantissa>
+```
+- **Flow type (t):** Only support unannounce twt.
+- **Service Period (SP):** Determines the duration the device remains awake.
+- **Wake Interval Exponent:** Specifies the wake interval (e.g., 16 for 32.768 seconds).
+- **Wake Duration (n):** Minimum wake duration in milliseconds (e.g., 120 for 30.72 ms SP).
+- **Wake Interval Mantissa (m):** Mantissa value for precise interval adjustments.
+
+### Example Commands(hostless):
+1. **SP = 12.8 ms, Wake Interval = 32.768 seconds:**
+   ```shell
+   wifi_mgmr_sta_twt_setup -s 1 -t 1 -e 16 -n 50 -m 500
+   ```
+2. **SP = 30.72 ms, Wake Interval = 32.768 seconds:**
+   ```shell
+   wifi_mgmr_sta_twt_setup -s 1 -t 1 -e 16 -n 120 -m 500
+   ```
+
+### Host-Side Command:
+The following host-side command corresponds to the TWT setup:
+```plaintext
+AT+TWT_PARAM=1,0,16,100,500
+AT+TWT_SLEEP
+```
+
+---
+
+## Important Notes
+1. **External Oscillator Requirement:**
+   - Testing must be conducted on boards with external crystal oscillators to minimize RTC clock deviation.
+   - Internal RC errors can result in wake interval inaccuracies (e.g., 60 ms deviation over 30 seconds).
+2. **Environment for Power Testing:**
+   - Ensure testing is conducted in a shielded environment to prevent external interference.
+3. **Router Compatibility:**
+   - Use a TWT-compatible router for testing (e.g., TP-Link AX5400).
+
+---
+
+## Power Consumption Optimization
+1. **Pre-Wakeup Timing:**
+   - To ensure accurate trigger frame reception, a slight pre-wakeup is implemented.
+   - Further optimization is being worked on to reduce timing deviation after prolonged sleep.
+2. **TCP/IP Thread Impact:**
+   - The current firmware includes a periodic TCP/IP thread, contributing to power consumption.
+   - A power-optimized firmware version will be released soon.
+
+---
+
+## Verification
+- After enabling TWT, confirm that wake intervals and service periods are negotiated correctly with the AP.
+- At each interval:
+  1. The AP sends a trigger frame.
+  2. QCC743 responds with a QoS null frame.
+- **Packet Capture Configuration:**
+  - Additional configuration on the packet capture PC is required to verify QoS null frames.
+
+---
+
+## Upcoming Enhancements
+- Improved power consumption through refined wakeup timing.
+- Reduced thread wake-ups to lower overall power usage.
+- Enhanced TWT host commands for better configurability.
+
+---

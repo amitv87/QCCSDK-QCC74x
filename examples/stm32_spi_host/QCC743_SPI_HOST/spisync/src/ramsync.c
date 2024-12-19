@@ -18,8 +18,16 @@ static lramsync_ctx_t *g_ctx;
 /* ------------------- internal type or rodata ------------------- */
 struct _ramsync_low_priv {
 	unsigned int buf_idx;
+	char half_xfer_cplt;
 	int suspended;
 };
+
+void HAL_SPI_TxRxHalfCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	struct _ramsync_low_priv *priv = g_ctx->priv;
+
+	priv->half_xfer_cplt = 1;
+}
 
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
@@ -34,12 +42,14 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 	 * spi dma transfer stops here if it is suspended and another transfer
 	 * is needed to resume it.
 	 */
-	if (priv->suspended)
-		return;
-
+	
+	priv->half_xfer_cplt = 0;
 	priv->buf_idx++;
 	if (priv->buf_idx >= g_ctx->items_tx)
 		priv->buf_idx = 0;
+
+    if (priv->suspended)
+		return;
 
 	uint8_t *txptr = g_ctx->node_tx[priv->buf_idx].buf;
 	uint8_t *rxptr = g_ctx->node_rx[priv->buf_idx].buf;
@@ -68,6 +78,7 @@ static int spi_dma_start(lramsync_ctx_t *ctx)
 		printf("failed to start spi txrx, %d\r\n", ret);
 		return -1;
 	}
+
     return 0;
 }
 
@@ -82,10 +93,16 @@ static void lramsync_callback_register(
     ctx->rx_arg = rx_arg;
 }
 
-int lramsync_get_xfer_progress(lramsync_ctx_t *ctx)
+int lramsync_get_next_write_slot(lramsync_ctx_t *ctx)
 {
 	struct _ramsync_low_priv *priv = ctx->priv;
-	return priv->buf_idx;
+
+    if (priv->suspended) {
+        return priv->buf_idx;
+    }
+
+	return priv->buf_idx + 1;
+    //return priv->half_xfer_cplt ? priv->buf_idx + 2: priv->buf_idx + 1;
 }
 
 int lramsync_start(lramsync_ctx_t *ctx)
@@ -184,6 +201,7 @@ int lramsync_init(
     priv = (struct _ramsync_low_priv *)ctx->priv;
     priv->suspended = 0;
     priv->buf_idx = 0;
+    priv->half_xfer_cplt = 0;
     g_ctx = ctx;
     spi_hw_init(ctx->cfg);
     spi_dma_init(ctx);
@@ -207,8 +225,10 @@ int lramsync_suspend(lramsync_ctx_t *ctx)
 {
 	struct _ramsync_low_priv *priv = ctx->priv;
 
+	HAL_NVIC_DisableIRQ(SPI1_IRQn);
     if (!priv->suspended)
     	priv->suspended = 1;
+    HAL_NVIC_EnableIRQ(SPI1_IRQn);
     spisync_trace("spi dma suspend flag is set\r\n");
     return 0;
 }
@@ -218,20 +238,21 @@ int lramsync_resume(lramsync_ctx_t *ctx)
 	HAL_StatusTypeDef ret;
 	struct _ramsync_low_priv *priv = ctx->priv;
 
-    if (!priv->suspended)
+	HAL_NVIC_DisableIRQ(SPI1_IRQn);
+    if (!priv->suspended) {
+    	HAL_NVIC_EnableIRQ(SPI1_IRQn);
     	return 0;
+    }
 
     priv->suspended = 0;
-	priv->buf_idx++;
-	if (priv->buf_idx >= g_ctx->items_tx)
-		priv->buf_idx = 0;
 
 	uint8_t *txptr = g_ctx->node_tx[priv->buf_idx].buf;
 	uint8_t *rxptr = g_ctx->node_rx[priv->buf_idx].buf;
 	uint16_t len = g_ctx->node_tx[priv->buf_idx].len;
 	ret = HAL_SPI_TransmitReceive_DMA(&hspi1, txptr, rxptr, len);
-	if (ret != HAL_OK) {
-		spisync_err("failed to resume spi, %d\r\n", ret);
+	HAL_NVIC_EnableIRQ(SPI1_IRQn);
+	if (ret != HAL_OK && ret != HAL_BUSY) {
+		spisync_trace("failed to resume spi, %d\r\n", ret);
 		return -1;
 	}
 	spisync_trace("spi dma suspend flag is cleared, pumped new msg\r\n");

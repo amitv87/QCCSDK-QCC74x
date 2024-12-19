@@ -23,6 +23,10 @@ sdk_add_compile_definitions(-DCFG_IP_NAPT_TIMEOUT_MS_UDP=\(620*1000\))
 sdk_add_compile_definitions(-DCFG_IP_NAPT_TIMEOUT_MS_ICMP=\(5*2*1000\))
 endif()
 
+if(CONFIG_MDNS)
+sdk_add_compile_definitions(-DCFG_MDNS)
+endif()
+
 target_sources(app PRIVATE
                    wifi_udp_echo.c)
 

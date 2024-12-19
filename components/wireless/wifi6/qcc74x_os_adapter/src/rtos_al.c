@@ -438,6 +438,107 @@ void rtos_priority_set(rtos_task_handle handle, rtos_prio priority)
     vTaskPrioritySet(handle, priority);
 }
 
+#ifdef CFG_QCC74x_WIFI_PS_ENABLE
+typedef struct {
+    rtos_timer_callback_t callback; 
+    void *data;                     
+} TimerUserData;
+
+static void rtos_timer_callback(TimerHandle_t xTimer)
+{
+    TimerUserData *userData = pvTimerGetTimerID(xTimer);
+
+    if (userData->callback != NULL)
+    {
+        userData->callback(userData->data);
+    }
+}
+
+rtos_timer_t rtos_timer_create(const char *name, uint32_t period_ms, rtos_timer_callback_t callback, void *user_data)
+{
+    TickType_t timerPeriod = pdMS_TO_TICKS(period_ms);
+
+    TimerUserData *userData = pvPortMalloc(sizeof(TimerUserData));
+
+    if (userData == NULL)
+    {
+        printf("Failed to allocate memory for user data.\r\n");
+        return NULL;
+    }
+
+    userData->callback = callback;
+    userData->data = user_data;
+
+    rtos_timer_t timer = xTimerCreate(
+        name,                          
+        timerPeriod,                   
+        pdFALSE,                       
+        userData,                      
+        rtos_timer_callback
+    );
+
+    if (timer == NULL)
+    {
+        printf("Failed to create timer.\r\n");
+        vPortFree(userData);
+        return NULL;
+    }
+
+    return timer;
+}
+
+int rtos_timer_update_and_start(rtos_timer_t timer, uint32_t period_ms)
+{
+    TickType_t timerPeriod = pdMS_TO_TICKS(period_ms);
+
+    if (timer == NULL)
+    {
+        printf("Failed to update timer.\r\n");
+        //vPortFree(userData);
+        return -1;
+    }
+
+    if (xTimerStop(timer, 0) != pdPASS) {
+        printf("Failed to stop the timer!\r\n");
+        return -1;
+    }
+
+    if (xTimerChangePeriod(timer, timerPeriod, 0) != pdPASS) {
+        printf("Failed to change timer period!\r\n");
+        return -1;
+    }
+
+    if (xTimerStart(timer, 0) != pdPASS) {
+        printf("Failed to restart the timer!\r\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+int rtos_delete_timer(rtos_timer_t xTimer)
+{
+    if (xTimer == NULL) {
+        printf("Error: Timer handle is NULL\n");
+        return -1;
+    }
+
+    void *params = pvTimerGetTimerID(xTimer);
+
+    if (xTimerDelete(xTimer, 0) != pdPASS) {
+        printf("Error: Failed to delete the timer\n");
+        return -1;
+    }
+
+    if (params != NULL) {
+        vPortFree(params);
+    }
+
+    return 0;
+}
+
+#endif
+
 #if (configCHECK_FOR_STACK_OVERFLOW > 0)
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {

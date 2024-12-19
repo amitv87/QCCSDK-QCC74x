@@ -8,4 +8,7 @@ sdk_add_include_directories(.)
 
 sdk_set_main_file(main.c)
 
+target_sources(app PRIVATE ble_app.c
+)
+
 project(central)

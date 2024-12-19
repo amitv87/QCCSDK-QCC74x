@@ -26,31 +26,22 @@ make flash COMX=xxx ## xxx is your com name
 2. Use mqtt client to test if the server is working. You can install `MQTTBox` on windows for testing, you can install it from Microsoft Store. Or use EMQX's online mqtt client for testing.
 3. If the server works fine, then you can continue with the next test.
 4. connect your WiFi.
-5. connect MQTT server. command like `mqtt_sub` or `mqtt_sub <server domain name or server ip> <server port> <topic>`
+5. connect MQTT server. command like `mqtt_sub` or `mqtt_sub <server ip> <server port>`
 
-Log:
+Steps:
+
+```bash
+linux-bash /> mosquitto -p 8883
+```
 
 ```bash
 qxx74x />wifi_sta_connect QCC74x_TEST 12345678
-qxx74x />mqtt_sub
-qxx74x />mqtt_sub listening for 'qcc744' messages.
+qcc74x />mqtt_sub 192.168.1.143 8883
+mqtt_sub listening for 'qcc74x_undef' messages.
 Press CTRL-C to exit.
-Received publish('qcc744'): {"hello mqtt"}
-Received publish('qcc744'): {"hello mqtt"}
-Received publish('qcc744'): {"hello mqtt"}
-mqtt_sub disconnecting from test.mosquitto.org
-^C
+Received publish('qcc74x_undef'): hello
 ```
 
-use broker.emqx.io mqtt public server test log:
 ```bash
-qxx74x />wifi_sta_connect QCC74x_TEST 12345678
-qxx74x />mqtt_sub broker.emqx.io 1883 qcc744
-qxx74x />mqtt_sub listening for 'qcc744' messages.
-Press CTRL-C to exit.
-Received publish('qcc744'):  {"hello mqtt"}
-Received publish('qcc744'):  {"hello mqtt"}
-mqtt_sub disconnecting from broker.emqx.io
-^C
+linux-bash /> mosquitto_pub -h 127.0.0.1 -p 8883 -t qcc74x_undef -m hello
 ```
-

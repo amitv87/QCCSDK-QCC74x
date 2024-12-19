@@ -15,7 +15,7 @@ extern int32_t (*shared_pds_default_level_config)(uint32_t*, uint32_t);
 #endif
 
 #ifndef LP_FW_START_ADDR
-#define LP_FW_START_ADDR          0x63026800//0x68012800
+#define LP_FW_START_ADDR          0x63029000//0x63026800
 #endif
 
 #define IOT2LP_PARA_ADDR          0x20010400
@@ -47,6 +47,8 @@ extern int32_t (*shared_pds_default_level_config)(uint32_t*, uint32_t);
 #define HBN_SYS_RESET_REASON_CHK  (iot2lp_para->reset_keep.reset_reason_chk)
 
 #define BEACON_DATA_RATE          (iot2lp_para->beacon_leg_rate)
+
+#define LPFW_WIFI_RX_BUFF         (iot2lp_para->wifi_rx_buff)
 
 #define PDS_WAKEUP_MINI_LIMIT_US  (1220)
 #define PDS_WAKEUP_MINI_LIMIT_CNT (40)

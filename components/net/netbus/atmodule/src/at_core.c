@@ -33,7 +33,7 @@ typedef enum {
 } at_cmd_type;
 
 
-#define AT_CORE_PRINTF printf
+#define AT_CORE_PRINTF //printf
 
 struct at_struct *at = NULL;
 static uint32_t at_error = AT_SUB_OK;
@@ -511,6 +511,7 @@ int at_cmd_input(uint8_t *data, int32_t len)
                 at->device_ops.write_data((uint8_t *)AT_CMD_MSG_ERROR, strlen(AT_CMD_MSG_ERROR));
             }
             else {
+                AT_DEBUG_POINT(0);
                 find = 1;
                 break;
             }

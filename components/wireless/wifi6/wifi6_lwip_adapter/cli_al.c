@@ -775,9 +775,10 @@ void wifi_mgmr_ap_start_cmd(int argc, char **argv)
     }
 
     memset(&config, 0, sizeof(config));
+    config.use_dhcpd = true;
 
     utils_al_getopt_init(&getopt_env, 0);
-    while ((opt = utils_al_getopt(&getopt_env, argc, argv, "b:s:k:c:a:t:h:i:I:S:L:")) != -1) {
+    while ((opt = utils_al_getopt(&getopt_env, argc, argv, "b:s:k:c:a:d:t:h:i:I:S:L:")) != -1) {
         switch (opt) {
 	case 'b':
 	    config.type = (uint8_t)atoi(getopt_env.optarg);
@@ -811,6 +812,10 @@ void wifi_mgmr_ap_start_cmd(int argc, char **argv)
 	    config.isolation = (uint32_t)atoi(getopt_env.optarg);
 	    break;
 
+    case 'd':
+        config.use_dhcpd = atoi(getopt_env.optarg);
+        break;
+
 	case 'I':
 	    config.ap_ipaddr = inet_addr(getopt_env.optarg);
 	    config.ap_mask = inet_addr("255.255.255.0");
@@ -833,9 +838,6 @@ void wifi_mgmr_ap_start_cmd(int argc, char **argv)
         }
     }
 
-    // TODO add option
-    config.use_dhcpd = true;
-
     if (config.ssid == NULL) {
         goto _ERROUT;
     }
@@ -845,7 +847,7 @@ void wifi_mgmr_ap_start_cmd(int argc, char **argv)
     return;
 
  _ERROUT:
-    printf("[USAGE]: %s -s <ssid> [-k <key>] [-c <channel>] [-a <akm>] [-I <ipv4_addr>] [-S <dhcpd_start>] [-L <dhcpd_limit>] \r\n", argv[0]);
+    printf("[USAGE]: %s -s <ssid> [-k <key>] [-c <channel>] [-a <akm>] [-d 0/1 <start dhcp server>] [-I <ipv4_addr>] [-S <dhcpd_start>] [-L <dhcpd_limit>] \r\n", argv[0]);
     return;
 }
 
@@ -994,6 +996,14 @@ int cmd_fw_dbg_rec(int argc, char **argv)
 }
 #endif
 
+#ifdef CONFIG_MAT
+static int cmd_mat(int argc, char *argv[])
+{
+    void mat_print_mib(void);
+    mat_print_mib();
+}
+#endif
+
 #ifdef IOT_SDK_ADAPTER
 #define SHELL_CMD_EXPORT_ALIAS(func, name, desc)                                                                \
     static void func##_adapter (char *buf, int len, int argc, char **argv)                                    \
@@ -1041,7 +1051,6 @@ SHELL_CMD_EXPORT_ALIAS(wifi_mgmr_ap_start_cmd, wifi_ap_start, start AP mode);
 SHELL_CMD_EXPORT_ALIAS(wifi_mgmr_ap_stop_cmd, wifi_ap_stop, stop AP mode);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_ap_mac_get, wifi_ap_mac_get, get wifi ap mac);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_ap_conf_max_sta, wifi_ap_conf_max_sta, config AP mac sta);
-SHELL_CMD_EXPORT_ALIAS(cmd_wifi_raw_send, wifi_raw_send, wifi raw send test);
 #if NX_TG
 SHELL_CMD_EXPORT_ALIAS(cmd_tg, tg, wifi tg);
 #endif
@@ -1055,12 +1064,16 @@ SHELL_CMD_EXPORT_ALIAS(wifi_sta_static_ipv4, set_ipv4, ipc task set);
 #if NX_IPERF
 SHELL_CMD_EXPORT_ALIAS(cmd_iperf, iperf, iperf test throughput);
 #endif
+#ifdef CFG_RAW_SEND_ENABLE
+SHELL_CMD_EXPORT_ALIAS(cmd_wifi_raw_send, wifi_raw_send, wifi raw send test);
+#endif
 SHELL_CMD_EXPORT_ALIAS(cmd_rc, rc, Print the Rate Control Table);
 SHELL_CMD_EXPORT_ALIAS(cmd_rate, rate, set g_fw_rate);
 SHELL_CMD_EXPORT_ALIAS(cmd_non_pref_chan, non_pref_chan, set non_pref_chan);
 SHELL_CMD_EXPORT_ALIAS(cmd_non_pref_chan_notify, non_pref_chan_notify, notify non_pref_chan change);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_mgmr_sta_twt_setup, wifi_mgmr_sta_twt_setup, Setup WiFi Manager STA TWT functionality);
 SHELL_CMD_EXPORT_ALIAS(cmd_wifi_mgmr_sta_twt_teardown, wifi_mgmr_sta_twt_teardown, Teardown WiFi Manager STA TWT functionality);
+SHELL_CMD_EXPORT_ALIAS(cmd_wifi_mode_set, wifi_mode_set, set ap/sta mode);
 #if WIFI_STATISTIC_ENABLE
 SHELL_CMD_EXPORT_ALIAS(cmd_fw_dbg, fw_dbg, fw debug param);
 #endif
@@ -1076,6 +1089,9 @@ SHELL_CMD_EXPORT_ALIAS(cmd_csidma_debug, csidma_debug, debug csidma);
 SHELL_CMD_EXPORT_ALIAS(cmd_csidma_force_ftm_mac_set, csidma_force_ftm_mac_set, csidma force ftm mac set);
 SHELL_CMD_EXPORT_ALIAS(cmd_csidma_force_ftm, csidma_force_ftm, csidma force ftm);
 #endif
+#endif
+#ifdef CONFIG_MAT
+SHELL_CMD_EXPORT_ALIAS(cmd_mat, mat, show MAT information);
 #endif
 
 int qcc74x_wifi6_cli_init(void)

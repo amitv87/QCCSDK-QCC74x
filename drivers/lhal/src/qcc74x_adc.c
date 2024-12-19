@@ -745,11 +745,11 @@ float qcc74x_adc_tsen_get_temp(struct qcc74x_device_s *dev)
 {
     uint32_t regval;
     uint32_t reg_base;
-    struct qcc74x_adc_result_s result;
     uint32_t v0 = 0, v1 = 0;
     float temp = 0;
     uint32_t raw_data;
     uint64_t start_time;
+    uint32_t sum;
 
     reg_base = dev->reg_base;
 
@@ -762,16 +762,30 @@ float qcc74x_adc_tsen_get_temp(struct qcc74x_device_s *dev)
     regval &= ~AON_GPADC_TSVBE_LOW;
     putreg32(regval, reg_base + AON_GPADC_REG_CONFIG2_OFFSET);
 
+    sum = 0;
     qcc74x_adc_start_conversion(dev);
-    start_time = qcc74x_mtimer_get_time_ms();
-    while (qcc74x_adc_get_count(dev) == 0) {
-        if ((qcc74x_mtimer_get_time_ms() - start_time) > 100) {
-            return -ETIMEDOUT;
+    for (uint32_t i = 0; i < 8; i++) {
+        start_time = qcc74x_mtimer_get_time_ms();
+        while (qcc74x_adc_get_count(dev) == 0) {
+            if ((qcc74x_mtimer_get_time_ms() - start_time) > 100) {
+                return -ETIMEDOUT;
+            }
         }
+        qcc74x_adc_read_raw(dev);
     }
-    raw_data = qcc74x_adc_read_raw(dev);
-    qcc74x_adc_parse_result(dev, &raw_data, &result, 1);
-    v0 = result.value;
+    for (uint32_t i = 0; i < 16; i++) {
+        start_time = qcc74x_mtimer_get_time_ms();
+        while (qcc74x_adc_get_count(dev) == 0) {
+            if ((qcc74x_mtimer_get_time_ms() - start_time) > 100) {
+                return -ETIMEDOUT;
+            }
+        }
+        raw_data = qcc74x_adc_read_raw(dev);
+        sum += (raw_data & 0xFFFF);
+    }
+    qcc74x_adc_stop_conversion(dev);
+    v0 = (sum + 8) / 16;
+
     regval = getreg32(ADC_GPIP_BASE + GPIP_GPADC_CONFIG_OFFSET);
     regval |= GPIP_GPADC_FIFO_CLR;
     putreg32(regval, ADC_GPIP_BASE + GPIP_GPADC_CONFIG_OFFSET);
@@ -780,16 +794,30 @@ float qcc74x_adc_tsen_get_temp(struct qcc74x_device_s *dev)
     regval |= AON_GPADC_TSVBE_LOW;
     putreg32(regval, reg_base + AON_GPADC_REG_CONFIG2_OFFSET);
 
+    sum = 0;
     qcc74x_adc_start_conversion(dev);
-    start_time = qcc74x_mtimer_get_time_ms();
-    while (qcc74x_adc_get_count(dev) == 0) {
-        if ((qcc74x_mtimer_get_time_ms() - start_time) > 100) {
-            return -ETIMEDOUT;
+    for (uint32_t i = 0; i < 8; i++) {
+        start_time = qcc74x_mtimer_get_time_ms();
+        while (qcc74x_adc_get_count(dev) == 0) {
+            if ((qcc74x_mtimer_get_time_ms() - start_time) > 100) {
+                return -ETIMEDOUT;
+            }
         }
+        qcc74x_adc_read_raw(dev);
     }
-    raw_data = qcc74x_adc_read_raw(dev);
-    qcc74x_adc_parse_result(dev, &raw_data, &result, 1);
-    v1 = result.value;
+    for (uint32_t i = 0; i < 16; i++) {
+        start_time = qcc74x_mtimer_get_time_ms();
+        while (qcc74x_adc_get_count(dev) == 0) {
+            if ((qcc74x_mtimer_get_time_ms() - start_time) > 100) {
+                return -ETIMEDOUT;
+            }
+        }
+        raw_data = qcc74x_adc_read_raw(dev);
+        sum += (raw_data & 0xFFFF);
+    }
+    qcc74x_adc_stop_conversion(dev);
+    v1 = (sum + 8) / 16;
+
     if (v0 > v1) {
         temp = (((float)v0 - (float)v1) - (float)tsen_offset) / 7.753f;
     } else {

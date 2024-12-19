@@ -12,6 +12,9 @@ sdk_set_linker_script(qcc743_chip_mfgtest.ld)
 sdk_add_compile_definitions(-DCONFIG_MFG)
 elseif(CONFIG_LPAPP)
 sdk_set_linker_script(qcc743_lp.ld)
+sdk_add_link_options(
+-L ${CMAKE_CURRENT_SOURCE_DIR}
+)
 elseif(CONFIG_WFA)
 sdk_set_linker_script(qcc743_wfa_flash.ld)
 sdk_add_link_options(

@@ -125,6 +125,8 @@ typedef struct
 
 int32_t qcc74x_get_app_version_from_efuse(uint8_t *version);
 int32_t qcc74x_set_app_version_to_efuse(uint8_t version);
+int32_t qcc74x_get_boot2_version_from_efuse(uint8_t *version);
+int32_t qcc74x_set_boot2_version_to_efuse(uint8_t version);
 
 #ifdef __cplusplus
 }

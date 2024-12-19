@@ -222,7 +222,6 @@
 .rodata.memp_TCPIP_MSG_API
 .rodata.mm_default_handler
 .rodata.memp_TCP_SEG
-.rodata.apm_default_handler
 .rodata.twt_default_state
 .rodata.memp_pools
 .rodata.mac_ac2aci
@@ -236,7 +235,6 @@
 .rodata.memp_RAW_PCB
 .rodata.scanu_idle
 .rodata.memp_NETDB
-.rodata.apm_default_state
 .rodata.llc_rfc1042_hdr
 .rodata.scan_default_handler
 .rodata.sm_default_handler
@@ -373,22 +371,12 @@
 .text.sm_disconnect_finish
 .text.sm_deauth_cfm
 .text.sm_connect_ind_withdeauth_cfm
-.text.apm_deauth_client_cfm
-.text.apm_deauth_client_req_handler
-.text.apm_probe_client_req_handler
-.text.apm_stop_cac_req_handler
-.text.apm_start_cac_req_handler
 .text.mm_chan_ctxt_unlink_cfm_handler
 .text.mm_set_vif_state_cfm_handler
 .text.me_set_ps_disable_cfm_handler
 .text.mm_bss_param_setting_handler
 .text.mm_bcn_change_cfm_handler
 .text.me_set_active_cfm_handler
-.text.apm_stop_req_handler
-.text.apm_start_req_handler
-.text.apm_probe_client_tx_cfm
-.text.apm_bss_config_init
-.text.apm_bss_config_push
 .text.rxu_mgt_ind_handler
 .text.rxu_upload_cfm
 .text.rxu_cntrl_protected_handle
@@ -450,7 +438,6 @@
 .text.bam_send_air_action_frame
 .text.vTaskSuspendAll
 .text.sm_get_rsnie_pmkid_count
-.text.rc_alg_check_fixed_rate_config
 .text.mac_ie_ecsa_find
 .text.sm_assoc_done
 .text.me_vht_bandwidth_parse
@@ -482,7 +469,6 @@
 .text.phy_get_channel
 .text.ps_traffic_status_update
 .text.me_extract_ht_capa
-.text.apm_start_cfm
 .text.rxl_mpdu_copy
 .text.txl_frame_push_force
 .text.txl_agg_check
@@ -493,7 +479,6 @@
 .text.mac_ie_op_mode_notif_find
 .text.rtos_mutex_lock
 .text.rf_pri_get_rcal_code
-.text.apm_tx_int_ps_postpone
 .text.chan_is_on_operational_channel
 .text.bam_baw_init
 .text.bam_send_del_ba_agg
@@ -514,7 +499,6 @@
 .text.mac_ie_ds_find
 .text.ke_msg_free
 .text.ke_timer_clear
-.text.mfp_protect_mgmt_frame
 .text.bam_rx_active
 .text.mm_tbtt_compute
 .text.me_add_ie_op_mode
@@ -573,7 +557,6 @@
 .text.trpc_update_vs_channel
 .text.me_sta_del
 .text.me_rate_translate
-.text.apm_send_mlme
 .text.me_extract_mu_edca_params
 .text.sm_ft_auth_over_air_start
 .text.fhost_cntrl_write_msg
@@ -625,7 +608,6 @@
 .text.chan_bcn_detect_start
 .text.ps_check_tx_frame
 .text.txl_frame_send_qosnull_frame
-.text.mfp_compute_bip
 .text.me_init_bcmc_rate
 .text.sys_mutex_lock
 .text.wl_wlan_power_cfg_get
@@ -640,7 +622,6 @@
 .text.txl_frame_get
 .text.phy_get_nss
 .text.txl_he_init
-.text.apm_stop
 .text.me_extract_uora_params
 .text.phy_set_group_id_info
 .text.mm_hw_ap_info_reset
@@ -777,15 +758,12 @@
 .text.tpc_update_frame_tx_power
 .text.txl_agg_push_mpdu
 .text.mac_ie_multi_bssid_find
-.text.apm_set_bss_param
 .text.me_traffic_ind_req_set_sta_idx
 .text.hal_machw_init
 .text.udelay
 .text.platform_free
-.text.mfp_ignore_mgmt_frame
 .text.co_crc32
 .text.rxl_reset
-.text.apm_tx_int_ps_clear
 .text.txl_cntrl_newhead
 .text.chan_ctxt_del
 .text.sm_add_chan_ctx
@@ -796,9 +774,7 @@
 .text.pvTaskIncrementMutexHeldCount
 .text.txl_he_mu_edca_param_set
 .text.vif_mgmt_bcn_wait_to_prog
-.text.ap_client_unexpected_frame
 .text.bam_param_sta_info_tab_reset
-.text.apm_init
 .text.sys_arch_unprotect
 .text.td_reset
 .text.mac_ie_mgmt_mic_find
@@ -812,7 +788,6 @@
 .text.td_cfm_set_timer
 .text.ke_task_sm_activating
 .text.sys_arch_sem_wait
-.text.mfp_add_mgmt_mic
 .text.sm_sa_query_handler
 .text.sm_set_bss_param
 .text.mm_no_idle_stop
@@ -828,7 +803,6 @@
 .text.rxl_mpdu_isr
 .text.vif_mgmt_set_bssid_mask
 .text.sta_mgmt_register
-.text.apm_bss_config_send
 .text.me_add_ie_supp_rates
 .text.td_pck_ps_ind
 .text.mm_send_csa_traffic_ind
@@ -841,7 +815,6 @@
 .text.txl_frame_prepare
 .text.txl_hwdesc_config_post
 .text.rxl_mpdu_partial_transfer
-.text.apm_bcn_set
 .text.ke_msg_send_basic
 .text.rtos_queue_is_empty
 .text.vif_mgmt_switch_channel
@@ -856,7 +829,6 @@
 .text.rxl_hwdesc_monitor
 .text.me_extract_csa
 .text.fhost_tx_release_buf
-.text.mfp_is_robust_frame
 .text.chan_is_on_channel
 .text.mm_no_idle_start
 .text.sta_mgmt_unregister
@@ -894,7 +866,6 @@
 .text.txu_cntrl_mgmt_mic_pbd_append
 .text.bam_get_task_to_process_rx
 .text.me_add_ie_vht_capa
-.text.apm_tx_int_ps_get_postpone
 .text.mm_timer_clear
 .text.txl_cntrl_tx_check
 .text.tpc_get_vif_tx_power_vs_rate
@@ -922,9 +893,7 @@
 .text.me_add_ie_he_capa
 .text.sm_scan_bss
 .text.co_list_remove
-.text.apm_probe_client
 .text.td_start
-.text.apm_tx_int_ps_check
 .text.me_legacy_rate_bitfield_build
 .text.me_rate_bitfield_vht_build
 .text.rxl_mpdu_free
@@ -1048,7 +1017,6 @@
 .text.mm_timer_set
 .text.net_if_vif_info
 .text.fhost_tx_release_buf
-.text.mfp_is_robust_frame
 .text.co_list_insert
 .text.vTaskPriorityDisinheritAfterTimeout
 .text.macif_kmsg_push
@@ -1085,7 +1053,6 @@
 .rodata.memp_TCPIP_MSG_API
 .rodata.mm_default_handler
 .rodata.memp_TCP_SEG
-.rodata.apm_default_handler
 .rodata.twt_default_state
 .rodata.memp_pools
 .rodata.mac_ac2aci
@@ -1097,7 +1064,6 @@
 .rodata.memp_TCP_PCB
 .rodata.memp_RAW_PCB
 .rodata.memp_NETDB
-.rodata.apm_default_state
 .rodata.llc_rfc1042_hdr
 .rodata.sm_default_handler
 .rodata.mac_addr_bcst
@@ -1245,22 +1211,12 @@
 .text.sm_disconnect_finish
 .text.sm_deauth_cfm
 .text.sm_connect_ind_withdeauth_cfm
-.text.apm_deauth_client_cfm
-.text.apm_deauth_client_req_handler
-.text.apm_probe_client_req_handler
-.text.apm_stop_cac_req_handler
-.text.apm_start_cac_req_handler
 .text.mm_chan_ctxt_unlink_cfm_handler
 .text.mm_set_vif_state_cfm_handler
 .text.me_set_ps_disable_cfm_handler
 .text.mm_bss_param_setting_handler
 .text.mm_bcn_change_cfm_handler
 .text.me_set_active_cfm_handler
-.text.apm_stop_req_handler
-.text.apm_start_req_handler
-.text.apm_probe_client_tx_cfm
-.text.apm_bss_config_init
-.text.apm_bss_config_push
 .text.scanu_get_scan_result_req_handler
 .text.scanu_start_req_handler
 .text.scanu_join_req_handler
@@ -1352,7 +1308,6 @@
 .text.phy_get_channel
 .text.ps_traffic_status_update
 .text.me_extract_ht_capa
-.text.apm_start_cfm
 .text.rxl_mpdu_copy
 .text.txl_frame_push_force
 .text.txl_agg_check
@@ -1363,7 +1318,6 @@
 .text.mac_ie_op_mode_notif_find
 .text.rtos_mutex_lock
 .text.rf_pri_get_rcal_code
-.text.apm_tx_int_ps_postpone
 .text.scanu_frame_handler
 .text.chan_is_on_operational_channel
 .text.bam_baw_init
@@ -1385,7 +1339,6 @@
 .text.mac_ie_ds_find
 .text.ke_msg_free
 .text.ke_timer_clear
-.text.mfp_protect_mgmt_frame
 .text.bam_rx_active
 .text.mm_tbtt_compute
 .text.me_add_ie_op_mode
@@ -1445,7 +1398,6 @@
 .text.trpc_update_vs_channel
 .text.me_sta_del
 .text.me_rate_translate
-.text.apm_send_mlme
 .text.me_extract_mu_edca_params
 .text.sm_ft_auth_over_air_start
 .text.fhost_cntrl_write_msg
@@ -1497,7 +1449,6 @@
 .text.chan_bcn_detect_start
 .text.ps_check_tx_frame
 .text.txl_frame_send_qosnull_frame
-.text.mfp_compute_bip
 .text.me_init_bcmc_rate
 .text.sys_mutex_lock
 .text.wl_wlan_power_cfg_get
@@ -1514,7 +1465,6 @@
 .text.txl_frame_get
 .text.phy_get_nss
 .text.txl_he_init
-.text.apm_stop
 .text.me_extract_uora_params
 .text.phy_set_group_id_info
 .text.mm_hw_ap_info_reset
@@ -1653,15 +1603,12 @@
 .text.tpc_update_frame_tx_power
 .text.txl_agg_push_mpdu
 .text.mac_ie_multi_bssid_find
-.text.apm_set_bss_param
 .text.me_traffic_ind_req_set_sta_idx
 .text.hal_machw_init
 .text.udelay
 .text.platform_free
-.text.mfp_ignore_mgmt_frame
 .text.co_crc32
 .text.rxl_reset
-.text.apm_tx_int_ps_clear
 .text.txl_cntrl_newhead
 .text.sm_add_chan_ctx
 .text.trpc_init
@@ -1672,9 +1619,7 @@
 .text.txl_he_mu_edca_param_set
 .text.vif_mgmt_bcn_wait_to_prog
 .text.scanu_search_by_ssid
-.text.ap_client_unexpected_frame
 .text.bam_param_sta_info_tab_reset
-.text.apm_init
 .text.scan_get_chan
 .text.sys_arch_unprotect
 .text.td_reset
@@ -1689,7 +1634,6 @@
 .text.td_cfm_set_timer
 .text.ke_task_sm_activating
 .text.sys_arch_sem_wait
-.text.mfp_add_mgmt_mic
 .text.sm_sa_query_handler
 .text.sm_set_bss_param
 .text.mm_no_idle_stop
@@ -1705,7 +1649,6 @@
 .text.rxl_mpdu_isr
 .text.vif_mgmt_set_bssid_mask
 .text.sta_mgmt_register
-.text.apm_bss_config_send
 .text.me_add_ie_supp_rates
 .text.td_pck_ps_ind
 .text.mm_send_csa_traffic_ind
@@ -1717,7 +1660,6 @@
 .text.txl_frame_prepare
 .text.txl_hwdesc_config_post
 .text.rxl_mpdu_partial_transfer
-.text.apm_bcn_set
 .text.ke_msg_send_basic
 .text.rtos_queue_is_empty
 .text.vif_mgmt_switch_channel
@@ -1734,7 +1676,6 @@
 .text.rxl_hwdesc_monitor
 .text.me_extract_csa
 .text.fhost_tx_release_buf
-.text.mfp_is_robust_frame
 .text.mm_no_idle_start
 .text.sta_mgmt_unregister
 .text.rfc_config_channel
@@ -1772,7 +1713,6 @@
 .text.txu_cntrl_mgmt_mic_pbd_append
 .text.bam_get_task_to_process_rx
 .text.me_add_ie_vht_capa
-.text.apm_tx_int_ps_get_postpone
 .text.mm_timer_clear
 .text.txl_cntrl_tx_check
 .text.tpc_get_vif_tx_power_vs_rate
@@ -1801,9 +1741,7 @@
 .text.me_add_ie_he_capa
 .text.sm_scan_bss
 .text.co_list_remove
-.text.apm_probe_client
 .text.td_start
-.text.apm_tx_int_ps_check
 .text.me_legacy_rate_bitfield_build
 .text.me_rate_bitfield_vht_build
 .text.rxl_mpdu_free

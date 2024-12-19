@@ -69,6 +69,22 @@ XXXX
 
 ```
 
+### MDNS ping test
+
+In qcc743 Device,
+```bash
+qxx74x />wifi_sta_connect QCC74x_TEST 12345678
+```
+Wait GOT_IP event, type command 'mdns_start lwip'.
+
+In your PC,
+```bash
+Enable 'MulticastDNS=yes' in file /etc/systemd/resolved.conf.
+sudo systemd-resolve --set-mdns=yes --interface=enp3s0
+sudo systemctl restart systemd-resolved.service
+ping lwip.local
+```
+
 ### NAT ping test
 
 uncomment set(CONFIG_WIFI_GATEWAY 1) in proj.conf
@@ -77,5 +93,6 @@ qcc74x /> wifi_sta_connect your_ssid 12345678
 ... wait GOT_IP event
 
 qcc74x /> wifi_ap_start -s your_ssid_2 -c your_channel_same_with_your_ssid
+qcc74x /> gw_service_start
 
 Another pc connect to your_ssid_2, and ping IP of your_ssid.
